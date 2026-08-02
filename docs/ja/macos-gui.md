@@ -137,6 +137,45 @@ UI 型は `@MainActor`、Timer は target/selector 版を使うと Swift 6 の c
   再評価するため、ドラッグ中に事実上フリーズする）。ツリーはキャッシュし revision で更新。
 - 一般化: 「Finder でできること」を再実装する前に本当に必要か問う。
 
+### `.app` の中で SwiftPM の `Bundle.module` を使わない
+
+**事象:** ビルドしたマシンでは完璧に動くのに、それ以外のマシンでは起動直後に必ず落ちる。
+`_assertionFailure` での `EXC_BREAKPOINT`、スタックに `NSBundle.module`。notarize・staple
+済みリリースを新規インストールしても同じ。テストでも、ローカル実行でも、`spctl` でも
+検出できない。
+
+**理由:** `resources: [.process("Resources")]` を持つターゲットに SwiftPM が生成する
+アクセサが試す経路は 2 つだけ:
+
+1. `Bundle.main.bundleURL/<Package>_<Target>.bundle` — 素の CLI 実行ファイルなら正しいが、
+   `.app` では誤り。バンドルの実際のインストール先はルート直下ではなく
+   `Contents/Resources`。
+2. **コンパイル時に焼き込まれた `.build/…/release/…` の絶対パス。**
+
+経路 1 はアプリバンドルでは決して当たらないので、解決に成功しているのは常に経路 2 —
+つまりビルドしたマシンにしか存在しないパス。ローカル開発からは構造的に見えない不具合で、
+ローカルで検証すればするほど確信が深まるという最悪の性質を持つ。
+
+**適用方法:**
+- アプリターゲットで `Bundle.module` を参照しない。`Bundle.main.resourceURL`（`.app` の
+  レイアウト）→ `Bundle.main.bundleURL`（素の実行ファイル）→ コードバンドルのある
+  ディレクトリ（`Bundle(for:).bundleURL.deletingLastPathComponent()`、`swift test` を
+  カバー）の順に探すロケータを自前で書く。
+- 最後のフォールバックは trap ではなく `Bundle.main` にする。ローカライズテーブルが
+  無ければ英語のソースキーに退化させればよい。翻訳を失うことはアプリを殺す理由にならない。
+- 探索順とヒット判定は純関数に切り出してユニットテストする。実行時の呼び出しは
+  テスト済みロジックの薄いラッパーになる。
+- **リリース検証手順に組み込む:** `.build/*/release/*.bundle` を退避してから
+  `dist/<App>.app/Contents/MacOS/<App>` を直接起動する。この一手順で他マシンを再現できる。
+  リリース用アーカイブをクリーンなディレクトリに展開し、そのバイナリを起動すれば更に確実。
+- 組織横断の棚卸しは `grep -l 'resources:' Package.swift`。リソースを宣言している
+  Swift ターゲットはすべて容疑者。
+
+*出典: 出荷済みの macOS アプリ 2 本が、作者以外の全ユーザーの初回インストールで起動不能
+だった。いずれも全テスト・notarize・ビルド機での手動 QA を通過していた。*
+
+---
+
 ### GUI アプリは版数を画面に出す
 
 **事象:** メニューバー常駐アプリは CLI の `--version` に相当する導線が無く、入れ忘れると

@@ -157,6 +157,50 @@ line lingers; the endpoint was a watchdog timer guessing at UI state.
 - Generalization: before re-implementing "things Finder can do", ask if they're
   really needed.
 
+### Never use SwiftPM's `Bundle.module` inside an `.app`
+
+**Symptom:** the app runs perfectly on the machine that built it and dies at
+launch — `EXC_BREAKPOINT` in `_assertionFailure`, with `NSBundle.module` on the
+stack — on every other machine, including a fresh install of a notarized,
+stapled release. No test, no local run, and no `spctl` check catches it.
+
+**Why:** the accessor SwiftPM generates for a target with
+`resources: [.process("Resources")]` tries exactly two paths:
+
+1. `Bundle.main.bundleURL/<Package>_<Target>.bundle` — correct for a bare CLI
+   executable, wrong for an `.app`, where the bundle is installed into
+   `Contents/Resources`, not the bundle root.
+2. the **absolute `.build/…/release/…` path baked in at compile time**.
+
+Path 1 never matches an app bundle, so every successful lookup runs through
+path 2 — which exists only on the build machine. The result is a defect that is
+structurally invisible to local development: the more you test locally, the more
+confident you get.
+
+**How to apply:**
+- Don't reference `Bundle.module` in an app target. Write a locator that
+  searches `Bundle.main.resourceURL` (the `.app` layout) first, then
+  `Bundle.main.bundleURL` (bare executable), then the directory holding the
+  compiled code bundle (`Bundle(for:).bundleURL.deletingLastPathComponent()`,
+  which covers `swift test`).
+- Make the final fallback `Bundle.main`, not a trap. A missing localization
+  table should degrade to the English source keys — losing translations is not
+  worth killing the app.
+- Keep the search order and the hit test as pure functions and unit-test them;
+  the runtime call is then a thin wrapper over tested logic.
+- **Add this to release verification:** move `.build/*/release/*.bundle` aside,
+  then launch `dist/<App>.app/Contents/MacOS/<App>` directly. That single step
+  reproduces a foreign machine. Extract the release archive to a clean
+  directory and launch *that* binary for the strongest form of the check.
+- Audit with `grep -l 'resources:' Package.swift` across the org — every Swift
+  target declaring resources is a candidate.
+
+*Origin: two shipped macOS apps crashed at launch on first install for every
+user but the author; both had passed full test suites, notarization, and manual
+QA on the build machine.*
+
+---
+
 ### GUI apps must display their version
 
 **Symptom:** Menu-bar apps have no `--version` equivalent; forgetting a version

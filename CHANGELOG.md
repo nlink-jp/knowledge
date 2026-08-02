@@ -2,6 +2,13 @@
 
 ## 2026-08-03
 
+- 1 entry from a launch crash that reached two shipped macOS apps:
+  - **macos-gui** (1): never use SwiftPM's `Bundle.module` inside an `.app` —
+    it looks beside the bundle root, not in `Contents/Resources`, and falls
+    back to a compile-time absolute `.build` path, so it resolves only on the
+    machine that built it. Includes the release-verification step that
+    reproduces a foreign machine.
+
 - 15 entries from building a menu-bar sensor-monitoring app over a metered
   third-party API:
   - **macos-gui** (7): MenuBarExtra pushing a height onto its content; ForEach id
