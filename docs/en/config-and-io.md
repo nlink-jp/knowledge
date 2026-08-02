@@ -74,6 +74,77 @@ test that a typo field is rejected.
 ignored for backward compatibility; see the machine-local-ID entry). The
 distinction matters.
 
+### Changing a "where to store" setting does not move already-persisted absolute paths
+
+**Symptom:** Installed asset files were moved to another volume and the setting
+that selects the storage directory (`models_dir` / `output_dir` / `cache_dir` …)
+was repointed at the new location. The **registry / index / manifest recording an
+absolute path per file** kept the old one, leaving every existing entry aimed at
+a directory that no longer exists.
+
+**Why:** A storage-directory setting only decides where files will be written
+**from now on**; it never touches records already written. The two are separate
+facts, even though the user sees a single "where my models live".
+
+**How to apply:**
+- The moment you add a "change the storage directory" setting, design "how do
+  existing entries move" with it. Document the migration in the README as three
+  steps: move the files → change the setting → run reconcile.
+- **Ship a reconcile command alongside it.** Dry-run by default, `--apply` to
+  write. Rewrite a path **iff** the recorded path does **not** exist **and** a
+  file of the same basename **does** exist in the new directory. Never touch a
+  path that still resolves (a user deliberately spreading assets across
+  directories keeps them). Report entries with no candidate as unresolved —
+  never guess.
+- A `--to DIR` override of the target directory makes the command **its own
+  undo**: re-run it pointing at the old directory.
+- Reconcile rewrites records only — it **never moves bytes** (that is the user's
+  `mv`). Dry-running before the files move correctly reports everything as
+  unresolved.
+- **Do not rebase implicitly at load time.** Resolving by basename can silently
+  grab an unrelated same-named file, and the on-disk records keep disagreeing
+  with what the process actually used. State that repairs itself invisibly is
+  harder to reason about than state that reports its own breakage — prefer an
+  explicit command plus honest listings.
+- Centralize enumeration of the recorded file fields in one place (a
+  `fileRefs()`-style accessor returning get/set per field). If listing,
+  existence-checking, and rewriting each walk the struct separately, adding a
+  field will be honored by one caller and missed by another. Inject the
+  existence check as a function and all of it tests against a synthetic FS.
+
+### Listings, pickers, and catalogs must verify that referenced files exist
+
+**Symptom:** The installed-items listing read the registry and **never stat'd the
+files**, so every entry showed as installed and healthy even with the referenced
+files absent. The CLI table, `--json`, the MCP tool, and the GUI management
+window all shared the same unverified view, so the first code to open a file was
+the first to fail — with a stale path. The user-visible symptom ("the manager
+sees my items, but using one fails") points nowhere near the cause.
+
+**Why:** Unverified state was presented as fact. No layer checked that the source
+of the display (the records) and the truth (the disk) still agree. Missing path
+reconciliation and missing existence checks are **two independent defects**;
+together they postpone discovery until run time.
+
+**How to apply:**
+- Stat the referenced files before returning a listing. Surface absence in the
+  row (a `STATUS` column, plus a footer naming the missing files and the command
+  that fixes them). An unmounted external volume is the same shape — the files
+  are not gone, but the listing must not claim they are there.
+- Return a **list of missing paths** (`missing_files`) to front-ends, not a
+  bool — it lets them explain the cause. Omit when empty, and **treat a missing
+  key as healthy** so older clients keep working.
+- **Front-ends keep unloadable entries out of the picker but leave them in the
+  management view** (invisible means unfixable and undeletable), with text
+  explaining why they vanished. Anything shown as available must be loadable.
+- Reject early in the runtime resolution layer too, naming the missing file, the
+  current setting, and the remedy command. Never surface the underlying
+  library's low-level error as-is.
+- Build listings from a **single shared view** and the CLI, JSON, MCP, and GUI
+  are all fixed at once; per-surface views let the check be forgotten again.
+- Cost is O(files) stats per invocation. Missing or unmounted paths fail
+  immediately with ENOENT, so the degenerate case is the fast one.
+
 ## OAuth
 
 ### Treat refresh-less tokens as non-expiring — never fabricate an expiry
