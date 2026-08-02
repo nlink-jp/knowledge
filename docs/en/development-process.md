@@ -229,6 +229,29 @@ source-file comment; (2) add a Third-Party Notices section to LICENSE.
 
 ## GitHub operations
 
+### Repositories are no longer watched automatically (auto-watch sunset 2025-05)
+
+**Symptom:** Watch states across 124 org repositories had drifted — about half
+the active repos sat on Default, meaning **external issues/PRs produced no
+notifications**. The cause: GitHub sunset "Automatically watch repositories" on
+2025-05-23. Repos created before the sunset had been auto-watched; everything
+created after stayed on Default — a fault line by creation date. This is also
+why the toggle is gone from the settings page.
+
+**Why it matters:** Default (Participating & @mentions) does not notify even the
+owner of new issues/PRs. In a solo-run org, external contributions to unwatched
+repos sink silently.
+
+**How to apply:**
+- Watch explicitly right after creating a repository:
+  `gh api -X PUT /repos/<org>/<name>/subscription -F subscribed=true`
+  (part of the scaffold checklist).
+- On archiving, switch to Ignore (archived repos accept no issues/PRs, so a
+  lingering watch is pure noise): `-F ignored=true`.
+- Auditing the current state is mechanical via the REST API:
+  `GET /repos/<org>/<name>/subscription` (404 = Default, `subscribed` =
+  Watching, `ignored` = Ignoring).
+
 ### `(#N)` is reference-only — auto-close needs a Closes keyword
 
 **Symptom:** Committing `fix(...): ... (#15)` did not close the issue; it stayed

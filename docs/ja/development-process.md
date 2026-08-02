@@ -202,6 +202,28 @@ work か」の判定に関わらず (1) ソースファイルのコメントで�
 
 ## GitHub 運用
 
+### リポジトリの Watch は自動では付かない（auto-watch は 2025-05 廃止）
+
+**事象:** org 配下 124 リポジトリの Watch 状態がばらついていた（アクティブの約半数が
+Default のままで、**外部からの issue / PR の通知が届かない**状態）。原因は GitHub が
+2025-05-23 に「Automatically watch repositories」を廃止したこと — 廃止前に作られた
+リポジトリは自動 Watch されており、それ以降のものは Default のまま、という時期による
+断層だった。設定画面から該当トグルが消えているのはこのため。
+
+**なぜ重要か:** Default（Participating & @mentions）はオーナーであっても新規 issue / PR を
+通知しない。単独運営の org では、Watch していないリポジトリへの外部コントリビュー
+ションは静かに埋もれる。
+
+**適用方法:**
+- リポジトリ作成直後に明示的に Watch する:
+  `gh api -X PUT /repos/<org>/<name>/subscription -F subscribed=true`
+  （scaffold チェックリストに含める）。
+- アーカイブ時は Ignore に切り替える（アーカイブ済みは issue/PR を受け付けないので
+  Watch は純粋なノイズ）: `-F ignored=true`。
+- 現状の棚卸しは REST API で機械的にできる:
+  `GET /repos/<org>/<name>/subscription`（404 = Default、`subscribed` = Watching、
+  `ignored` = Ignoring）。
+
 ### `(#N)` は参照のみ — 自動クローズには Closes キーワード
 
 **事象:** `fix(...): ... (#15)` の括弧参照でコミットしても issue は自動クローズされず、
