@@ -175,6 +175,127 @@ build identity are a real cost.
 
 ---
 
+### MenuBarExtra pushes a height onto its content
+
+**Symptom:** a `MenuBarExtra(style: .window)` panel renders as a header sitting
+directly on a footer, with the entire body missing — or rows overlap and a
+chart's fill paints over its neighbour.
+
+**Why:** the panel does not simply grow to fit. It sizes itself to the content's
+*ideal* size and hands that height back to the content. A `ScrollView` is
+infinitely flexible, so its ideal height is **zero** and it collapses.
+`.frame(maxHeight:)` does not help — a maximum caps a height that nothing ever
+requested. A `VStack` given less height than it needs compresses its children
+until they overlap.
+
+**How to apply:**
+- Put `.fixedSize(horizontal: false, vertical: true)` on the root so it asserts
+  the height it actually wants.
+- A `ScrollView` inside such a panel needs a **definite** height. Estimate it
+  from the row counts in a pure function with a floor (never collapses) and a
+  cap (never runs off the screen), and guard it with a unit test. The estimate
+  need not be exact — the view scrolls.
+- Better still, **bound the row count so no ScrollView is needed**; the failure
+  then becomes structurally impossible rather than merely fixed.
+- The same applies to any greedy view: `Spacer`, `GeometryReader`, `List`.
+- Add `.clipped()` to gradient area fills. If layout is ever squeezed, a clipped
+  curve beats one bleeding over the next row.
+
+### A List's ForEach ids must be unique across the whole list, not per Section
+
+**Symptom:** in a grouped list, ticking one item appears to tick **every item of
+the same kind**.
+
+**Why:** `ForEach(names, id: \.self)` over a value that recurs in each section
+makes SwiftUI treat separate rows as one row. The stored data is correct; only
+the view's identity is wrong — so model tests cannot catch it.
+
+**How to apply:**
+- Give a row an identity that includes its group: an `Identifiable` value type
+  whose `id` is something like `"\(groupID)/\(itemKey)"`, iterated as
+  `ForEach(items)`.
+- Extract the row list as a **pure function** (`static func rows(for:) -> [Item]`)
+  so the uniqueness its identity depends on can be unit-tested. SwiftUI itself
+  is untestable; the material its identity is built from is not.
+- Shortcut from the symptom: "acting on one affects every item of that kind" is
+  almost always duplicate ids. Look at the view's identity before the data.
+
+### Register a repeating Timer for the .common run-loop modes
+
+**Symptom:** the display stops updating **for exactly as long as a panel or menu
+is held open** — it freezes the moment someone opens it to look.
+
+**Why:** `Timer.scheduledTimer` registers for `.default` only, and the run loop
+leaves that mode while a menu or popover is being tracked.
+
+**How to apply:** build the timer with `Timer(timeInterval:repeats:)` and add it
+with `RunLoop.main.add(timer, forMode: .common)`.
+
+### Drive elapsed-time labels with a TimelineView
+
+**Symptom:** a freshness label such as "updated 0s ago" reads **"0s ago"
+permanently** — a label added to prove nothing is stuck becomes the stuck clock.
+
+**Why:** SwiftUI redraws only when something it observes changes. An age computed
+from `Date()` at render time is evaluated when the underlying data changes, prints
+"0s", and then sits there until the next change.
+
+**How to apply:** wrap the text in `TimelineView(.periodic(from: .now, by: 1))`
+so the schedule ticks that text alone; nothing else redraws with it.
+
+### Never disable a control on a status that cannot tell "no" from "don't know"
+
+**Symptom:** a login-item switch (`SMAppService`) that **nobody can ever turn on**.
+
+**Why:** `SMAppService.mainApp.status` returns `.notFound` for an app that has
+simply never been registered — not `.notRegistered`. Reading that as "this copy
+cannot be registered" and disabling the switch makes the first attempt, which is
+the only one that matters, the one the interface refuses to allow.
+
+**How to apply:**
+- When in doubt, **do not disable — offer the action and report what happened**.
+  If the only way to know is to try, let the user try.
+- Collapse an ambiguous status into "not enabled yet" rather than inventing an
+  "impossible" state.
+- **Verify the state actually changed** afterwards and say so when it did not. A
+  switch that springs back with nothing said is the worst outcome.
+- **Show the error in the screen where the action was taken.** Rendering it
+  elsewhere makes the control look inert.
+- Map an external status enum onto *what the UI should do*, not straight through.
+
+### Ask for OS permission at the moment of intent, not at first use
+
+**Symptom:** a notification toggle is on, nothing is ever delivered, and the app
+**does not appear in the OS notification settings at all**.
+
+**Why:** deferring `requestAuthorization` to the moment an alert fires means it is
+never requested until the triggering condition happens. The OS has no record of
+the app, so it is absent from the settings list — leaving a switch that cannot be
+configured, cannot be verified, and stays silent indefinitely if the condition
+never arrives.
+
+**How to apply:**
+- Request when the switch is turned on: the moment the user said they want it,
+  the moment a prompt makes sense, and what registers the app with the OS.
+- **Heal a switch left on by an earlier version** by checking at launch for
+  "enabled but never asked".
+- When permission is refused, say so in the UI and offer a way to the settings
+  pane that undoes it — never show an on switch that delivers nothing.
+- The same holds for location, calendar and other OS permissions.
+
+### A change in a second ObservableObject does not reach views that do not observe it
+
+**Symptom:** a settings checkbox updates instantly while the **menu-bar display
+stays stale until the next periodic refresh**.
+
+**Why:** when the displayed values (a model) and the choice of how to display
+them (a preferences object) are separate `ObservableObject`s, changing the latter
+does not invalidate a view observing only the former.
+
+**How to apply:** have the view hold **both** of the things it actually depends on
+as `@ObservedObject`. Places outside the injected environment — a `MenuBarExtra`
+label, for instance — are the easiest to miss.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

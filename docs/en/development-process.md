@@ -96,6 +96,48 @@ as improvements vs regressions.
 into improvement/regression → update expectations for improvements, fix
 regressions.
 
+### Build the budget into the design when the external API is a metered resource
+
+**Symptom:** a design that polls an API with a hard daily call limit. Exceeding it
+came back not as an explicit error but as **"Unauthorized" (401)** — that is,
+**indistinguishable from a wrong token**.
+
+**Why:** many metered APIs express exhaustion as an authentication failure. A
+client that does not track its own spend will misdiagnose the outage as broken
+configuration.
+
+**How to apply:**
+- **Count the spend durably.** Held in memory it is forgotten on restart, and a
+  restart loop can walk straight through the limit.
+- Default to a **budget below the limit**, leaving room for ad-hoc manual calls
+  and for anything else using the same credential.
+- **Refuse at configuration time**: derive the daily spend from "N devices ×
+  interval" and have the diagnostic and install paths reject a schedule that
+  would cross the budget, naming the value that fits. Far better than breaking
+  quietly once it is running.
+- Let the error type express "this may be exhaustion" (treat 401 as possibly
+  rate-limited) and back off exponentially on it.
+- Show **today's spend and the current schedule's projection** in the status
+  output, so the number is visible before it becomes a mystery.
+
+### Where two things could do the same job, prevent overlap with a conditional no-op, not a protocol
+
+**Symptom:** both a resident daemon and a GUI app can collect the same data. The
+naive design has the GUI check whether the daemon is running — which leaves all
+of the detection, synchronisation and race problems in place.
+
+**How to apply:** provide one operation meaning "**do this only if the last
+result has gone stale**", and have both callers use it. If one of them is
+already working, the data is fresh and the other call costs nothing; if neither
+is, whoever calls becomes the worker. **Neither needs to know the other exists,
+and there is no setting to keep in sync.**
+- Where duplication is actually harmful (double writes, double billing), add an
+  **exclusive lock** as well. Prefer a mechanism the kernel releases when the
+  holder dies (`flock`) over a PID file, so a crash cannot leave it stale.
+- Judge "is it running?" from **how fresh the data is**, not from which of the
+  two is up. A display that believes in only one of them lies about being idle
+  while the other is working.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates

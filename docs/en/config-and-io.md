@@ -59,6 +59,25 @@ write-only dead weight.
 - Machine-generated JSON read with plain Unmarshal (non-strict) ignores old keys,
   which disappear on next save = no migration needed.
 
+### Long-format storage makes re-importing idempotent
+
+**Symptom:** history from an external service has to be imported after the fact to
+fill gaps. Export ranges overlap easily, inviting double insertion or silent loss.
+
+**Why:** with "one row per record, whose primary key *is* the record's identity",
+`INSERT OR IGNORE` becomes exactly "add only what is missing". Store the same data
+as several columns on one row and the application has to work out partial overlap
+for itself.
+
+**How to apply:**
+- Model time series as long format: `(subject, metric, timestamp) → value`. The
+  primary key supplies idempotency for free.
+- A side benefit: **unknown fields land without a schema change**. The importer
+  does not break when the external service starts reporting something new.
+- Give the import command a `--dry-run` reporting how many rows are new versus
+  already held. Implement it by doing the work in a transaction and rolling back
+  — an exact count rather than an estimate.
+
 ## Config files
 
 ### Read hand-written JSON/TOML with strict decoding
@@ -144,6 +163,43 @@ together they postpone discovery until run time.
   are all fixed at once; per-surface views let the check be forgotten again.
 - Cost is O(files) stats per invocation. Missing or unmounted paths fail
   immediately with ENOENT, so the degenerate case is the fast one.
+
+### On macOS, search both Application Support and ~/.config for the config file
+
+**Symptom:** a user put their credentials in `~/.config/<app>/config.toml` while
+the app looked only in `~/Library/Application Support/<app>/`, and it went on
+reporting "no credentials".
+
+**Why:** two conventions coexist on macOS, and CLI users reach for `~/.config`
+there as everywhere else. **A config file that exists and is silently never read
+is far worse than one reported missing** — its existence convinces the user the
+setup is done.
+
+**How to apply:**
+- Read from a search list in priority order: `XDG_CONFIG_HOME/<app>` →
+  `~/.config/<app>` → `~/Library/Application Support/<app>`; first hit wins.
+- The canonical *write* location can stay Application Support. Only the config
+  path forks — keep the data directory (database and so on) single.
+- **Have the diagnostic command print which file it read, and list the paths it
+  searched when there is none.** That is the one thing that makes this class of
+  accident diagnosable at a glance.
+- Tests must override **both** `HOME` and `XDG_CONFIG_HOME`; overriding one lets
+  the developer's own real config leak in and break the test.
+
+### A persisted verdict needs a path to be re-decided
+
+**Symptom:** whether a device was in scope was probed once and stored as a
+boolean. Correcting the classification logic **never reached the records already
+classified**.
+
+**Why:** it is the same failure as neglecting to migrate persisted settings, but
+harder to notice, because the stored value was derived by us rather than entered
+by the user — so fixing the logic feels like fixing the data.
+
+**How to apply:** when persisting a derived verdict, always ship an explicit
+re-decide command or control (`--reclassify` and the like), and document it as
+the only migration path. If re-deciding is expensive (API calls, say), keep it
+off the default path and make it deliberate.
 
 ## OAuth
 

@@ -255,3 +255,39 @@ Without a LaunchAgent registration, `KeepAlive` cannot restart it either.
   `make build` and recovers via the LaunchAgent's `KeepAlive`.
 - Around any build work, check the daemon's status (last-sample time). A long gap
   may be your own build's doing.
+
+## For a package with a bundled payload, size gives the lie away first
+
+**Symptom:** a release that bundles a CLI binary inside a GUI app was built with
+`make package` straight after `make clean`. The bundling step was **silently
+skipped and the result still passed notarization**. The zip was 1.2 MB where a
+correct one is about 10 MB, which is how pre-upload verification caught it.
+
+**Why:** the bundling step guarded on `[ -x "$CLI_BIN" ]` and merely warned when
+the file was absent. `make clean` had removed the plainly-named binary, and the
+`build-all` target that `package` depends on only produces
+platform-suffixed names. Neither signing nor notarization detects missing
+*contents*.
+
+**How to apply:**
+- **Always extract the archive and inspect it before uploading**: the payload is
+  present, the executable answers `--version`, and the signature checks out
+  (`spctl --assess`) — on the real artifact, not the build tree.
+- Payload size is the cheapest sanity signal there is. An order-of-magnitude
+  change deserves suspicion.
+- If a dependency step "warns and continues" when something is missing, make it
+  **fail on the release path**. Convenience during development becomes a
+  shipping accident unchanged.
+
+## Pin the version string explicitly when building something to bundle
+
+**Symptom:** a single Makefile line changed after tagging, and `git describe`
+started returning `v0.1.0-1-g<sha>`, so the **bundled binary reported a
+non-release version**.
+
+**Why:** with a version derived from `git describe --tags`, any commit after the
+tag changes the string — even one that touches nothing compiled.
+
+**How to apply:** build bundled payloads with the version stated outright
+(`make build VERSION=vX.Y.Z`), after confirming with
+`git diff --stat <tag>..HEAD` that nothing compiled actually changed.

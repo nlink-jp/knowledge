@@ -145,6 +145,26 @@ reproduction.
 - **Add a regression test**: fail if the output contains home-directory or
   volume path prefixes. Guard with tests, not good intentions.
 
+### When the credential is more powerful than the use, put the restraint in the client
+
+**Symptom:** a device API's token had **no scope mechanism** — a read-only use
+still received the power to **actuate** every device on the account.
+
+**Why:** that the provider cannot narrow the grant is the provider's problem; it
+is not a reason to implement the full capability. A write path that does not
+exist cannot be triggered by a bug or a mistake.
+
+**How to apply:**
+- **Do not implement** the operations the use does not need. Not disabled behind
+  a flag — absent. Make "read-only" a property of the structure rather than of a
+  policy.
+- Say in the README and the design document *why* it is not implemented, so
+  nobody later adds it because it would be handy.
+- A GUI that launches a bundled binary needs the same care in **how that binary
+  is resolved**: make the signed bundled copy the trust anchor and confine any
+  environment-variable override to debug builds. If the binary being launched
+  holds a powerful credential, substitutability is a privilege-escalation path.
+
 ## Detection-logic quality
 
 ### SPF/DMARC fail alone as a suspicion signal breeds false positives

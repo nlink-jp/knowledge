@@ -75,3 +75,44 @@ are all verifiable with fixed JSON-RPC.
   separate "use it as a client yourself" lap is still required (see above).
 - Native-library stdout contamination does not reproduce in stub builds — E2E
   against the real engine (see mcp-server-design.md).
+
+## Green tests prove nothing when the expectation itself is wrong
+
+**Symptom:** code mapping an external API's status values onto UI behaviour had
+unit tests, all passing. The feature still shipped in a state where nobody could
+use it, and only a person touching the real build found out.
+
+**Why:** the tests faithfully verified *the mapping I believed was correct*. The
+mapping was wrong, so the tests only pinned the mistake in place. What a given
+status value from an external API actually means is **an assumption, and an
+assumption cannot be tested against itself**.
+
+**How to apply:**
+- When mapping an external API's states onto UI behaviour, do not treat those
+  tests as confirmation of the specification. A misread doc passes them.
+- Be especially wary of branches that **remove a capability** ("disable the
+  control in this state"): get one wrong and the whole feature becomes
+  unreachable. List them explicitly as things to check on the real build.
+- Enumerate what only a real device can settle **while planning**, and say so.
+  Discovering it later is worse, because a wall of green tests will have been
+  informing the judgement in the meantime.
+
+## Verify a GUI on the assumption that what you can see and what actually runs are independent
+
+**Symptom:** a menu-bar app's bar label rendered correctly, which was taken as
+evidence the app worked. The panel opened by clicking it had in fact been empty
+since the first version.
+
+**Why:** the bar label and the panel are separate view hierarchies; either can be
+broken while the other is fine. The panel is also awkward to open
+programmatically (accessibility prompts, clicks landing on the frontmost
+process), so it falls out of automated checking easily.
+
+**How to apply:**
+- "The label is showing" is not a verification. **Count each surface of the UI as
+  its own thing to check.**
+- Where a surface cannot be opened automatically, **write into the plan that a
+  person has to look at it**. Left vague, an unchecked surface gets treated as
+  checked.
+- Behaviour that only appears over hours — a frozen timer, a counter that should
+  reset at midnight — is verified from the stored data after leaving it running.
