@@ -208,6 +208,38 @@ rewritten, then merged.
 
 ## ADR & release granularity
 
+### Decide an ADR's log by what it binds — and force the question at write time
+
+**Symptom:** Nine of an organization ADR log's first sixteen records were
+project-scoped (one app's internals; one skill's design each) and had to be
+moved out together later, each spent number leaving a redirect behind.
+
+**Why:** At writing time the org log was the only codified location — the
+convention said where organization-wide decisions go and never named a place
+for project decisions, so the sole documented log became the default sink.
+ADR format is learned by imitating existing records, so the first
+misplacement became the reference shape for the next eight. A prose rule
+added afterwards still mis-sorted hybrid records (retire a tool + design its
+successor): a "retirement goes to the org log" clause reads as keeping a
+record whose substance is the successor's design.
+
+**How to apply:**
+- Codify both logs first. An unstated alternative never beats a documented
+  default.
+- Decide by what the record binds: constrains other projects → org log /
+  constrains one project → that project's log / hybrid retire-and-design →
+  design payload in the successor's log, the retirement fact staying in the
+  org index row and redirect.
+- Put a mandatory **Binds** field (organization / project name) in the ADR
+  header template: imitation then copies the which-log question along with
+  the format, and a value contradicting its log is visible at a glance in
+  review.
+- Write the real misplacement cases next to the rule as counterexamples.
+  Abstract criteria failed twice; worked examples are what get read.
+- When a record moves: the number stays spent and a redirect stays behind
+  (published release notes and changelogs link to it); living references are
+  re-pointed to the new location directly.
+
 ### Bundle small independent UX polish into one wide-scope ADR
 
 **Symptom:** Five small improvements from live feedback (each <100 lines,

@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+- 1 entry from nine ADRs that had to move out of an organization log:
+  - **development-process** (1): which log an ADR belongs in is decided by
+    what the record binds — and the question has to be forced at writing time
+    by a mandatory `Binds` header field, because format and placement are
+    learned by imitating existing records, an unstated alternative never
+    beats a documented default, and prose criteria mis-sorted hybrid
+    retire-and-design records twice.
+
 - 2 entries from measuring a platform constraint instead of working around it:
   - **macos-gui** (1): a notification posted with `trigger: nil` is presented
     by the posting process and withdrawn when it exits — which is why apps
