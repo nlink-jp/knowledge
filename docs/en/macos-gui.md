@@ -340,6 +340,40 @@ does not invalidate a view observing only the former.
 as `@ObservedObject`. Places outside the injected environment — a `MenuBarExtra`
 label, for instance — are the easiest to miss.
 
+### A process that "looks closed" but is still running must be reclaimable
+
+**Symptom:** after a Finder-launched one-shot job, the app was kept alive a few
+seconds so its completion banner would not be cut short, while dropping out of
+the Dock (`.accessory`). Double-clicking a second file during those seconds let
+**the previous job's timer kill the new one.** Measured damage:
+- a 700 MB extraction terminated mid-write, leaving a **truncated 543 MB file
+  with no error** — indistinguishable from success
+- an encrypted archive's password prompt vanished **~2.8 s into typing**
+- clicking the Dock icon to keep the app took the window away ~2 s later
+
+**Why:** a deferred `terminate` is a decision about a future you cannot see yet,
+but `DispatchQueue.main.asyncAfter { NSApp.terminate(nil) }` has **no handle and
+no re-check**. A process hidden from the Dock still **receives open events**, so
+LaunchServices happily routes new work into one that is already under sentence.
+And with no path back from `.accessory`, it keeps pretending to be gone after
+being handed something to do.
+
+**How to apply:**
+- Give a deferred quit **(a) a cancellable handle** (`DispatchWorkItem`),
+  cancelled by *every* path that gives the process new purpose — open events,
+  reopen (Dock click), opening settings, any user interaction.
+- **(b) Decide again when it fires.** The schedule-time answer describes a world
+  seconds out of date. Extract the rule into a **pure function** so both
+  evaluations share it and can be tested (zip-porter's `OneShotQuit.decide`).
+- **"Busy" outranks everything else**, including the previous job's remaining
+  banner time — that banner says nothing about the job running now.
+- Requests arriving while busy belong in a **queue, not a beep**. On a Finder
+  launch path that shows no window, a beep is inaudible and invisible: the work
+  simply disappears.
+- Check the opposite direction too: after the fix, confirm the app **still quits
+  once the last job is done**. Trading a premature kill for a leaked process is
+  no improvement.
+
 ### Standard editing shortcuts do not exist unless the main menu carries them
 
 **Symptom:** **⌘V does nothing** in a password field, and ⌘W will not close the

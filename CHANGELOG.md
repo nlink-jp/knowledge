@@ -2,6 +2,16 @@
 
 ## 2026-08-03
 
+- 1 entry from a timer that outlived the state it was scheduled for:
+  - **macos-gui** (1): a process kept alive after "finishing" (to let a
+    notification banner play out) still receives open events, so an
+    uncancellable deferred `terminate` kills whatever arrived in the
+    meantime — a measured case truncated a 700 MB extraction to 543 MB with
+    no error, and killed a password prompt mid-keystroke. Covers the two
+    requirements (cancellable handle, re-decision at fire time), why the
+    rule belongs in a pure function, and the reverse check that the app
+    still quits at all.
+
 - 1 entry from two keyboard shortcuts that were never wired in a shipped app:
   - **macos-gui** (1): standard editing shortcuts (⌘X/⌘C/⌘V/⌘A/⌘Z) and ⌘W
     reach the first responder only through main-menu key equivalents, so a
