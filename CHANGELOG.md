@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+- 1 entry from two keyboard shortcuts that were never wired in a shipped app:
+  - **macos-gui** (1): standard editing shortcuts (⌘X/⌘C/⌘V/⌘A/⌘Z) and ⌘W
+    reach the first responder only through main-menu key equivalents, so a
+    hand-built menu without an Edit menu makes ⌘V in a text field do nothing,
+    with no code to breakpoint. Includes the reason the mistake survives
+    review — the menu bar draws the top-level item's own title, and the app
+    and Window menus are special-cased into appearing without one.
+
 - 1 entry from a launch crash that reached two shipped macOS apps:
   - **macos-gui** (1): never use SwiftPM's `Bundle.module` inside an `.app` —
     it looks beside the bundle root, not in `Contents/Resources`, and falls

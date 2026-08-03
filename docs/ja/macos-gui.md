@@ -297,6 +297,33 @@ id にすると、SwiftUI が別々の行を同一の行として扱う。保存
 **適用方法:** そのビューが実際に依存している**両方**を `@ObservedObject` で持つ。
 環境に注入していない場所（`MenuBarExtra` の label 等）は特に漏れやすい。
 
+### 標準の編集ショートカットはメインメニューに項目が無いと存在しない
+
+**事象:** パスワード入力欄で **⌘V が効かない**。⌘W でウィンドウも閉じられない。
+コード上に該当処理が無いので、ブレークポイントを置く先すら無い。
+
+**なぜ:** macOS は ⌘X/⌘C/⌘V/⌘A/⌘Z や ⌘W を、**メインメニューの key equivalent を
+経由して**ファーストレスポンダに配送する。テキストフィールド自身がキーを解釈するわけ
+ではない。メニューを自前で `NSMenu` から組む（xib を使わない）アプリで Edit メニューを
+省くと、`paste:` を持つ項目が存在せず、キーストロークはどこにも届かない。App メニューと
+Window メニューだけ作って「動いている」ように見えるのが罠。
+
+**適用方法:**
+- 自前でメニューを組んだら **Edit（Undo/Redo/Cut/Copy/Paste/Delete/Select All）と
+  File > Close を必ず入れる**。入力欄が 1 つでもあるなら Edit は必須。
+- **メニューバーが描くのはトップレベル `NSMenuItem` 自身の title であり、submenu の
+  title ではない**。`NSMenuItem()` に submenu を挿しただけでは、中身が完成していても
+  **メニューごと不可視**になる。App メニュー（プロセス名）と Window メニュー
+  （`NSApp.windowsMenu`）は AppKit が特別扱いするため無題でも出てしまい、これが
+  「無題でよい」という誤解を生む。
+- メニュー構築関数から `NSApp` へのアクセスを追い出す（`build()` と
+  `install(into:)` に分ける）。**XCTest 環境では `NSApp` は nil** で、触ると
+  クラッシュする。分離すればメニューをテストで検査でき、key equivalent の結線を
+  自動テストで固定できる。
+- 検証は実機のメニューバーで。System Events の
+  `value of attribute "AXMenuItemCmdChar"` で結線を、セキュアフィールドへの
+  ⌘V 後の `length of (value of field)` で実際の貼り付けを確認できる。
+
 ## Wails（Go + WebView）
 
 ### window.alert() は確実に表示されない

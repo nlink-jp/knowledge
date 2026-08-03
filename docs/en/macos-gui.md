@@ -340,6 +340,36 @@ does not invalidate a view observing only the former.
 as `@ObservedObject`. Places outside the injected environment — a `MenuBarExtra`
 label, for instance — are the easiest to miss.
 
+### Standard editing shortcuts do not exist unless the main menu carries them
+
+**Symptom:** **⌘V does nothing** in a password field, and ⌘W will not close the
+window. There is no code implementing either, so there is nowhere to put a
+breakpoint.
+
+**Why:** macOS delivers ⌘X/⌘C/⌘V/⌘A/⌘Z and ⌘W to the first responder **through
+main-menu key equivalents**. The text field does not interpret the keystroke on
+its own. An app that builds its `NSMenu` in code (no xib) and omits the Edit menu
+has no item carrying `paste:`, so the keystroke reaches nothing. Having only an
+app menu and a Window menu looks complete, which is what hides it.
+
+**How to apply:**
+- When you build the menu yourself, always include **Edit (Undo/Redo/Cut/Copy/
+  Paste/Delete/Select All) and File > Close**. One text field is enough to make
+  the Edit menu mandatory.
+- **The menu bar draws the top-level `NSMenuItem`'s own title, not its submenu's.**
+  An `NSMenuItem()` with a submenu attached is an **invisible menu** however
+  complete its contents. The app and Window menus get away with being untitled
+  only because AppKit special-cases them (process name; `NSApp.windowsMenu`) —
+  which is exactly what teaches you the wrong lesson.
+- Keep `NSApp` access out of the menu-building function (split `build()` from
+  `install(into:)`). **`NSApp` is nil under XCTest** and touching it traps.
+  Separated, the menu can be inspected in tests and the key-equivalent bindings
+  pinned automatically.
+- Verify against the real menu bar: System Events'
+  `value of attribute "AXMenuItemCmdChar"` confirms the binding, and the
+  `length of (value of field)` after ⌘V confirms a secure field actually
+  received the paste.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear
