@@ -2,6 +2,20 @@
 
 ## 2026-08-03
 
+- 2 entries from measuring a platform constraint instead of working around it:
+  - **macos-gui** (1): a notification posted with `trigger: nil` is presented
+    by the posting process and withdrawn when it exits — which is why apps
+    linger after finishing. One scheduled with a
+    `UNTimeIntervalNotificationTrigger` belongs to `notificationd` and
+    outlives the process: measured, the banner was still on screen at t=5.0 s
+    with the app gone since t=0.57 s. Removes the wind-down that the earlier
+    deferred-`terminate` entry exists to make safe.
+  - **macos-gui** (1): a Finder multi-selection arrives as one open event, and
+    macOS replaces each banner with the next from the same app, so reporting
+    per item leaves only the last one readable. One request means one progress
+    bar, one question, one report, one reveal — plus the rules for partial
+    failure and truncated lists.
+
 - 1 entry from a timer that outlived the state it was scheduled for:
   - **macos-gui** (1): a process kept alive after "finishing" (to let a
     notification banner play out) still receives open events, so an

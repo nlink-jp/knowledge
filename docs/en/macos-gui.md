@@ -373,6 +373,79 @@ being handed something to do.
 - Check the opposite direction too: after the fix, confirm the app **still quits
   once the last job is done**. Trading a premature kill for a leaked process is
   no improvement.
+- **First question whether the app needs to linger at all.** As the next entry
+  shows, changing how the notification is posted removed this wind-down
+  entirely — and with it, the whole class of bug above became unreachable.
+
+### Do not keep a process alive for a notification — schedule it with a trigger
+
+**Symptom:** A one-shot app that quits right after posting its completion banner
+finds the **banner vanishes immediately**. The natural fix is to keep the
+process alive while the banner is up (demote to `.accessory`, `terminate` a few
+seconds later) — which is exactly the breeding ground for the previous entry.
+
+**Why:** A notification posted to `UNUserNotificationCenter` with `trigger: nil`
+is presented through `willPresent` and **belongs to the posting process**; it
+dies with it. Attach a `UNTimeIntervalNotificationTrigger` and presentation
+belongs to `notificationd` instead. Measured on a signed binary with
+timestamped screenshots:
+
+| Variant | Process alive | Banner |
+|---------|---------------|--------|
+| Immediate post, quit at presentation | 0.16 → 1.17 s | **absent at t=1.5 s** |
+| trigger(0.5 s), quit once `add` returns | 0.16 → **0.57 s** | visible at t=1.5 s and t=5.0 s |
+| trigger(0.1 s), same | 0.12 → **0.47 s** | visible at t=2.0 s |
+
+The constraint was never "notifications"; it was *immediate presentation*. The
+wind-down was not merely unnecessary but harmful — every failure in the previous
+entry happened inside those seconds.
+
+**How to apply:**
+- Schedule completion notifications with
+  `UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)` and
+  **terminate as soon as the `add` completion handler returns**. There is
+  nothing to wait for, and 0.1 s is imperceptible.
+- What you must wait for is `add` *succeeding*, not presentation: dying before
+  the XPC round trip means the notification is never registered. Resolve
+  authorization inside the same chain rather than from a cached flag.
+- Keep the `willPresent` delegate for the resident case — without it, no banner
+  appears while your own app is frontmost.
+- Verify with the real binary and timestamped `screencapture`. An entry sitting
+  in Notification Center does not tell you whether a banner was on screen.
+- Side effect: clicking the banner after the app has exited **relaunches it**.
+  Give the click a meaning — reveal the result in Finder from `didReceive`.
+- Generalization: **before hardening a workaround, measure whether the
+  constraint it works around is real.** Another shape of the same API may
+  remove it outright.
+
+### Report one result per request, not per item
+
+**Symptom:** Opening N files selected together in Finder processed them one at a
+time and announced each one. **macOS replaces a banner with the next one from
+the same app**, so with three items the user can read exactly one — the rest
+pile up in Notification Center. Add to that N Finder reveals, N OK clicks if
+results are shown as dialogs, N destination panels if the destination is "ask
+every time", and N password prompts.
+
+**Why:** A Finder multi-selection arrives as a **single `application(_:open:)`
+carrying every URL** (measured). Letting the internal "one file, one job"
+structure become the reporting unit turns one act of intent into N
+interruptions.
+
+**How to apply:**
+- One request (one open event, one drop) means **one progress bar, one
+  question, one completion report, one Finder reveal**. Weight the bar by item
+  size so the denominator covers the whole request, and label it "2 of 3 —
+  foo.zip".
+- **One failure must not stop the rest.** Finish the others and report "2 of 3"
+  with the failures named. Any result containing a failure goes to a dialog, not
+  a banner — a banner is not a place to report a failure.
+- Reuse answers across the request: ask for a destination once; try the password
+  already entered on the next item before prompting again.
+- Put the aggregation in a **pure value type**. Which outcomes may be announced
+  by a banner and which must hold the user is precisely the rule worth testing.
+- If a list is truncated, **say so** ("…and N more"). A silently clipped list
+  reads as a complete one.
 
 ### Standard editing shortcuts do not exist unless the main menu carries them
 
