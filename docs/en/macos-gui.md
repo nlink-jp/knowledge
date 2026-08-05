@@ -327,6 +327,30 @@ never arrives.
   pane that undoes it — never show an on switch that delivers nothing.
 - The same holds for location, calendar and other OS permissions.
 
+### Without a UNUserNotificationCenterDelegate, no banner appears while the app is frontmost
+
+**Symptom:** notifications **arrive in Notification Center** but no banner is
+ever shown. Changing the style from "Banners" to "Alerts" in System Settings
+makes them appear. Focus modes turn out to be irrelevant.
+
+**Why:** unless a `UNUserNotificationCenterDelegate` answers `willPresent`,
+macOS files a **foreground** notification silently into Notification Center and
+displays nothing. A menu-bar app feels like it is never frontmost, but it is
+whenever one of its own windows has focus — including **at the exact moment a
+"send a test" button is pressed**. So the case you most want to verify is the
+one that most reliably shows nothing.
+
+**How to apply:**
+- Implement the delegate and return `[.banner, .list]` from `willPresent`.
+  Returning `.list` as well keeps a notification missed while away from the desk
+  in Notification Center.
+- **Install it before anything is delivered**, and hold it for the app's
+  lifetime: `UNUserNotificationCenter.delegate` is a weak reference, so a
+  delegate kept in a local goes away immediately and the symptom returns.
+- Shortcut from the symptom: "reaches Notification Center, shows no banner" is
+  almost always a missing delegate. Check that before suspecting permissions or
+  focus modes.
+
 ### A change in a second ObservableObject does not reach views that do not observe it
 
 **Symptom:** a settings checkbox updates instantly while the **menu-bar display
