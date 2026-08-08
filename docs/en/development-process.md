@@ -292,6 +292,37 @@ with the translation below. Specify evaluation criteria (severity etc.) as
 tables with examples. Common boilerplate: full text at first occurrence,
 elision afterwards.
 
+### A ranking document must be re-checked whenever the fleet it ranks grows
+
+**Symptom:** A tactics document ranked our MCP servers by how observable a
+query is, topping out at "the target sees a visit from urlscan.io". Two
+servers shipped afterwards, one of which drives our own Chrome — contact from
+our own IP, strictly more exposing than the stated ceiling. The document was
+not wrong about any row it contained; it was wrong about where the ladder
+ended, which is the part an agent reads as "nothing is worse than this".
+
+**Why:** Catalog drift (a missing row) is visible on any audit and degrades
+gracefully. Ranking drift does not: a scale whose top rung sits below the real
+maximum actively teaches a false ceiling, and the omitted step is precisely
+the one taken without deliberation. The same review found the companion
+failure — the document's blanket claim that *every* server ships a `get_usage`
+tool, against three that ship none. A universal quantifier in prose is a
+promise that the next addition can silently break.
+
+**How to apply:**
+- When adding a component to a fleet that some document ranks, re-derive the
+  ranking's endpoints, not just its membership. Ask "is anything now above the
+  top, or below the bottom?" before adding the row.
+- Scope such a document by **capability, not by purpose**. A browser
+  automation server belongs in an OSINT tactics book because it *can* contact
+  the target, whatever it was built for; excluding it by category leaves the
+  most exposing tool undescribed.
+- Prefer "most X do Y; the exceptions are A, B, C" to "every X does Y".
+  Naming exceptions costs one sentence and converts a future silent breakage
+  into a future one-line edit.
+- Amend the originating ADR by reference rather than rewriting it, so the
+  superseded ranking and its reasoning remain readable.
+
 ### Attribute even "inspired-by" sources
 
 **Symptom:** Even when code is informed by (not ported from) another project,

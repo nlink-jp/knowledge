@@ -2,6 +2,21 @@
 
 ## 2026-08-08
 
+- 1 entry from a tactics document whose escalation ladder had been outgrown by
+  the fleet it ranks:
+  - **development-process** (1): a ranking document must have its **endpoints**
+    re-derived whenever the group it ranks grows, not just its membership. An
+    MCP tactics book ranked servers by how observable a query is and named
+    "the target sees a visit from urlscan.io" the ceiling; a browser
+    automation server shipped afterwards contacts the target from our own IP,
+    strictly above it. Every existing row was still correct — the false part
+    was the top, which reads as "nothing is worse than this", and the omitted
+    rung is the one taken without deliberation. Two corollaries: scope such a
+    document by **capability, not purpose** (the browser server belongs in an
+    OSINT book because it *can* touch the target), and prefer "most X do Y;
+    exceptions are A, B, C" to "every X does Y" — the same review found a
+    blanket "every server ships `get_usage`" against three that ship none.
+
 - 3 entries from a menu-bar app whose panel knew its state and never said it:
   - **macos-gui** (2): a framework error type's full case table has to be
     measured before any error UI is designed — `TranslationError` returns
