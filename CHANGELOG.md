@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-09
+
+- 1 entry from a free-space budget check that refused every extraction onto a
+  file server (ZIP utility, 2026-08):
+  - **config-and-io** (1): `volumeAvailableCapacityForImportantUsage` answers
+    only for local APFS volumes and returns **0, not nil**, on network mounts
+    (SMB/NFS) — a space check that takes it at face value reads "0 KB free"
+    against a server with terabytes available. Accept the key only when
+    positive, fall back to the statfs-backed `volumeAvailableCapacity`, and
+    keep the refusal for genuinely full disks (statfs reports ~0 there too).
+
 ## 2026-08-08
 
 - 1 entry from a tactics document whose escalation ladder had been outgrown by

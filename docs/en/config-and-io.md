@@ -1,7 +1,7 @@
 # Config, Identifiers & CLI IO
 
-Config-file loading, identifier canonicalization, OAuth, and terminal IO. Each
-entry follows **symptom → why → how to apply**.
+Config-file loading, identifier canonicalization, the filesystem, OAuth, and
+terminal IO. Each entry follows **symptom → why → how to apply**.
 
 ---
 
@@ -200,6 +200,31 @@ by the user — so fixing the logic feels like fixing the data.
 re-decide command or control (`--reclassify` and the like), and document it as
 the only migration path. If re-deciding is expensive (API calls, say), keep it
 off the default path and make it deliberate.
+
+## Filesystem
+
+### Never read volume free space from volumeAvailableCapacityForImportantUsage alone
+
+**Symptom:** a macOS app that runs a pre-flight free-space budget check before
+extraction (ZIP-bomb defence) refused **every** extraction onto an SMB share
+with "insufficient space — required: 414 MB / free: 0 KB". The server had over
+3 TB free.
+
+**Why:** `volumeAvailableCapacityForImportantUsage` (the purgeable-aware
+"effective free space") only answers for local APFS volumes; on network mounts
+(SMB/NFS) it returns **0, not nil**. Because a value "came back", taking it at
+face value misreads 0 as a full disk. The statfs-backed
+`volumeAvailableCapacity` reports the real figure on network filesystems.
+
+**How to apply:**
+- Accept the important-usage key **only when it is positive**; treat 0 or
+  negative as "no answer" and fall back to `volumeAvailableCapacity`. When both
+  answer, take the larger (on local APFS that is the purgeable-aware one).
+- A genuinely full disk still refuses after the fallback — statfs reports ~0
+  there too, so the safety property survives.
+- When neither answers, skip the check rather than fabricating a figure.
+- Extract the decision into a pure function and unit-test it
+  (`(0, 3TB) → 3TB`, `(0, 0) → 0`, `(nil, nil) → nil`).
 
 ## OAuth
 

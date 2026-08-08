@@ -34,7 +34,7 @@ English version: [README.md](README.md)
 | [build-and-packaging](docs/ja/build-and-packaging.md) | CGO クロスビルド、.gitignore の罠、CI 不使用の判断理由 |
 | [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス |
 | [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント |
-| [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、保存先変更と reconcile、OAuth、ターミナル IO |
+| [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
 | [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法 |
