@@ -116,3 +116,48 @@ process), so it falls out of automated checking easily.
   checked.
 - Behaviour that only appears over hours — a frozen timer, a counter that should
   reset at midnight — is verified from the stored data after leaving it running.
+
+## Driving a menu-bar (LSUIElement) app for E2E: CGEvent + CGWindowList + per-window screencapture
+
+**Symptom:** a menu-bar-resident app's panel could not be opened from a test
+script, so its states went unverified (see the entry above). AppleScript does
+not help: `System Events`' `key code` never reaches a Carbon
+`RegisterEventHotKey` handler, and an `NSStatusItem` action does not fire from
+an AppleScript click.
+
+**Why:** the panel has no scriptable surface. What it does have is a global
+hotkey and a window, and both are reachable at a lower level.
+
+**How to apply:** three pieces, all from a small Swift helper the harness
+compiles once.
+
+- **Open it** — post the hotkey as a `CGEvent`
+  (`CGEvent(keyboardEventSource:virtualKey:keyDown:)` →
+  `post(tap: .cghidEventTap)`). Requires the posting process to be
+  Accessibility-trusted (`AXIsProcessTrusted()`).
+- **Confirm it opened** — `CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID)`,
+  filtered by owner name; read `kCGWindowIsOnscreen` and `kCGWindowNumber`.
+- **Look at it** — `screencapture -x -o -l <windowid>` captures that window
+  alone. Prefer this over a full-screen capture: it keeps unrelated windows —
+  other people's chat, mail, tickets — out of the image entirely.
+
+Read the hotkey out of the app's own `UserDefaults` before sending it, rather
+than assuming the shipped default. The stored value is typically
+`NSEvent.ModifierFlags` (shift `0x20000`, command `0x100000`, option `0x80000`),
+**not** a Carbon mask — sending the wrong chord looks exactly like a broken
+hotkey and invites a false bug report.
+
+**The failure mode to plan for:** synthetic keystrokes go to whatever holds key
+status, which is frequently *not* the app under test — a non-activating panel
+takes key status inconsistently, and macOS focus-stealing prevention can deny
+activation for ~30 s after launch. Every keystroke that misses lands in the
+user's frontmost application, typing stray text into it and setting off alert
+beeps. So: verify the window has key status before typing, keep the typed
+strings short and inert, and **stop the technique the moment it stops landing**
+instead of retrying — the retries are what reach the user's other windows. This
+harness is well suited to opening a window and photographing states; it is not a
+reliable text-input driver.
+
+**Complementary, not a replacement:** the states this cannot reach (an IME
+composition, a first-time model download) still need unit tests over pure
+functions plus a person looking once.

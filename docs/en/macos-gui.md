@@ -603,3 +603,72 @@ targets, .app bundling, and path resolution.
 **How to apply:** Check `os.Args[1]` in `main()` and route before `wails.Run()`.
 In CLI mode `wails.Run()` is never called, so there is zero GUI overhead. The app
 can spawn itself via `os.Executable()`.
+
+### Measure a framework error type's full case table before you design error UX
+
+**Symptom:** a translation app showed one line for every failure —
+`"Couldn't translate — the language model may still be downloading. "` plus
+`error.localizedDescription`. An unsupported language pair, an internal service
+fault and a genuinely missing model all rendered identically, and the
+"may still be downloading" half was wrong in most of them.
+
+**Why:** `localizedDescription` is written for the framework's own system
+dialogs, not for your UI. Measured against the macOS 26.5 SDK, `TranslationError`
+returns **`"Unable to Translate"` for seven of its eight cases** (only
+`nothingToTranslate` differs), and every case bridges to `NSError` domain
+`Translation.TranslationError` **code 1**. The distinguishing text lives in
+`failureReason`, which nothing was reading. Assuming `localizedDescription` is
+informative is the whole bug.
+
+**How to apply:**
+- Before designing any error surface, write a throwaway program that prints
+  `localizedDescription` / `failureReason` / `NSError.domain` / `.code` for
+  **every** case. Get the case list from the SDK interface first:
+  `$(xcrun --show-sdk-path)/System/Library/Frameworks/X.framework/Modules/*.swiftmodule/*.swiftinterface`.
+- A `struct` error type with a custom `~=` cannot be `switch`ed on shape. Verify
+  the operator actually discriminates with an **N×N match matrix** — an exact
+  diagonal, and unrelated errors matching nothing. (`TranslationError` passes.)
+- Put the matching in one `classify(Error) -> YourEnum`, the only place allowed
+  to touch the framework type, and make the message rendering a **pure function**
+  you can unit-test.
+- Phrase messages in three registers: the cause, the fix **naming the control
+  that applies it** (upstream strings cannot — they don't know your UI), and a
+  selectable technical tag for bug reports.
+- **Never drop the upstream text.** An unrecognised error must carry
+  `failureReason ?? localizedDescription` plus domain/code, or the original bug
+  returns for exactly the cases you failed to anticipate.
+- **Never hardcode a guessed cause as a prefix.** A fixed "it might be X" is
+  actively misleading in every case where it is not X.
+
+### A state where you deliberately do nothing must still be nameable in the UI
+
+**Symptom:** a translator was reported as "you can't tell whether it's working."
+It had accumulated five correct decisions to withhold a translation — an open IME
+composition, input too short to identify, a 600 ms debounce, source equal to
+target (echo), and a first-use model download — and **every one of them was
+silent**. A correct wait is indistinguishable from a hang.
+
+**Why:** the app already had `isTranslating: Bool`, and no view read it. Even
+reading it would not have fixed this: a boolean cannot say *why* nothing is
+happening, and "why" was the whole question.
+
+**How to apply:**
+- Model state as an `enum Phase`, not `isLoading: Bool`. If you need a boolean,
+  derive it from the phase (`isWorking: phase == .preparing || .translating`) so
+  there is no second source of truth to drift.
+- Map phase → presentation (symbol / text / spinner / tone) in a **pure function**
+  and unit-test it. One test asserting *every* case returns non-empty text stops
+  a future phase from being added silently.
+- **Any early `return` that quietly skips work sets a phase first.** That is the
+  reviewable rule: look for a state assignment above each early return.
+- Say the way out, not just the state: "Can't tell the language yet — type more,
+  or pin it on the left."
+- Render the status row **unconditionally** so the layout never jumps, and put
+  the spinner and the icon in one shared slot so text does not shift sideways.
+- **Do not spin for a wait.** A spinner claims progress; held and pending states
+  get a static icon.
+
+This is the same principle as showing the version string in the panel: for a
+menu-bar app with no menu, no About item and no log file, **what is on screen is
+the entire information channel** — for state, and for the technical cause of a
+failure.

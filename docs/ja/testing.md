@@ -100,3 +100,42 @@ chmod +a "$(id -un) deny writeextattr,file_inherit,directory_inherit" <dir>
   確認していない面を確認したつもりになる。
 - 長時間稼働でしか出ない挙動（タイマー凍結、日付跨ぎのリセット）は、
   一晩置いた後の実データで検証する。
+
+## メニューバー常駐（LSUIElement）アプリの E2E は CGEvent + CGWindowList + ウィンドウ単体 screencapture で駆動する
+
+**症状:** メニューバー常駐アプリのパネルをテストスクリプトから開けず、各状態が
+未検証のまま残った（上の項目を参照）。AppleScript は役に立たない —
+`System Events` の `key code` は Carbon `RegisterEventHotKey` のハンドラに届かず、
+`NSStatusItem` の action も AppleScript の click では発火しない。
+
+**なぜ:** パネルにはスクリプト可能な面が無い。しかしグローバルホットキーと
+ウィンドウは持っており、どちらもより低いレイヤから到達できる。
+
+**適用方法:** ハーネスが一度コンパイルする小さな Swift ヘルパで 3 点。
+
+- **開く** — ホットキーを `CGEvent` として post する
+  （`CGEvent(keyboardEventSource:virtualKey:keyDown:)` →
+  `post(tap: .cghidEventTap)`）。post する側のプロセスが Accessibility 許可済み
+  である必要がある（`AXIsProcessTrusted()`）。
+- **開いたか確認する** — `CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID)`
+  を owner 名で絞り、`kCGWindowIsOnscreen` と `kCGWindowNumber` を読む。
+- **見る** — `screencapture -x -o -l <windowid>` でそのウィンドウ単体を撮る。
+  全画面キャプチャより必ずこちらを使う。無関係なウィンドウ（他人とのチャット、
+  メール、チケット）が画像に一切入らない。
+
+ホットキーは既定値を仮定せず、**アプリ自身の `UserDefaults` から読んでから**送る。
+保存値はたいてい `NSEvent.ModifierFlags`（shift `0x20000` / command `0x100000` /
+option `0x80000`）であって **Carbon マスクではない**。違う組み合わせを送ると
+「ホットキーが壊れている」ようにしか見えず、誤った不具合報告を招く。
+
+**想定しておくべき失敗モード:** 合成キー入力は key status を持つウィンドウに
+届く。そしてそれは**テスト対象とは限らない** — non-activating panel は key status
+を安定して取らないし、macOS の focus-stealing 防止は起動後 ~30 秒 activation を
+拒否しうる。外れた打鍵はすべて**ユーザーの前面アプリに入り**、余計な文字列を
+打ち込み警告音を鳴らす。したがって、打つ前にウィンドウが key であることを確認し、
+送る文字列は短く無害なものにし、**入らなくなった時点でこの手法をやめる**こと。
+リトライこそがユーザーの他のウィンドウに届く。この方法は「ウィンドウを開いて
+状態を撮る」用途には向くが、**信頼できるテキスト入力ドライバではない**。
+
+**代替ではなく補完:** この方法で到達できない状態（IME 変換中、初回のモデル
+ダウンロードなど）は、純関数のユニットテストと、人が一度目視する工程が引き続き必要。

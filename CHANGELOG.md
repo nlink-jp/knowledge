@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-08
+
+- 3 entries from a menu-bar app whose panel knew its state and never said it:
+  - **macos-gui** (2): a framework error type's full case table has to be
+    measured before any error UI is designed — `TranslationError` returns
+    `"Unable to Translate"` for seven of its eight cases and bridges every one
+    to `NSError` code 1, so a shipped error line rendered an unsupported
+    language pair, an internal fault and a missing model identically, under a
+    hardcoded guess that was wrong in most of them; and a state in which the
+    app *deliberately* does nothing (IME composing, input too short to
+    identify, debounce armed) must still be nameable in the UI, which a
+    `Bool` cannot do — five such correct decisions had accumulated, all
+    silent, and the compound effect reads as a hang.
+  - **testing** (1): an LSUIElement menu-bar app can be driven for E2E with
+    `CGEvent` + `CGWindowList` + `screencapture -l <windowid>` where
+    AppleScript reaches neither the Carbon hotkey nor the status item — with
+    the caveat that missed synthetic keystrokes land in the user's frontmost
+    application, so it photographs states reliably and drives text input
+    unreliably.
+
 ## 2026-08-03
 
 - 1 entry from nine ADRs that had to move out of an organization log:
