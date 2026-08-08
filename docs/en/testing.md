@@ -195,3 +195,52 @@ reliable text-input driver.
 **Complementary, not a replacement:** the states this cannot reach (an IME
 composition, a first-time model download) still need unit tests over pure
 functions plus a person looking once.
+
+---
+
+## When two defences cover one failure, an observation explained by either is evidence for neither
+
+**What happened:** An MCP server guarded stdout in two layers — (1) replacing the
+runtime's log callbacks at the source, and (2) duplicating the real stdout for the
+transport and pointing fd 1 at stderr. A real end-to-end run showed stdout carrying
+only JSON and stderr carrying nothing, and that **nearly went down as proof both
+layers worked**.
+
+**Why:** stderr was empty because layer (1) filters info-level chatter, so **layer (1)
+alone explains the entire observation**. It says nothing about whether (2) ever ran.
+A broken (2) produces exactly the same result.
+
+**How to apply:** When you build defence in depth, **verify each layer
+independently**. Here that meant a unit test driving the mechanism directly:
+
+```go
+protocol, _ := claimStdout()
+protocol.Write([]byte("PROTOCOL\n"))   // must reach the transport
+os.Stdout.Write([]byte("STRAY\n"))     // must reach stderr
+// assert the protocol stream never sees "STRAY"
+```
+
+The general rule: **if observation O is explained by defence A or by defence B, then
+O is evidence for neither**. A green integration test does not prove each layer is
+alive.
+
+---
+
+## Verify the fixture before blaming the code
+
+**What happened:** Validating speaker diarization meant synthesising a conversation
+from two voices, `say -v Kyoko` and `say -v Otoya`. Half an hour went into
+suspecting the implementation for reporting one speaker where there should have been
+two. The cause was that **`Otoya` was not installed, and `say` fell back to the
+default voice without a word**. All four clips were the same speaker, so reporting
+one speaker had been correct all along.
+
+**Why:** Generative commands often answer a missing resource with a **plausible
+substitute** rather than an error — `say` voices, font selections, model names,
+locale identifiers. The output file is produced normally, so nothing hints that the
+fixture is wrong.
+
+**How to apply:** Confirm a synthesised fixture actually has the property you need,
+by some means other than the thing under test. At minimum, check the named resource
+exists first (`say -v '?'`, a font list, a model list). Reading a correct answer as a
+bug costs more than the bug would have.

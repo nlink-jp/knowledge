@@ -67,3 +67,35 @@ build-windows:
 - 善意の CI 化 PR（release workflow 追加等）には、動機を認めつつこの方針を説明して
   丁寧に close する。「lint/test だけの CI」も例外を作ると判断がブレるため、
   ローカルの `make check` で完結する方針を貫く。
+
+---
+
+## vendored 依存はローリングタグではなく不変のバージョンタグに固定する
+
+**事象:** sherpa-onnx を submodule 化して静的ビルドしようとしたところ、cmake が
+onnxruntime のアーカイブを取得する段で失敗した。ダウンロードした zip 自体は健全
+（`unzip -t` 通過）なのに、上流が pin している SHA256 と一致しない。submodule の HEAD は
+master 追従で、`xcframework` というタグの周辺を指していた。
+
+**なぜ:** `xcframework` は上流の**ローリングタグ**で、同一タグに対してアセットが随時
+再アップロードされる（GitHub のリリースページでアセットの日付が混在する）。コミットも
+「onnxruntime のバージョンを 1.27.1 に上げている最中」の状態だった。**可変な参照点に
+依存していた**のが原因で、上流の不具合ではない。`v1.13.4` という通常のバージョンタグでは
+ハッシュが一致した。
+
+**適用方法:** submodule は **`vX.Y.Z` 形式の不変タグ**に固定する。ローリングタグ
+（`latest`、`nightly`、`xcframework` のような機能名タグ）と master の任意コミットは、
+第三者が中身を差し替えられる点で再現性がない。
+
+上流が prebuilt アーカイブを configure 時に取りに行く構成では、**URL とハッシュを上流の
+定義から抽出して自前で取得し、ハッシュを検証してから配置する**のも有効
+（cmake 内蔵のダウンローダが環境によって失敗する問題も同時に回避できる）:
+
+```makefile
+# 括弧を含む正規表現を $(shell ...) に書くと make のパーサが壊れるので避ける
+ORT_URL  = $(shell grep -m1 'set.onnxruntime_URL' $(ORT_CMAKE) | cut -d'"' -f2)
+ORT_HASH = $(shell grep -m1 'set.onnxruntime_HASH' $(ORT_CMAKE) | cut -d'"' -f2 | cut -d= -f2)
+$(ORT_ZIP):
+	@curl -fsSL --retry 3 -o $@ "$(ORT_URL)"
+	@echo "$(ORT_HASH)  $@" | shasum -a 256 -c - || (rm -f $@; exit 1)
+```

@@ -71,3 +71,35 @@ proposed; local machine builds are maintained deliberately.
 - For well-meaning CI PRs (adding release workflows), acknowledge the motivation,
   explain this policy, and close politely. Even "lint/test-only CI" is declined —
   exceptions blur the policy; local `make check` covers it.
+
+---
+
+## Pin vendored dependencies to immutable version tags, never rolling ones
+
+**What happened:** Vendoring sherpa-onnx as a submodule for a static build failed at
+the point where cmake fetches the ONNX Runtime archive: the downloaded zip was intact
+(`unzip -t` passed) but its SHA256 did not match the hash upstream had pinned. The
+submodule HEAD tracked master, near a tag called `xcframework`.
+
+**Why:** `xcframework` is a **rolling tag** upstream re-uploads assets to (the GitHub
+release page shows assets with mixed dates), and the commit was mid-flight — "set
+onnxruntime version to 1.27.1". The problem was **depending on a mutable reference**,
+not an upstream defect. The ordinary version tag `v1.13.4` matched its hash exactly.
+
+**How to apply:** Pin submodules to **`vX.Y.Z`-style immutable tags**. Rolling tags
+(`latest`, `nightly`, feature-named tags like `xcframework`) and arbitrary master
+commits are not reproducible, because a third party can change what they point at.
+
+When upstream fetches a prebuilt archive during configure, it also helps to **extract
+the URL and hash from upstream's own definition, fetch it yourself, and verify the
+hash before putting it in place** — which sidesteps a cmake downloader that fails on
+some toolchains:
+
+```makefile
+# Avoid parentheses inside $(shell ...): a regex containing one breaks make's parser
+ORT_URL  = $(shell grep -m1 'set.onnxruntime_URL' $(ORT_CMAKE) | cut -d'"' -f2)
+ORT_HASH = $(shell grep -m1 'set.onnxruntime_HASH' $(ORT_CMAKE) | cut -d'"' -f2 | cut -d= -f2)
+$(ORT_ZIP):
+	@curl -fsSL --retry 3 -o $@ "$(ORT_URL)"
+	@echo "$(ORT_HASH)  $@" | shasum -a 256 -c - || (rm -f $@; exit 1)
+```
