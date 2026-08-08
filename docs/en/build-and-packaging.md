@@ -103,3 +103,49 @@ $(ORT_ZIP):
 	@curl -fsSL --retry 3 -o $@ "$(ORT_URL)"
 	@echo "$(ORT_HASH)  $@" | shasum -a 256 -c - || (rm -f $@; exit 1)
 ```
+
+---
+
+## "Pin the version" is sometimes not a tamper defence — inventory the exposure first
+
+**What happened:** Work began from the position "supply-chain attacks are
+worrying, so pin the submodule to a release tag". Taking an inventory showed
+**the place being pinned was not the problem, and the hole was somewhere else.**
+
+**Why:**
+- **A git submodule is already fixed by commit SHA, and a SHA is
+  content-addressed** — stronger against tampering than a tag name, which can be
+  moved. Moving to a release tag mainly buys **auditability** (matching against
+  advisories), not tamper resistance.
+- Worse, moving "back" to the release tag would have **dropped known security
+  fixes**: the unreleased commits past the last tag included a heap
+  out-of-bounds read and a stack-buffer-overflow, both on paths the tool feeds
+  untrusted input to.
+- The actual hole was that **models downloaded at runtime were verified by size
+  only**. Size is trivially preserved by anyone able to substitute the file, and
+  those files are then handed to a C++ parser.
+
+**How to apply:** Do not start from a policy. **List everything fetched and write
+down when it is fetched and what verifies it.**
+
+| Fetched | When | Verified by |
+|---|---|---|
+| submodule | build | git SHA (content-addressed) |
+| prebuilt archive | build | SHA256 |
+| **models / data** | **runtime** | **← the one usually missing** |
+
+Then:
+- Separate the goals: **immutability comes from the SHA, a release tag is for
+  auditability.** If a fix is unreleased, staying on the commit that has it is
+  the safer choice.
+- **Pin and verify a hash** for anything downloaded. Most sources publish one
+  (Hugging Face exposes `lfs.sha256` through its API).
+- **Close the "file already present, skip the download" fast path.** A size-only
+  check there is the most dangerous kind: it reads as verification.
+- Verify **before the rename**, so a failing file never exists at the real path.
+- Test the case that matters: **same length, different bytes.**
+
+**Side benefit:** collecting the hashes revealed that two catalog entries shipped
+**byte-identical files** — a third-party mirror redistributing the authors' build
+under a different version number — and that it was the *default*. **Take defaults
+from the upstream authors.** Hash collection doubles as an inventory.
