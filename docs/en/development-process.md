@@ -138,6 +138,45 @@ and there is no setting to keep in sync.**
   two is up. A display that believes in only one of them lies about being idle
   while the other is working.
 
+### Rendering across a boundary: guarantee the same content, not the same bytes
+
+**Symptom:** One renderer produced both the archived file and the delivered
+message, on the reasoning that a single implementation cannot disagree with
+itself. It could: the destination's dialect had no inline Markdown links, so
+the archived file carried working links and the delivered copy carried none.
+Adding a second dialect then broke the delivery splitter as well, because it
+had been locating article boundaries by matching `## ` and `### ` — markup the
+new dialect does not use — and started cutting items in half.
+
+**How to apply:**
+- A single renderer is worth keeping, but state the invariant as *the same
+  content*. Give it a flavour parameter and assert per flavour that nothing
+  load-bearing is lost (every URL present, every item whole).
+- Prefer forms no converter can damage over forms that look better. A bare URL
+  on its own line survives every dialect; an inline link is the first thing to
+  be dropped.
+- Never recover document structure by matching the markup a renderer chose.
+  Have the renderer expose the boundaries (a list of atomic blocks) and have
+  the consumer pack them. Anything else breaks on the next output format.
+
+### A generated report's caveats must say what they change for its reader
+
+**Symptom:** A digest's anomaly section ended with "this source's summary field
+is not a summary of the article" — accurate, internal, and leaving the reader
+with nothing to do about it. The section was mixing two audiences: notes for
+whoever maintains the configuration, and warnings for whoever reads the output.
+
+**How to apply:**
+- Split by the question *does this change a conclusion the reader might draw?*
+  What is missing, what was judged on thin evidence, what to verify elsewhere
+  is a caveat. How a source behaves is maintenance, and belongs in the run's
+  report to the operator.
+- Make the schema carry both halves — what happened, and what it changes — and
+  have the validator reject an entry without the second. An entry the reader
+  can do nothing about buries the ones they can.
+- Generated caveats need this too: "articles from X are missing and re-running
+  will not recover them" is usable; "gap detected for X" is not.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates

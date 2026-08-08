@@ -31,6 +31,40 @@ cannot reach. Each entry follows **symptom → why → how to apply**.
 - Never trust GUI error display until an error is deliberately triggered on the
   real app.
 
+## A pipeline that ends in delivery is not verified until something is delivered
+
+**Symptom:** A feed-digest tool passed 315 unit tests and a real-data run from
+collection through to a rendered file. Every defect below survived all of that
+and appeared only when a message was actually sent.
+
+- Inline `[title](url)` links reached the destination as **titles with no
+  address**. Its markup converter had no inline links and dropped the URL
+  rather than translating it — so a tool that selects what is worth reading
+  delivered everything except the way to read it.
+- The character limit was measured before a `*(continued)*` prefix was added to
+  every part after the first. The real message came out **seven characters
+  over**, and the destination rejects rather than truncates.
+- A run producing two parts after one that produced four left `msg-03` and
+  `msg-04` on disk. The sender walks the parts in order, so two current
+  messages would have been followed by two from the previous run.
+
+None of these is reachable from a fixture. The first needs the destination's
+own converter, the second needs multibyte text at real length (a Japanese
+digest is ~3 bytes to the character, so a byte-based limit is silently wrong in
+both directions), and the third needs the transition from more parts to fewer.
+
+**How to apply:**
+- Treat "rendered correctly" and "arrived correctly" as different claims, and
+  make the second one before release. Read the message *back* from the
+  destination — what is stored there is what the reader sees, and it is not
+  always what was sent.
+- Turn each defect into an invariant over the pipeline's own output rather than
+  a case: *every item's URL appears in the delivered text, for every
+  destination flavour*; *every part is within the limit, marker included*. An
+  invariant keeps holding when a new flavour or a new marker is added.
+- Clear previous output before writing a variable number of files. Anything
+  that consumes them by enumeration will otherwise consume the leftovers.
+
 ## Design external dependencies mockable from the start
 
 **Symptom:** A test launched a real browser. It was later retrofitted into an

@@ -31,7 +31,7 @@ Documents are consumed by reading `main` — there are no releases.
 | [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines |
 | [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety |
 | [build-and-packaging](docs/en/build-and-packaging.md) | CGO cross-builds, .gitignore traps, CI-less release rationale |
-| [testing](docs/en/testing.md) | Real-data E2E, mockability, failure injection, MCP test harnesses |
+| [testing](docs/en/testing.md) | Real-data E2E, delivery verification, mockability, failure injection, MCP test harnesses |
 | [containers-and-infra](docs/en/containers-and-infra.md) | Podman on macOS, DuckDB bind mounts, matplotlib fonts |
 | [config-and-io](docs/en/config-and-io.md) | Canonical identifiers, strict config decode, storage-dir reconcile, OAuth, terminal IO |
 | [shell-scripting](docs/en/shell-scripting.md) | BSD/GNU sed differences, zsh expansion quirks, Bash trap scope, substitution pitfalls |
