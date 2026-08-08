@@ -223,3 +223,42 @@ function directly, (3) `--force` had no confirmation.
 - **General rule**: never call filesystem-mutating command paths from tests
   without isolation. Mechanize "look at the target before deleting" and "never
   delete what you didn't create".
+
+---
+
+## When you add a safety check, look at what the existing state looks like
+
+**What happened:** Hash verification was added to model downloads and shipped.
+It applied only to **new** downloads — anything already installed stayed
+permanently unchecked. Worse, the listing command rendered an unverified model
+**exactly like** a verified one, so all a user had was a table that looked
+healthy:
+
+```
+NAME                  KIND           LANG  QUANT  SIZE      LICENSE
+kotoba-whisper-v2.2   transcription  ja    q5_0   512.9 MB  apache-2.0
+```
+
+Nothing there says that model had never been checked, or that a catalog rename
+had orphaned it. **A listing that cannot say what it has not checked reads as
+assurance.** It surfaced only because a user looked at the output and asked "is
+this actually fine?".
+
+**Why:** the check was designed for *operations about to happen*, and the
+migration of *existing state* was left out. Every test of the new path passed.
+
+**How to apply:** whenever you add verification, signing, or a permission check,
+ship three things together:
+
+1. **A way to check what is already there** (a `verify` command). It must not
+   force re-acquisition — if the file on disk is already correct, the tool has
+   to be able to recognise that. Telling a user to re-download gigabytes as the
+   remedy is a design failure.
+2. **Visibility of the check state.** If "verified" and "never checked" render
+   identically, the mechanism may as well not exist.
+3. **A way to recover things orphaned by a rename or migration.** If the
+   identifier (a hash) still matches, the artifact is the same one, and only the
+   registry needs fixing.
+
+Also: make the verification command **exit non-zero on failure**. A check that
+always exits 0 is not a gate.
