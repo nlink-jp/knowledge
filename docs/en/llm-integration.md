@@ -288,6 +288,14 @@ primary source; (2) check upstream even when pulling via a repackage; (3) code
 license and weight license can differ (the weight side governs). Use
 "needs review" only for genuinely undeclared cases.
 
+**The case pointing the other way:** two source-separation models were checked —
+one of them the official release of a well-known open-source project — and
+**both are MIT in code with not one word about the weights**. One carries only a
+note that you must obtain rights from copyright holders before using it on
+protected material. Applying the rule strictly meant **not adopting either.**
+**Undeclared is not a licence** — it is not grounds to err permissive, and not
+grounds to put something in a default catalog.
+
 ---
 
 ## Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work

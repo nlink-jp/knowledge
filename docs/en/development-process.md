@@ -406,3 +406,34 @@ nothing closes issues unless the commit body says so.
 in addition to the parenthesized reference. Multiple issues need a keyword per
 number (`Closes #15, closes #16` — GitHub ignores extra numbers after one
 Closes). Put it on the fix commit, not the release commit.
+
+### An unused feature of an already-linked runtime looks free — order it licence, measure, implement
+
+**Symptom:** A preprocessing capability turned out to be exposed by a runtime
+**already statically linked** into the project. No third dependency, one bridge,
+RTF 0.04 at runtime. It looked nearly free. It was **not adopted**.
+
+**Why:** two costs were invisible from the API surface.
+
+1. **The model licence.** Both candidate models left their weights' licence
+   undeclared, which rules them out of default distribution. **No amount of
+   engineering fixes that, so it should have been checked first.**
+2. **What it improved was not what it was wanted for.** It missed the motivating
+   target (18 → 14 where the true answer was a handful) and helped a different
+   failure mode nobody was aiming at. **"Did it help?" is the wrong question;
+   "what did it help?" is the one that decides adoption.**
+
+**How to apply:**
+
+- **Check the licence before the technical evaluation.** Done in the other
+  order, you end up discarding something you have already proven works, which is
+  a much harder call to make honestly.
+- Before writing a bridge, **build the upstream CLI example straight from the
+  submodule** and measure with that. For an already-linked runtime this is
+  usually one extra configure, and it also reaches parameters your own bindings
+  never exposed.
+- **Measure per target, not in aggregate.** Rolled into one verdict, "it did
+  nothing for the thing we wanted" disappears behind "it helped".
+- **Record rejections as ADRs too** — with the numbers and with what would have
+  to change to reopen it — so the next person to spot the same free-looking
+  feature does not repeat the investigation.

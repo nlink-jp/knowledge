@@ -14,6 +14,17 @@
     mechanism" for constraining vocabulary. That was written from the API surface
     rather than measurement — the same failure the entry itself warns about — and
     is now corrected in both languages.
+- 1 entry, plus a counter-example on an existing one, from evaluating a
+  preprocessing step that an already-linked runtime exposed for free (local
+  transcription tool, 2026-08):
+  - **development-process** (1): an unused feature of an already-linked runtime
+    looks free. Check the **model licence before the technical evaluation** —
+    done the other way round you discard something you have proven works — and
+    measure **per target**, because "it helped" hides "it did nothing for the
+    thing we wanted".
+  - **llm-integration**: the model-licence entry warned against classifying too
+    conservatively. Added the case pointing the other way — two models, MIT code,
+    **nothing at all said about the weights**. Undeclared is not a licence.
 
 - 1 entry from a free-space budget check that refused every extraction onto a
   file server (ZIP utility, 2026-08):
