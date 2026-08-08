@@ -287,3 +287,44 @@ legitimate commercial use.
 primary source; (2) check upstream even when pulling via a repackage; (3) code
 license and weight license can differ (the weight side governs). Use
 "needs review" only for genuinely undeclared cases.
+
+---
+
+## Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work
+
+**What happened:** a surname was consistently misheard on a Japanese drama
+recording. The obvious fix seemed to be putting the correct spelling in
+whisper's initial prompt (`--prompt`). **Four attempts all failed** — kanji,
+katakana, a comma-separated list, and the name used naturally in a sentence — and
+some of them broke lines that had been correct with no prompt at all.
+
+**Why:** the initial prompt conditions **register and context**, not the acoustic
+model's ear. A sound that context cannot rescue is not rescued. And because the
+prompt shifts the decoder's whole distribution, **a string unlike the speech in
+the audio (a bare noun list) destabilises the output.**
+
+**Measured** (two 60-second windows, kotoba-whisper-v2.0):
+
+| prompt | result |
+|---|---|
+| none | baseline |
+| noun list | **worse**. Injected a term that was not even in the prompt, and fragmented neighbouring lines |
+| sentence describing the scene | **better**. Recovered whole lines the unprompted run dropped, including a name it had lost |
+| sentence containing the correct name | the name is **still wrong**, in every spelling |
+
+**How to apply:**
+
+- Write the prompt as **one or two sentences describing the recording**, in the
+  register you expect to hear. Never a comma-separated list of names.
+- Plan for **proper nouns to be fixed by post-processing the transcript**, not by
+  the prompt. Do not design around the prompt solving it.
+- Before applying one to a long recording, **cut a few minutes and compare with
+  and without.** A bad prompt makes things worse, so it is not a free addition.
+- If you genuinely need to constrain vocabulary, whisper.cpp exposes
+  `whisper_full_params.grammar_rules` for grammar-constrained decoding. The
+  prompt is a bias; that is a constraint.
+
+**The larger lesson:** the documentation originally called this "cheap and
+effective". It was written from expectation, never measured, and turned out to be
+close to backwards. Adjectives about model behaviour — effective, fast, accurate
+— do not belong in docs without a measurement behind them.
