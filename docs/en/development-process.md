@@ -437,3 +437,8 @@ RTF 0.04 at runtime. It looked nearly free. It was **not adopted**.
 - **Record rejections as ADRs too** — with the numbers and with what would have
   to change to reopen it — so the next person to spot the same free-looking
   feature does not repeat the investigation.
+- **But keep rejections out of the CHANGELOG.** A changelog records what changed
+  *for users*, and a feature you did not add changed nothing for them. Listing
+  "will not be added" under "Changed" makes the file unreadable as what it is.
+  Decisions go in the ADR, contributor warnings in AGENTS.md; the changelog moves
+  only when behaviour or user-facing docs actually moved.
