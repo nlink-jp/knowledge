@@ -300,8 +300,8 @@ grounds to put something in a default catalog.
 
 ## Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work
 
-**What happened:** a surname was consistently misheard on a Japanese drama
-recording. The obvious fix seemed to be putting the correct spelling in
+**What happened:** a character's surname was consistently misheard as a different
+word on a Japanese recording. The obvious fix seemed to be putting it in
 whisper's initial prompt (`--prompt`). **Four attempts all failed** — kanji,
 katakana, a comma-separated list, and the name used naturally in a sentence — and
 some of them broke lines that had been correct with no prompt at all.
@@ -316,7 +316,7 @@ the audio (a bare noun list) destabilises the output.**
 | prompt | result |
 |---|---|
 | none | baseline |
-| noun list | **worse**. Injected a term that was not even in the prompt, and fragmented neighbouring lines |
+| noun list | **worse**. **Injected one of the prompt's own terms into an unrelated line**, and fragmented the lines around it |
 | sentence describing the scene | **better**. Recovered whole lines the unprompted run dropped, including a name it had lost |
 | sentence containing the correct name | the name is **still wrong**, in every spelling |
 
