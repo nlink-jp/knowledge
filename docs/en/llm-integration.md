@@ -320,11 +320,62 @@ the audio (a bare noun list) destabilises the output.**
   the prompt. Do not design around the prompt solving it.
 - Before applying one to a long recording, **cut a few minutes and compare with
   and without.** A bad prompt makes things worse, so it is not a free addition.
-- If you genuinely need to constrain vocabulary, whisper.cpp exposes
-  `whisper_full_params.grammar_rules` for grammar-constrained decoding. The
-  prompt is a bias; that is a constraint.
+- **Grammar-constrained decoding is not the escape hatch.** This entry originally
+  said that `grammar_rules` was "the mechanism" for constraining vocabulary. It
+  was measured later and **that was wrong**. See the next entry.
 
 **The larger lesson:** the documentation originally called this "cheap and
 effective". It was written from expectation, never measured, and turned out to be
 close to backwards. Adjectives about model behaviour — effective, fast, accurate
 — do not belong in docs without a measurement behind them.
+
+---
+
+## whisper.cpp's grammar-constrained decoding is not a vocabulary hint
+
+**Symptom:** after the initial prompt turned out not to fix proper nouns (above),
+`whisper_full_params.grammar_rules` — grammar-constrained decoding — was the
+obvious next move. Measured: **a permissive grammar with the correct name added
+as an alternative produces output byte-identical to no grammar at all**, on two
+different models.
+
+**Why:** the implementation only ever **subtracts**. There is a single line that
+takes the penalty off the logits of tokens the grammar *rejects*, and **nothing
+that lifts tokens the grammar allows**. A permissive grammar rejects nothing, so
+nothing happens. Three more properties compound it:
+
+- What it constrains is **not a lexicon but the shape of the entire 30-second
+  window**. `root` must accept the whole window's output.
+- **The penalty on the end-of-text token is commented out upstream.** The decoder
+  can escape a constraining grammar by **ending the segment early** instead of
+  satisfying it.
+- The grammar is re-initialised per 30-second window, so cross-window constraints
+  cannot be expressed.
+
+**Measured (50 seconds of real audio, beam size fixed across all arms, two models):**
+
+| grammar | output |
+|---|---|
+| none | baseline (name wrong) |
+| name + any character (permissive) | **byte-identical to no grammar** |
+| closed vocabulary of 7 words, name included | 50 seconds of dialogue collapsed to two sentences, and **the name never appeared** despite being in the vocabulary |
+| same, penalty at 1/10 | identical. Not a question of strength |
+| name forced as a prefix | emitted one character and stopped — the EOT escape, demonstrated |
+
+**How to apply:**
+
+- Grammar constraints are for **audio whose utterances are known to come from a
+  closed set** — voice commands, fixed read-back confirmations — pushed into that
+  set. Do not mix them into open-ended transcription as a vocabulary hint.
+- Fix proper nouns by **substituting after transcription**, and **record that the
+  substitution happened**. That is what lets a later reader tell a heard string
+  from an edited one — and when the consumer downstream is a model that cannot
+  hear, there is no other way to recover the distinction.
+- Do not locally re-enable something upstream deliberately disabled (the EOT
+  penalty). It breaks on every dependency update.
+
+**Methodology:** that an API *has* the parameter is no evidence it does what you
+expect. Coming straight off making that mistake with the prompt, this one was
+written only after **reading the upstream implementation first and measuring
+second**. Building the upstream CLI example from source is what makes parameters
+your own bindings do not expose measurable at all.

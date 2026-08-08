@@ -2,6 +2,19 @@
 
 ## 2026-08-09
 
+- 1 entry, plus a correction to yesterday's, from following up the escape hatch
+  that yesterday's entry recommended (local transcription tool, 2026-08):
+  - **llm-integration** (1): whisper.cpp's **grammar-constrained decoding is not
+    a vocabulary hint**. Its penalty only subtracts from tokens the grammar
+    *rejects* — nothing lifts what it allows — so a permissive grammar carrying
+    the wanted name gives output byte-identical to no grammar at all. A grammar
+    tight enough to bite collapses the transcript and still never emits the name.
+    Fix proper nouns after transcription, and record that you did.
+  - **Correction**: the initial-prompt entry pointed at `grammar_rules` as "the
+    mechanism" for constraining vocabulary. That was written from the API surface
+    rather than measurement — the same failure the entry itself warns about — and
+    is now corrected in both languages.
+
 - 1 entry from a free-space budget check that refused every extraction onto a
   file server (ZIP utility, 2026-08):
   - **config-and-io** (1): `volumeAvailableCapacityForImportantUsage` answers
