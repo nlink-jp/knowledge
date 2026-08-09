@@ -291,3 +291,30 @@ tag changes the string — even one that touches nothing compiled.
 **How to apply:** build bundled payloads with the version stated outright
 (`make build VERSION=vX.Y.Z`), after confirming with
 `git diff --stat <tag>..HEAD` that nothing compiled actually changed.
+
+## A status written at scaffold time is not updated by releasing
+
+**What happened:** three tools were found whose READMEs said "pre-release" or
+"not yet released". All three had shipped. One had **shipped four times, had a
+Homebrew formula, and printed that very `brew install` command two lines below
+the banner**. Another said "not yet released — once published:" and then gave a
+brew command that already worked.
+
+**Why:** the release checklist looks at the changelog, the version, the
+signature, and the archive. **Nobody looks at prose written at scaffold time.**
+And "not released yet" is *true* when written — it only becomes false at the
+first release, which is exactly the moment its author is thinking about something
+else. A related case: a catalog entry kept advertising a behaviour that a later
+measurement had disproved.
+
+**How to apply:**
+
+- **Do not state status in prose.** Whether something has shipped is already
+  conveyed by whether there are install instructions. Do not write a version
+  number either — `git tag` is the single source.
+- If you must state it, put it only in a file the **release procedure itself
+  touches** (the changelog). A banner at the top of a README is in nobody's
+  checklist.
+- **This is mechanically detectable**: "has at least one release AND the README
+  matches `not yet released|pre-release`" is a grep plus a `gh release list`, and
+  belongs in whatever org-wide check you already run.

@@ -2,6 +2,15 @@
 
 ## 2026-08-09
 
+- 1 entry from finding three repositories whose READMEs called shipped tools
+  unreleased (2026-08):
+  - **release-engineering** (1): a status written at scaffold time is **not
+    updated by releasing**. One README had shipped four times, carried a Homebrew
+    formula, and printed that `brew install` two lines under its own
+    "not released yet" banner. State status through the presence of install
+    instructions, not in prose; if you must write it, put it only where the
+    release procedure already goes. Mechanically detectable.
+
 - 1 entry, plus a correction to yesterday's, from following up the escape hatch
   that yesterday's entry recommended (local transcription tool, 2026-08):
   - **llm-integration** (1): whisper.cpp's **grammar-constrained decoding is not
