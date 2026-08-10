@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-10
+
+- 1 entry from building a threat-intel lookup CLI against a live API (2026-08):
+  - **testing** (1): a lookup that folds a *failed* source into an empty result
+    set reports "not found" for "could not ask". Caught only in a live run — one
+    endpoint returned 429 while another returned zero, and the tool printed a
+    clean verdict and exited 0. Mock tests cannot reach it, because the failure
+    exists only when one source fails and another succeeds. A negative answer is
+    the one nobody double-checks.
+
 ## 2026-08-09
 
 - 1 entry from finding three repositories whose READMEs called shipped tools

@@ -244,3 +244,33 @@ fixture is wrong.
 by some means other than the thing under test. At minimum, check the named resource
 exists first (`say -v '?'`, a font list, a model list). Reading a correct answer as a
 bug costs more than the bug would have.
+
+## "Not found" is only an answer when every source actually answered
+
+**What happened:** A lookup tool queries OTX under two indicator types, because
+upstream indexes a name under exactly one of `domain` and `hostname` and answers
+`200` either way. During a live run one type returned 429 while the other returned
+zero pulses, and the tool printed **"no community report names this indicator"
+and exited 0** — a clean bill of health manufactured out of a transient error.
+Every stubbed test passed; the defect only appeared against the real API.
+
+**Why:** "Nothing matched" and "we could not ask" are **identical in the data**
+and opposite in meaning. Any code that folds a failed source into an empty result
+set will report the second as the first, and a negative answer is the one nobody
+double-checks — a false positive gets scrutinised by whoever acts on it, while a
+false negative is filed and forgotten. Mock-based tests cannot catch this, because
+the failure only exists when one source fails and another succeeds.
+
+**How to apply:**
+
+- Carry an explicit `incomplete` flag alongside the results, and treat
+  "empty **and** incomplete" as a distinct state with its own name — not as a
+  boolean that a caller has to remember to check twice.
+- Say it in the output. A user-facing `INCONCLUSIVE` beats a silent zero.
+- Make the exit code carry it. Scripts read exit 0 as "clean"; an unverified
+  negative must not exit 0.
+- Name the source that failed. "Something went wrong" leaves the reader unable to
+  judge how much of the answer to trust.
+- When an upstream exposes several endpoints for the same logical object and
+  **all of them return 200**, choosing wrong is not an error — it is a silent
+  empty result. Query the alternatives and report which one answered.
