@@ -2,7 +2,12 @@
 
 ## 2026-08-10
 
-- 1 entry from building a threat-intel lookup CLI against a live API (2026-08):
+- 2 entries from building a threat-intel lookup CLI + MCP server against a live API (2026-08):
+  - **mcp-server-design** (1): a `limit` that caps the record list does not bound
+    the response. Aggregates and reference lists are computed over the whole
+    result set, so they grow with the input's popularity — `limit: 3` still
+    produced 162 KB and the client refused it. Budget the whole response, trim
+    the ranked tail, and account for every value dropped.
   - **testing** (1): a lookup that folds a *failed* source into an empty result
     set reports "not found" for "could not ask". Caught only in a live run — one
     endpoint returned 429 while another returned zero, and the tool printed a
