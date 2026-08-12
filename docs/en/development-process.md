@@ -177,6 +177,33 @@ whoever maintains the configuration, and warnings for whoever reads the output.
 - Generated caveats need this too: "articles from X are missing and re-running
   will not recover them" is usable; "gap detected for X" is not.
 
+### Eliminate candidates on the output contract before comparing them on accuracy
+
+**Symptom:** Six candidate replacements for an existing component were compared
+on accuracy. The most accurate had **half the error rate** of the incumbent —
+and could not emit timestamps, so it could not satisfy our output format
+(time-stamped segments). Nor could the runner-up. Had the accuracy table come
+first, the recommendation would have been a candidate that cannot be used at
+all. The one that could be used ranked mid-table on accuracy.
+
+**Why:** Building a comparison invites starting with the most visible metrics —
+accuracy, speed, size. But **a hard requirement is a yes/no, not a continuous
+quantity**, and no amount of the latter revives a candidate that fails the
+former. Reversed, the order costs measurement time on candidates that were
+already out, and worse: an impressive number starts tempting you to see whether
+the requirement could be bent.
+
+**How to apply:**
+- Put the **requirement columns to the left of the accuracy column**: output
+  format, input length limits, licence, dependencies added, platforms supported.
+- **Drop failing rows before measuring anything.** Keep them in the table with
+  the reason — "why didn't you pick the accurate one?" is always asked later.
+- Where a capability-query API exists, **test membership, not count.** One
+  implementation advertised exactly one supported language while rejecting every
+  language hint as unsupported; gating on `count > 0` walks straight into it.
+- If only one candidate clears the requirements, that is the answer. The
+  accuracy comparison shrinks to picking a variant within it.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates

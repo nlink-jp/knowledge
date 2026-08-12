@@ -274,3 +274,68 @@ the failure only exists when one source fails and another succeeds.
 - When an upstream exposes several endpoints for the same logical object and
   **all of them return 200**, choosing wrong is not an error — it is a silent
   empty result. Query the alternatives and report which one answered.
+
+## Never state a metric of a jittery system from a single run
+
+**What happened:** Comparing two models on a local inference engine, one was
+reported as falling into a run of 48 identical consecutive segments over a
+39-minute recording. Re-run later with the same binary, the same model, the same
+audio and the same settings, the longest run was 19. Three runs per model showed
+what one run could not: **the volume of output is stable** (character count
+varies by ±1%) while **the structure of the failure is not** (longest run 19 /
+45 / 48). Tiny floating-point differences from multi-threaded reduction order
+flip decisions at probabilistic branch points.
+
+**Why:** "It is deterministic, so one run is enough" stops holding once the
+numerics are parallelised — and it fails unevenly. Aggregate quantities stay
+put while the discrete decisions near a threshold (enter a loop, split a
+speaker, fall back a temperature) move. **If the first run was a tail of the
+distribution, the number you published does not reproduce, and the person who
+sees that has reason to doubt every other measurement you took.**
+
+**How to apply:**
+
+- **Establish whether the system jitters before you start comparing.** Run the
+  same input twice. If the outputs differ, every metric from then on is a range
+  over n≥3, not a value.
+- **Report ranges, not points.** "19–48 across three runs", not "48".
+- **When setting a threshold, justify it by two non-overlapping ranges.** In the
+  example, looping runs were 19–48 and non-looping ones 2–3, so a threshold of 6
+  sits in the gap. A threshold placed next to a single observation misfires on
+  the next run.
+- **Do not treat stable quantity as evidence of stable structure.** Character
+  counts agreed to within ±1% and said nothing whatever about whether the loop
+  would reproduce.
+
+## Output with no ground truth can still be measured structurally
+
+**What happened:** Two transcription models needed comparing on a 39-minute real
+recording, but no reference transcript existed, so error rate was unmeasurable.
+Metrics that need no ground truth were measured instead — segment coverage, runs
+of identical consecutive text, the largest gap between segments, the skew of
+speaker labels. That was enough to quantify the differences that decided the
+choice: one model emitted 1.45× the text, and only one fell into repetition
+loops.
+
+**Why:** Data without ground truth is usually written off as unmeasurable, but
+**broken output has a shape**. Repetition loops, dropped audio and over-splitting
+are detectable from structure alone, without reading a word of content. And
+those failures characteristically arrive **perfectly well-formed** — valid JSON,
+every field populated, no error raised — so nothing notices them unless
+something measures the structure.
+
+**How to apply:**
+
+- Separate metrics that need ground truth (accuracy) from those that do not
+  (structure), and compare on the latter first. It often settles the choice on
+  its own.
+- **Only conclude from non-overlapping differences.** Structural metrics are
+  proxies; a narrow margin in one means nothing.
+- **Write the metric scripts to emit no content at all.** Counts and rates only,
+  and the same script can be pointed at confidential or personal data. Real data
+  without a reference transcript is usually unreferenced *because* it cannot
+  leave the building — the constraint and the missing ground truth share a
+  cause.
+- Watch for metrics that are **ambiguous alone**. High coverage may mean less
+  audio was dropped, or it may mean the model hallucinated over silence and
+  music. Disambiguate with an independent third observation (here, a VAD).
