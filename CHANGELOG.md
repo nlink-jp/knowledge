@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-15
+
+- 1 entry from a menu-bar status watcher whose panel started looking dark on
+  macOS 26 (2026-08):
+  - **macos-gui** (1): a status item click does not activate an accessory app,
+    so an `NSPopover` that is only shown never becomes key and macOS draws its
+    material in the inactive state. Liquid Glass made that inactive rendering
+    read as a dark, dimmed sheet, so unchanged code was observed as a
+    regression. `makeKey()` right after `show(relativeTo:)` fixes it and is
+    pixel-identical to activating the app. Includes the measurement method —
+    and why a window-only `screencapture -l` cannot judge a translucent panel.
+
 ## 2026-08-10
 
 - 2 entries from building a threat-intel lookup CLI + MCP server against a live API (2026-08):

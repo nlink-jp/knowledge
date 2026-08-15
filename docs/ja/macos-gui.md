@@ -122,6 +122,27 @@ UI 型は `@MainActor`、Timer は target/selector 版を使うと Swift 6 の c
 ゲージ（`Shape.trim` 等）にする — 動きはメニューバー側（CAShapeLayer）が担当する。
 診断は `sample <pid>` で SwiftUICore の LayoutEngine が支配的かを見る。
 
+### メニューバーの NSPopover は表示直後に makeKey() する
+
+**事象:** ステータスアイテムのクリックは accessory (LSUIElement) アプリを**アクティブ化
+しない**ため、`popover.show(relativeTo:)` しただけの popover ウィンドウは key にならず、
+macOS はその素材を非アクティブ状態で描画する。macOS 26 の Liquid Glass では、これが
+「暗く沈んだ半透明シート」としてはっきり見える（実測: パネル本体の平均輝度 192 → 224 / 255）。
+非アクティブ描画は macOS 26 で急に目立つようになった側面があり、それ以前から同じコードが
+動いていても「ある日から暗くなった」と観測される。
+
+**適用方法:**
+- `show(relativeTo:)` の直後に `popover.contentViewController?.view.window?.makeKey()`。
+  これだけで `NSApp.activate` + `makeKey()` と**ピクセル単位で同一**の描画になる
+  （`makeKey()` 自体がアプリをアクティブ化するため、別途 activate を呼ぶ必要はない）。
+- 副作用として `.transient` の外側クリック判定が壊れる（アクティブ化したアプリでは元々
+  信用できない）。**明示的な global + local マウスダウンモニタで自前クローズする前提**で
+  導入すること。
+- 検証は実機で: 合成クリックで開く → `screencapture -x -o -R <bounds>`（背景込みの
+  合成結果）で撮り、修正前後の平均輝度を比較する。**ウィンドウ単体撮影
+  (`screencapture -l <windowid>`) は背景が抜けるため、半透明素材の見え方の判定には
+  使えない**（実測で「暗い」偽陽性が出る）。
+
 ### SwiftUI の List/OutlineGroup でツリーの D&D を作らない
 
 **事象:** 挿入位置インジケータ付きのツリー D&D を SwiftUI で実装して撤回した。

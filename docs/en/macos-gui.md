@@ -138,6 +138,29 @@ animations inside the panel — use static gauges (`Shape.trim`); motion belongs
 the menu-bar side (CAShapeLayer). Diagnose with `sample <pid>`: SwiftUICore
 LayoutEngine dominating means this symptom.
 
+### Call makeKey() on a menu-bar NSPopover right after showing it
+
+**Symptom:** A status item click does **not** activate an accessory (LSUIElement)
+app, so a popover that is merely `show(relativeTo:)`-n never becomes key and
+macOS draws its material in the inactive state. Under macOS 26's Liquid Glass
+that reads unmistakably as a dark, dimmed translucent sheet (measured: mean
+luminance of the panel body 192 → 224 of 255). The inactive rendering became far
+more visible in macOS 26, so unchanged code is observed as "it went dark one day".
+
+**How to apply:**
+- Call `popover.contentViewController?.view.window?.makeKey()` immediately after
+  `show(relativeTo:)`. That alone is **pixel-identical** to `NSApp.activate` +
+  `makeKey()` — `makeKey()` activates the app as a side effect, so no separate
+  activate call is needed.
+- The side effect is that `.transient` outside-click dismissal breaks (it is
+  never trustworthy once the app is active). Adopt this only together with
+  explicit global + local mouse-down monitors that close the popover yourself.
+- Verify on a real machine: open it with a synthetic click, capture with
+  `screencapture -x -o -R <bounds>` (the composited result, backdrop included),
+  and compare mean luminance before/after. **A window-only capture
+  (`screencapture -l <windowid>`) drops the backdrop and cannot judge a
+  translucent material** — it produces a false "it's dark" reading.
+
 ### Don't build tree drag & drop on SwiftUI List/OutlineGroup
 
 **Symptom:** Implemented insertion-indicator tree D&D in SwiftUI, then retracted
