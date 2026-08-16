@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-15
+## 2026-08-16
 
 - 2 entries from diagnosing whether SMART data can be read from a USB-attached
   external SSD on macOS (2026-08):
@@ -14,6 +14,9 @@
     SoC USB controller. Covers reconciling enumerator output by independent
     identifier, calibrating layout against a device of known location, and
     reading one plane's "no device connected" as signal rather than absence.
+
+## 2026-08-15
+
 - 1 entry from a menu-bar status watcher whose panel started looking dark on
   macOS 26 (2026-08):
   - **macos-gui** (1): a status item click does not activate an accessory app,
