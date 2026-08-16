@@ -2,6 +2,18 @@
 
 ## 2026-08-15
 
+- 2 entries from diagnosing whether SMART data can be read from a USB-attached
+  external SSD on macOS (2026-08):
+  - **testing** (2): an auto-enumeration mode (`--scan`) listed neither drive
+    under investigation and returned one unrelated empty drive caddy instead,
+    whose "no media" error was then reported as evidence for a constraint it
+    said nothing about — the conclusion was independently correct, which is
+    exactly why the faulty evidence never surfaced. And: a position in the OS
+    device tree was used to infer which physical port a drive occupied, and was
+    wrong, because USB traffic from a Thunderbolt port surfaces under the same
+    SoC USB controller. Covers reconciling enumerator output by independent
+    identifier, calibrating layout against a device of known location, and
+    reading one plane's "no device connected" as signal rather than absence.
 - 1 entry from a menu-bar status watcher whose panel started looking dark on
   macOS 26 (2026-08):
   - **macos-gui** (1): a status item click does not activate an accessory app,

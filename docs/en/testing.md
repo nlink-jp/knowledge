@@ -339,3 +339,65 @@ something measures the structure.
 - Watch for metrics that are **ambiguous alone**. High coverage may mean less
   audio was dropped, or it may mean the model hallucinated over silence and
   music. Disambiguate with an independent third observation (here, a VAD).
+
+## Reconcile what an enumerator returned against what you meant to measure
+
+**Symptom:** While investigating whether SMART data could be read from a
+USB-attached external SSD, a diagnostic tool's auto-enumeration mode (`--scan`)
+was run, a command was issued against the device it returned, and the resulting
+I/O error was reported as evidence that *this SSD* cannot be read. In fact the
+enumeration had **not listed either of the two drives under investigation**; it
+returned exactly one unrelated device — an **empty drive caddy** hanging off a
+different hub. That error is equally explained by "no media present", so it was
+no evidence at all for the constraint being investigated. Re-measuring by naming
+the two real drives by device path produced a different error (the conclusion
+itself did not change).
+
+**Why:** An enumerator returns *what it found*, not *what you pointed at*. A
+single-result listing invites the assumption that the result is your target.
+Worse, here the **conclusion happened to be correct** — "not readable over USB"
+was independently supported — so the fact that the *evidence* was wrong never
+surfaced. A correct conclusion propped up by faulty evidence gives no way to
+tell what broke when a premise changes (different hardware, a later OS release).
+
+**How to apply:**
+
+- Reconcile enumerator output against your target by an **independent
+  identifier** (device path, serial, capacity, logical name). Do not trust the
+  label the tool attached on its own.
+- **Compare the number of items enumerated against the number you know is
+  attached.** Two drives connected but one result means the enumeration itself
+  is suspect. A non-zero count that does not match is more dangerous than zero.
+- If a path exists that names the target explicitly, re-measure through it.
+  **Auto-enumeration is a discovery tool, not a verification tool.**
+- "The conclusion is right, so the evidence must be" does not hold. Audit the
+  conclusion and the evidence separately.
+
+## Do not infer physical layout from a position in a logical tree
+
+**Symptom:** In the same investigation, the target SSD appeared under an
+SoC-internal USB controller in the OS device tree. That was taken as proof it
+was plugged into a USB-only port, and the operator was told to move it to a
+Thunderbolt port. **It had been in a Thunderbolt port the whole time.** On that
+platform, USB traffic from a Thunderbolt port surfaces under the same USB
+controller, so port type simply cannot be derived from tree position. The
+operator overturned it in one sentence: "no, that's where it already is."
+
+**Why:** An abstraction layer's tree describes *how a device is handled*, not
+*where it is attached*. And on systems where one physical port surfaces
+separately in several planes (here a USB plane and a Thunderbolt plane), looking
+at only one plane makes the device look absent from it.
+
+**How to apply:**
+
+- Calibrate physical layout against a **device whose location is already
+  certain**. Here, "a Thunderbolt hub only fits a Thunderbolt port" plus "that
+  hub appears under the USB controller in question" settled it in one step.
+  **Finding one known point beats stacking inferences.**
+- **"No device connected" in one plane is not evidence of absence.** Inverted,
+  the asymmetry is a strong diagnostic signal — the Thunderbolt bus insisting
+  nothing was attached was precisely the evidence that the device was a pure USB
+  bridge establishing no PCIe link.
+- **Do not infer from tool output a physical fact a nearby human can answer in
+  seconds.** Asking is faster, more reliable, and cheaper to be wrong about.
+  Infer only when there is nobody to ask.
