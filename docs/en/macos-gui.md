@@ -524,6 +524,80 @@ app menu and a Window menu looks complete, which is what hides it.
   `length of (value of field)` after ⌘V confirms a secure field actually
   received the paste.
 
+### Put a menu-bar icon in `button.image` — `isTemplate` is ignored inside an attributed string
+
+**Symptom:** the menu-bar symbol looked greyer than neighbouring system items,
+but only in its healthy state. `isTemplate = true` was set, so the cause was not
+obvious, and switching between light and dark wallpapers changed nothing. The
+image was in fact embedded as an `NSTextAttachment` inside an
+`NSAttributedString`.
+
+**Why:** `isTemplate` is honoured for `NSStatusItem.button.image` only. An image
+embedded in an attributed string is drawn in whatever colour it carries. The
+instruction to "follow the menu bar's colour" was therefore ignored, and the
+app-context `labelColor` was burned in instead — close enough to the bar's real
+colour to look like a mistake, different enough to read as grey.
+
+**How to apply:**
+
+- Put the symbol in `button.image` and the text in `button.title` /
+  `attributedTitle`, arranged with `imagePosition`. Do not mix images into text
+  attachments.
+- For states whose message *is* the colour (orange for warning, red for
+  critical), set `isTemplate = false`: a template is recoloured by the menu bar,
+  which would discard exactly that colour.
+- **Do not light up green for healthy.** A colour that is lit 99% of the time
+  teaches the eye to skip the icon, and then the one time it matters nobody
+  notices. Let healthy take the bar's own colour and reserve colour for
+  attention.
+
+### Verify SF Symbol names resolve — a name that does not exist degrades in silence
+
+**Symptom:** `internaldrive.fill.badge.exclamationmark` was used as an icon name.
+It reads perfectly plausibly and **does not exist**.
+`NSImage(systemSymbolName:)` returns nil, the fallback glyph is drawn, and the
+menu bar quietly becomes meaningless.
+
+**Why:** SF Symbols naming looks systematic but the available variants differ per
+symbol — `externaldrive.fill.badge.exclamationmark` exists while the
+`internaldrive` equivalent does not. It compiles, raises nothing at runtime, and
+throws no exception.
+
+**How to apply:**
+
+- Expose **every symbol name the renderer can emit as an array and assert in a
+  test that each resolves**. `NSImage(systemSymbolName:accessibilityDescription:)
+  != nil` is the whole check.
+- That requires a test target for the executable as well. Even with the logic
+  pushed into a core library, choosing symbol names stays in the view layer.
+- Either make the fallback visibly broken, or guarantee by test that it is never
+  reached. A harmless-looking fallback is how this stays hidden.
+
+### Do not fix a view's size against today's content
+
+**Symptom:** a menu-bar app's panel, its chart internals and its settings window
+each got a size measured against the content at the time (`frame(height: 560)`
+and friends). Adding sections and graphs afterwards broke the display **three
+separate times** — content cropped, elements compressed, text overflowing.
+
+**Why:** a fixed value is only correct for the content in front of you when you
+write it, and content grows. The failure modes — cropping and compression — look
+like anything but a layout constant. And a dimension written in two places (the
+view's own height, and the height the container gives it) drifts the moment one
+of them is updated.
+
+**How to apply:**
+
+- **Declare a floor and an ideal, not a fixed size**:
+  `frame(minHeight:idealHeight:)` plus a `.resizable` window. Growth then does
+  not break it, and the user can widen it.
+- Dimensions that must agree get **one constant, referenced from both places**.
+- A view that reserves rows for text should stop reserving them when the caller
+  already displays that text. Reserving unused space starves the part that
+  matters — a chart given 56pt with 46pt of reserved text had 10pt of plot.
+- The only fixed sizes worth keeping are the ones a container legitimately owns,
+  such as a popover's width.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

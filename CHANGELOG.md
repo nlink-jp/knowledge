@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-17
+
+- 3 entries from building a menu-bar NVMe health monitor (2026-08):
+  - **macos-gui** (3): `isTemplate` is honoured for `NSStatusItem.button.image`
+    and ignored for an image embedded in an attributed string, so a symbol meant
+    to follow the menu bar's colour was drawn in the app's `labelColor` and read
+    as grey. An SF Symbol name that does not exist returns nil and degrades the
+    status item to a fallback glyph in silence, so every name a renderer can emit
+    is asserted to resolve — which needs a test target for the executable, not
+    just the core. And sizes measured against the content of the day broke the
+    layout three times as sections were added: declare floors and ideals, define
+    a shared constant when two places must agree, and stop reserving space for
+    text the caller already shows.
+
 ## 2026-08-16
 
 - 2 entries from diagnosing whether SMART data can be read from a USB-attached
