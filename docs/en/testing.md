@@ -65,6 +65,38 @@ both directions), and the third needs the transition from more parts to fewer.
 - Clear previous output before writing a variable number of files. Anything
   that consumes them by enumeration will otherwise consume the leftovers.
 
+## A drill runbook is unfinished until it has been run once
+
+**Symptom:** A seven-step monthly drill runbook for a fallback tool was
+written, and its first run **rewrote three of its own steps**. (1) The
+read-only step meant to exercise the tool path asked what the project does
+and what its build commands are — the agent injects the project's
+instruction files into its system prompt, so a correct answer came back with
+zero tool calls. Correct answer, path never exercised. (2) Auto-approve was
+on by config, so the step meant to exercise the approval gate would have run
+unattended. (3) The sandbox-containment step asked the model to write outside
+the project; the model read the restriction and declined to try — a pass that
+tests nothing — while an earlier run of the same request did try and hit the
+gate first.
+
+**How to apply:**
+- **Run it once after writing it.** Steps changing is the normal outcome; if
+  nothing changed, doubt that it was really run. When you edit a runbook, run
+  at least the step you changed — write that rule into AGENTS.md so it sticks.
+- **Suspect three shapes of "looks like a pass, verifies nothing":** a
+  question answerable without traversing the path under test (the answer is
+  cached somewhere else); a check that depends on the subject's cooperation
+  (replace it with a direct path); a check whose result varies between runs
+  (that is not a check).
+- **Pin state-dependent defaults at the top of the procedure.** "It happened
+  to be on" is enough to hollow out a check.
+- Alongside the checklist, include a step that **completes one real task with
+  the tool alone**. A checklist shows the thing runs; only real work shows it
+  is usable.
+- **Make the verdict binary: pass or issue.** Allowing "mostly worked" makes
+  the record meaningless. Record a skip as a skip — an unrecorded gap reads as
+  a pass.
+
 ## A feature that never fires still passes every unit test
 
 **Symptom:** Automatic conversation-history compaction was implemented. Unit

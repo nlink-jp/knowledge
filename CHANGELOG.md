@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-19 (2)
+
+- 1 entry from writing and then running a monthly drill runbook for a
+  fallback CLI agent (2026-08):
+  - **testing** (1): a runbook is unfinished until it has been run once —
+    its first run rewrote three of its seven steps, each of which read
+    correctly and verified nothing. Three shapes to suspect: a question
+    answerable without traversing the path under test, a check that depends
+    on the subject's cooperation, and a check whose result varies between
+    runs. Pin state-dependent defaults at the top, keep the verdict binary,
+    and include one real task done with the tool alone.
+
 ## 2026-08-19
 
 - 5 entries from adding session resume and context compaction to a CLI coding
