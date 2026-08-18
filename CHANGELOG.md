@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-18
+
+- 1 entry from adding percent and a burn-rate projection to a menu-bar budget
+  display (2026-08):
+  - **testing** (1): unit tests over pure functions cannot see whether a string
+    fits its real width, and driving the live app with synthetic events is too
+    leaky to use for every layout change. A SwiftPM executable target is
+    importable from its test target, so the view can be laid out in an
+    `NSHostingView` at the production width and cached to a PNG — same layout
+    engine, same fonts, nothing on the user's screen. Render one image per
+    branch, because what breaks is the branch with the longest string.
+
 ## 2026-08-17
 
 - 3 entries from building a menu-bar NVMe health monitor (2026-08):

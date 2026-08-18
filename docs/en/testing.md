@@ -198,6 +198,43 @@ functions plus a person looking once.
 
 ---
 
+## Check layout by rendering off-screen from the test target, not by launching the app
+
+**Symptom:** unit tests over pure functions touch strings and arithmetic only, so
+whether a string actually fits the real width is undetectable by construction.
+Adding a single display line can push the longest branch into truncation, and no
+amount of reasoning settles it. Driving the real app with synthetic events (see
+the previous entry) does settle it, but it is too heavy — and too leaky — to reach
+for on every layout change.
+
+**Why:** a SwiftPM executable target is importable from tests with
+`@testable import`. Put the view in an `NSHostingView` and its layout resolves
+without launching the app; `bitmapImageRepForCachingDisplay(in:)` plus
+`cacheDisplay(in:to:)` writes it to a PNG. The same layout engine and the same
+real fonts run, so wrapping, truncation and true glyph widths all show up.
+Nothing appears on the user's screen.
+
+**How to apply:**
+
+- Put a throwaway renderer in the test target: build
+  `NSHostingView(rootView: TheView().environmentObject(model))`, give it **the
+  production width** (e.g. the popover's content width plus padding), and call
+  `layoutSubtreeIfNeeded()`.
+- Take the height from `fittingSize.height` rather than pinning it. You are
+  looking for content that does not fit; a fixed height hides the evidence.
+- Build state by assigning to the `@Published` properties directly. This verifies
+  rendering, so let it call no subprocess and no network.
+- **Render one image per branch and look at all of them** (normal / warning /
+  over / no-data). What breaks is usually the branch carrying the longest string,
+  and that is not the everyday branch.
+- Delete the renderer once you have looked. Keeping snapshots as regression tests
+  buys failures from OS font and system-colour changes; keep them only as a
+  deliberate choice.
+- Save the synthetic-event route for what only a real app does: permission
+  prompts, actual placement in the menu bar, behaviour right after launch.
+
+---
+
 ## When two defences cover one failure, an observation explained by either is evidence for neither
 
 **What happened:** An MCP server guarded stdout in two layers — (1) replacing the
