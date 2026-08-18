@@ -65,6 +65,30 @@ both directions), and the third needs the transition from more parts to fewer.
 - Clear previous output before writing a variable number of files. Anything
   that consumes them by enumeration will otherwise consume the leftovers.
 
+## A feature that never fires still passes every unit test
+
+**Symptom:** Automatic conversation-history compaction was implemented. Unit
+tests all green. In real use it **never fired once, and said nothing**. Two
+causes had stacked. (1) The threshold check needed a context-window value
+resolved asynchronously at startup, but only the interactive path started that
+resolution — the one-shot path left it at 0, so the check was always false.
+(2) The cut-point invariant was "only at a user-message boundary", and a long
+agent loop contains exactly one user message, at the very beginning — so the rule
+**structurally excluded the case the feature exists for**.
+
+**How to apply:**
+- **Unit tests supply the condition directly, so they never verify that the
+  condition arises in production.** For anything threshold- or condition-gated,
+  run the real binary with the threshold swung to an extreme value and **watch it
+  fire** before calling it implemented.
+- For a feature depending on an asynchronously resolved value, count the wiring
+  per entry path (interactive / one-shot / scripted / resumed). Distrust any
+  design where an unset value silently no-ops; make it say something instead.
+- Keep one test that applies the invariant to the most typical usage. Reading the
+  rule will not reveal that a safety-motivated invariant excludes the main case.
+- If "cannot fire" is reachable, report it. **A silent no-op is
+  indistinguishable from a missing feature.**
+
 ## Design external dependencies mockable from the start
 
 **Symptom:** A test launched a real browser. It was later retrofitted into an

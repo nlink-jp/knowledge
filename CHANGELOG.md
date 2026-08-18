@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-19
+
+- 5 entries from adding session resume and context compaction to a CLI coding
+  agent (2026-08):
+  - **llm-integration** (4): Gemini thought signatures measurably replay across
+    processes, which makes verbatim replay a working basis for session resume
+    under the same model — and makes refusing a different model the honest
+    design, since stripping signatures is a 400. Persisting conversation history
+    for resume belongs in one log, not a log plus a parallel transcript, which
+    forces that log's conversation records to be lossless; clipping them for
+    readability produces a resumed session that has forgotten half of a file it
+    read, with nothing to announce the gap. A history-compaction summariser is
+    summarising untrusted data: no tools, nonce-isolated input, the summary
+    quoted as data on the way back in, and every failure path leaving the history
+    untouched.
+  - **testing** (1): a feature can pass every unit test and never fire once in
+    production — unit tests supply the gating condition directly, so they never
+    check that it arises. Swing the threshold to an extreme in a real run and
+    watch it fire; and apply the invariant to the case the feature exists for,
+    because a safety-motivated rule can exclude it without looking wrong.
+
 ## 2026-08-18
 
 - 1 entry from adding percent and a burn-rate projection to a menu-bar budget
