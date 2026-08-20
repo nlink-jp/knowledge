@@ -494,3 +494,22 @@ at only one plane makes the device look absent from it.
 - **Do not infer from tool output a physical fact a nearby human can answer in
   seconds.** Asking is faster, more reliable, and cheaper to be wrong about.
   Infer only when there is nobody to ask.
+
+### Verify concurrency concerns with a concurrent test, not by reading — the bug lives next door
+
+**Symptom:** asked whether timestamp-based session ids collide under parallel
+execution, code-reading found the suspected layer safe (O_EXCL + suffix retry
++ flock). The 16-way concurrent test written to PROVE that safety caught a
+real race in the ADJACENT layer (the state-dir ownership marker) at ~50%
+frequency. A reading-based "it's safe" answer would have shipped the bug.
+
+**How to apply:**
+- On any concurrency doubt, write the concurrent regression test first
+  (start-channel for simultaneous release, `-race`, several rounds) whatever
+  you expect the verdict to be — the test exercises the whole path, not just
+  the suspected hypothesis, so adjacent defects surface.
+- Confirm goroutine findings with real simultaneous processes (O_EXCL, flock,
+  rename are kernel vocabulary, so the semantics match — but the E2E catches
+  wiring mistakes).
+- Measure before answering "no issue": the negative-answer integrity duty
+  applies to concurrency too.

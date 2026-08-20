@@ -310,3 +310,22 @@ the same surface.
   lines, `--help` (CLI convention), model-facing text, and library error
   chains stay English. Translating everything puts a localized prefix on an
   English chain — the very mixing being removed.
+
+### Marker/flag files read by other processes must land by temp+rename (os.WriteFile is create-then-write)
+
+**Symptom:** a `.project` ownership marker written with `os.WriteFile` made
+roughly half of all parallel same-project launches refuse startup as a
+"path-escape collision". WriteFile opens O_CREATE|O_TRUNC — the file exists
+EMPTY before the content lands — and a concurrent reader in that window sees
+"owner = (empty)".
+
+**How to apply:**
+- Any marker/flag/small-state file another process may read gets written to a
+  temp file in the same directory, then `os.Rename`d into place. Rename is
+  atomic: readers see no file or the whole file — keep both states safely
+  interpretable.
+- **Treat an empty file as "unowned", same as absent, and let the next writer
+  repair it** (tolerance for pre-fix crash leftovers).
+- A residual check-then-write TOCTOU is acceptable when the file is a
+  best-effort disambiguator rather than a lock — last rename wins; say so in
+  a comment.
