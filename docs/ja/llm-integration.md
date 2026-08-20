@@ -66,6 +66,25 @@ response のパース時に `FunctionCall.Name/Args` だけ取り出して `Part
 - **path は per-tool 個別**（`~/.config/<tool-name>/config.toml`）にする — 各ツールが
   独立した GCP プロジェクトを向く可能性（検証/本番の使い分け）を残すため。
 
+### ADC の stale quota_project_id は GCS を全 404 にする — Vertex は無事なので気づきにくい
+
+**事象:** Vertex AI（genai SDK）が正常に動く ADC で、cloud.google.com/go/storage の
+呼び出しが**全部** 404「The requested project was not found」になった。原因は
+ADC ファイルの `quota_project_id` が削除済み/権限外の古いプロジェクトを指して
+いたこと。GCS はこれを課金ヘッダ（x-goog-user-project）として送るが、Vertex は
+URL パスでプロジェクトを指定するため影響を受けない — この非対称が「認証は
+生きているのに storage だけ死ぬ」という誤誘導になる。
+
+**適用方法:**
+1. Vertex + GCS を併用するツールは **quota project を自前の設定値でピンする**
+   — ADC の残骸に依存させない。
+2. storage v1.65 時点で `option.WithQuotaProject` はクライアント内部の
+   transport オプションと衝突する（実測）。auth ライブラリの env override
+   `GOOGLE_CLOUD_QUOTA_PROJECT` を（未設定のときだけ）セットするのが動く経路。
+3. 診断は ADC ファイルから `quota_project_id` **だけ**抽出する（ファイル全体は
+   リフレッシュトークンを含む — 読まない）。恒久修正は
+   `gcloud auth application-default set-quota-project <project>`。
+
 ## 出力の防御的処理
 
 ### スキーマ検証だけでなく意味的な整合性検証も入れる

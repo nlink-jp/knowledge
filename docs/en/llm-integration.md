@@ -80,6 +80,28 @@ was deliberately **not** created.
 - Keep **paths per-tool** (`~/.config/<tool-name>/config.toml`) — preserving each
   tool's ability to point at an independent GCP project (staging vs production).
 
+### A stale quota_project_id in ADC 404s all of GCS — while Vertex keeps working
+
+**What happened:** With ADC that ran Vertex AI (genai SDK) fine, every
+cloud.google.com/go/storage call failed 404 "The requested project was
+not found". The ADC file's `quota_project_id` pointed at a deleted or
+inaccessible old project. GCS sends it as the billing header
+(x-goog-user-project); Vertex names the project in the URL path and is
+unaffected — an asymmetry that misleads ("auth works, only storage
+dies").
+
+**How to apply:**
+1. A tool combining Vertex and GCS should **pin the quota project to
+   its own configured value** — never depend on ADC leftovers.
+2. As of storage v1.65, `option.WithQuotaProject` conflicts with the
+   client's own transport options (measured). Setting the auth
+   library's env override `GOOGLE_CLOUD_QUOTA_PROJECT` (only when
+   unset) is the path that works.
+3. Diagnose by extracting **only** `quota_project_id` from the ADC file
+   (the whole file holds a refresh token — do not read it). The
+   operator-side permanent fix is
+   `gcloud auth application-default set-quota-project <project>`.
+
 ## Defensive output handling
 
 ### Validate semantic consistency, not just schema
