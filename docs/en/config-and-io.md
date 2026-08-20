@@ -284,3 +284,29 @@ with the (empty) draft — **the user's in-progress input vanished**.
 - Generalization: any UI that "steals keys only in a particular state" (history,
   autocomplete, IME) must check the state flag first and pass everything else
   through.
+
+### Fix mixed-language UI with a complete two-sided catalog + completeness test, not translation
+
+**Symptom:** a CLI's interactive chrome (help, hints, dialogs) drifted into a
+Japanese/English mix. Each string was added in whichever language the moment
+suggested; none is individually wrong. Fixing the mix by hand does not last —
+the next feature adds its strings in one language again. The problem is not a
+bad translation but the absence of anything forcing both languages to cover
+the same surface.
+
+**How to apply:**
+- Define ONE `Messages` struct — one field per string — with two complete
+  per-language literals (gem-agent `internal/uitext`).
+- **Make a reflection test fail on any empty field in either catalog.** That
+  test is the actual fix: a new string either lands in both languages or
+  fails CI.
+- For fields containing `%d`/`%s`, also test that the fmt verbs match in
+  order across catalogs (a mismatch compiles fine and breaks one language at
+  runtime only).
+- Resolve the language POSIX-style (first non-empty of `LC_ALL` →
+  `LC_MESSAGES` → `LANG`, a `ja` prefix selects Japanese, `C`/`POSIX` mean
+  English), once at startup — a mid-session switch bisects the scrollback.
+- **Declare the out-of-scope surfaces up front**: grep-stable log-shaped
+  lines, `--help` (CLI convention), model-facing text, and library error
+  chains stay English. Translating everything puts a localized prefix on an
+  English chain — the very mixing being removed.
