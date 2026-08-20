@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-21 (2)
+
+- 2 entries from an operator question about parallel session-id
+  collisions in a fallback CLI agent (2026-08):
+  - **config-and-io** (1): os.WriteFile creates the file empty before
+    writing — marker/flag files read by other processes must land by
+    temp+rename, with an empty file treated as unowned and repaired.
+  - **testing** (1): verify concurrency concerns with a concurrent test
+    rather than by reading the code — the test written to prove the
+    suspected layer safe caught a ~50%-frequency race in the adjacent
+    layer.
+
 ## 2026-08-21
 
 - 1 entry from adding a self-information tool to a fallback CLI agent
