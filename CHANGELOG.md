@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-20
+
+- 3 entries from extending a fallback CLI agent (memory, GCS media, UI
+  language; 2026-08):
+  - **security** (1): agent-writable memory is a persistence vector — an
+    injected instruction that survives into every future session; gate the
+    write, not the read.
+  - **llm-integration** (1): a stale ADC `quota_project_id` 404s every GCS
+    call while Vertex keeps working (Vertex carries the project in the URL
+    path); pin the intended project via `GOOGLE_CLOUD_QUOTA_PROJECT`.
+  - **config-and-io** (1): fix mixed-language UI with one message struct and
+    two complete per-language catalogs, enforced by a reflection
+    completeness test (plus fmt-verb agreement); resolve POSIX-style once at
+    startup and declare the surfaces that stay English.
+
 ## 2026-08-19 (2)
 
 - 1 entry from writing and then running a monthly drill runbook for a
