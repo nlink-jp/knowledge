@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-21 (3)
+
+- 2 entries from a second whole-code review of a fallback CLI agent
+  (2026-08):
+  - **testing** (1): an injected feature's weakest point is its single
+    production call site — unit tests inject the dependency themselves
+    and a nil-default options field degrades gracefully enough to hide
+    the missing wire; pin constructor literals with a go/ast test, and
+    E2E every surface the feature passes through.
+  - **config-and-io** (1): cloud-storage writers commit buffered data on
+    Close — abort by cancelling the writer's context; in a
+    content-addressed permanent store, also hash and upload from one fd
+    and re-hash the stream with a verifying reader.
+
 ## 2026-08-21 (2)
 
 - 2 entries from an operator question about parallel session-id
