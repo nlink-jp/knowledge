@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-21
+
+- 1 entry from adding a self-information tool to a fallback CLI agent
+  (2026-08):
+  - **llm-integration** (1): hand the agent its own runtime (model name,
+    context occupancy, limits) through one read-only tool, rendered from
+    the same accounting struct the human UI reads; select fields by
+    whether they change model behavior, and register before the agent
+    constructor if it caches tool declarations.
+
 ## 2026-08-20
 
 - 3 entries from extending a fallback CLI agent (memory, GCS media, UI
