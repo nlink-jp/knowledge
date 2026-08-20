@@ -329,3 +329,22 @@ EMPTY before the content lands — and a concurrent reader in that window sees
 - A residual check-then-write TOCTOU is acceptable when the file is a
   best-effort disambiguator rather than a lock — last rename wins; say so in
   a comment.
+
+### Cloud-storage writers COMMIT on Close — abort by cancelling the context
+
+**Symptom:** when `io.Copy` into a GCS upload failed mid-stream, the
+cleanup-looking `w.Close()` **finalized the buffered partial data as the
+complete object**. In a content-addressed store (hash names, nothing ever
+deleted) the broken content now lives permanently under the correct name,
+and dedupe serves it forever.
+
+**How to apply:**
+- For `cloud.google.com/go/storage`, Close means commit; an error-path Close
+  is a partial commit, not a cleanup. **The documented abort is cancelling
+  the context passed to NewWriter** — derive a per-writer
+  `context.WithCancel`, cancel on copy error, then Close.
+- Defend the name=content invariant itself: hash and upload from ONE file
+  descriptor (re-opening by path loses to a rename-replace), and re-hash the
+  upload stream with a verifying reader that fails before EOF if the file
+  changed mid-upload. Design permanent stores as if a wrong entry can never
+  be fixed later — because here it can't.

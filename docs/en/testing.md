@@ -513,3 +513,24 @@ frequency. A reading-based "it's safe" answer would have shipped the bug.
   wiring mistakes).
 - Measure before answering "no issue": the negative-answer integrity duty
   applies to concurrency too.
+
+### The single production call site is the weak point of injected features — pin the wiring with an AST test
+
+**Symptom:** a UI language-catalog feature shipped with all unit tests green
+and a non-interactive E2E pass — while the one production TUI-constructor
+call omitted the catalog argument, so the whole TUI silently ran on the
+English fallback for a full release. Unit tests inject the dependency
+themselves and cannot see a wiring gap; the E2E only exercised the surface
+that WAS wired.
+
+**How to apply:**
+- Third pattern of "implemented but silently never fires": **an options-struct
+  field with a nil default degrades quietly** — the graceful fallback hides
+  the missing wire precisely because it is graceful.
+- Behavioral tests cannot reach a literal inside a monolithic init function.
+  **Parse the production file with go/ast and assert the constructor literal
+  sets the required fields** — a few dozen lines, robust to formatting, and
+  it fails the moment the field disappears.
+- Run one E2E per surface the feature passes through, not per surface where
+  it visibly worked: here only the non-interactive (cmd) side was measured,
+  and the interactive (TUI) side was the broken one.
