@@ -473,3 +473,27 @@ expect. Coming straight off making that mistake with the prompt, this one was
 written only after **reading the upstream implementation first and measuring
 second**. Building the upstream CLI example from source is what makes parameters
 your own bindings do not expose measurable at all.
+
+### Hand the agent its own runtime through a read-only tool (same accounting source as the human UI)
+
+**Symptom:** an agent's model does not reliably know its own deployment name
+(especially when the design swaps models by config) and cannot see its
+context budget. It guessed at "which model are you?" and spent a shell-exec
+approval round on host information. Everything it needed already existed in
+process — there was simply no tool handing it over.
+
+**How to apply:**
+- Provide ONE no-argument, read-only, approval-free self-information tool
+  (gem-agent `agent_info`). Do not split system/session: every plausible
+  call wants the same page.
+- **Render token numbers from the same accounting struct the human UI
+  (/usage etc.) reads.** Separate sources inevitably drift, and then the
+  question becomes which display is right.
+- Write the field-selection rule into the ADR: a field earns its place by
+  changing what the model should do. Environment identifiers (cloud project
+  id, bucket name, hostname) change nothing — a configured/none boolean for
+  the bucket suffices (whether large attachments work IS behavioral).
+- Trap: if the agent caches tool declarations at construction, **register
+  the tool before constructing the agent** and let the snapshot closure
+  lazily dereference a pointer assigned afterwards (the tool only ever runs
+  inside the loop, so it never sees nil).
