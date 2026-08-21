@@ -348,3 +348,28 @@ and dedupe serves it forever.
   upload stream with a verifying reader that fails before EOF if the file
   changed mid-upload. Design permanent stores as if a wrong entry can never
   be fixed later — because here it can't.
+
+### exec cancellation kills only the DIRECT child — a pipe-holding grandchild blocks Wait forever
+
+**Symptom:** an agent's shell tool (sandbox-exec → bash → python) hung
+forever through both its timeout and the operator's Ctrl+C.
+`exec.CommandContext` kills the direct child only; the python grandchild
+survives holding the inherited stdout/stderr pipe, and `CombinedOutput`'s
+internal `Wait` blocks until that pipe reaches EOF — **the timeout fired
+and was then defeated**, and the later cancel wedged in the same Wait.
+"The tool never responds" and "Ctrl+C does nothing" were two symptoms of
+one hole.
+
+**How to apply:**
+- Any command that may spawn children gets all three: ① `SysProcAttr.
+  Setpgid = true` (child leads a process group), ② `cmd.Cancel` sending
+  SIGKILL **to the group** (`syscall.Kill(-pid, SIGKILL)`), ③ a
+  `cmd.WaitDelay` of a few seconds — even a setsid/double-fork escapee
+  cannot keep Wait from returning. The kill is best-effort; **the return
+  is guaranteed** (one orphan is far cheaper than a hung session).
+- Reproduce with `bash -c 'sleep 30 & sleep 30'` (a background child
+  inheriting the pipe) plus a short timeout/cancel and a few-second
+  watchdog: the unfixed code hangs every time.
+- Add UI defense in depth for tools that ignore cancellation anyway: an
+  escape ladder (second Ctrl+C warns, third quits) — with an append-only
+  record you can honestly say "everything up to here is saved".
