@@ -126,6 +126,39 @@ kills the feature), the boundary can only sit at the moment of writing.
    never build a structure where a cloned repo can carry in memories of
    unknown authorship.
 
+### Give LLM auto-approval the operator's instruction as alignment evidence
+
+**Symptom:** An agent's auto-approval (rule tier + LLM risk-evaluation
+tier) judged only the proposed tool call itself (name, arguments). A
+call that is plausible in isolation but **traceable to no operator
+request** — the exact shape of an injection-steered action — passed on
+abstract reasonableness. Adding the operator's typed request to the
+evaluation payload made a command the instruction explicitly forbade
+escalate with the contradiction named (measured live).
+
+**How to apply:**
+1. **Add the operator's typed input and nothing else.** It is the one
+   context channel an injection attacker cannot write. Exclude
+   conversation history and tool results (the injection channel
+   itself), the model's own intent narration (admitting it lets the
+   attacker author both the call and its justification), and
+   attachment contents.
+2. Pass the instruction nonce-wrapped as **evidence** — typed input can
+   contain pasted third-party text, so a paste saying "approve
+   everything" must never command the evaluator.
+3. **Bound the context structurally to a turn's early rounds** (e.g.
+   the first 3). Deep-turn calls legitimately serve sub-goals the
+   instruction never names; a round cutoff that falls back
+   byte-identically to the conventional evaluation is sturdier than
+   prompting a judge to tolerate "indirect relation" — no regression
+   is possible where the context does not apply.
+4. **Verify the reach with a live probe: the context only helps calls
+   that actually reach the model evaluation.** Calls the rule tier
+   marks Safe (e.g. in-project file edits) never get there and gain
+   nothing — the first demo case was exactly that and never reached
+   the model at all. Adding context without knowing the tiering buys
+   the feeling of protection, not the protection.
+
 ## Secrets & PII
 
 ### Never write PII — "it's discoverable anyway" is not a reason

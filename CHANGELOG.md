@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22
+
+- 1 entry from adding instruction context to a fallback CLI agent's
+  auto-approval (2026-08):
+  - **security** (1): give LLM auto-approval the operator's typed
+    instruction as alignment evidence — the one context an injection
+    attacker cannot write; wrap it as evidence, bound it structurally
+    to early rounds, and live-probe the reach (Safe-tier calls never
+    see the evaluator).
+
 ## 2026-08-21 (6)
 
 - 1 entry from adding a delegated file-search sub-agent to a fallback
