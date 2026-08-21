@@ -343,6 +343,35 @@ write permissions and stalled without producing artifacts.
 **How to apply:** Run tasks involving file creation/editing in the foreground;
 restrict background agents to read-only research.
 
+### Narrow child-agent delegation to read-only, single-purpose
+
+**Symptom:** A CLI agent with an interactive approval gate considered a
+general-purpose sub-agent ("run this task in a child loop"). A mutating child
+call hitting the gate makes the operator judge **a tool call inside a
+conversation they cannot see** — approval without context is not approval. A
+general `task` argument is also an open instruction channel (injection
+surface), and a delegate-anything tool invites over-delegation that doubles
+token spend. Narrowing to search-only (question → explore → report) made all
+three problems disappear structurally.
+
+**How to apply:**
+- Give the child a **positive allowlist** of read-only tools. Build the
+  allowlist so an unknown name fails loudly (a silently dropped typo is
+  exactly the accident an allowlist exists to prevent). Never include the
+  tool itself — make recursion/fan-out impossible by construction, not by
+  prompt policing.
+- Hand the child a **deny-all approver even when every tool is read-only**
+  (fail-closed insurance): if composition ever changes, the result is a
+  refusal, not an approval dialog for an invisible context.
+- Keep the child's internals out of the main history and the resume
+  transcript (replaying child records corrupts resume) — but emit **every
+  child event into audit telemetry with a delegation label**: an audit trail
+  that loses what a delegate read is not an audit trail.
+- Silence during delegation reads as a hang. Render the child's tool calls
+  live and keep the stream heartbeat ticking through the delegation.
+- Return the report to the parent as untrusted data derived from file
+  contents, under the same isolation (nonce wrap) as any tool result.
+
 ## Documentation & licensing
 
 ### Never claim "fully offline" for tools running in an LLM session

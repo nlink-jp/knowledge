@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-21 (6)
+
+- 1 entry from adding a delegated file-search sub-agent to a fallback
+  CLI agent (2026-08):
+  - **llm-integration** (1): narrow child-agent delegation to
+    read-only single-purpose — approval forwarded from an invisible
+    context is not approval; loud-failing positive allowlists, no
+    recursion by construction, deny-all approver as fail-closed
+    insurance, labeled audit events, live delegation display.
+
 ## 2026-08-21 (5)
 
 - 1 entry from adding workplace audit logging to a fallback CLI agent
