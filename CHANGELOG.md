@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-21 (4)
+
+- 1 entry from a cancellation deadlock in a fallback CLI agent's shell
+  tool (2026-08):
+  - **config-and-io** (1): exec.CommandContext kills only the direct
+    child — a grandchild holding the inherited pipe blocks Wait forever,
+    defeating the timeout first and the interrupt second; always pair
+    Setpgid + group SIGKILL + WaitDelay, and give the UI an escape
+    ladder for tools that ignore cancellation anyway.
+
 ## 2026-08-21 (3)
 
 - 2 entries from a second whole-code review of a fallback CLI agent
