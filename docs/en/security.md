@@ -293,3 +293,30 @@ ship three things together:
 
 Also: make the verification command **exit non-zero on failure**. A check that
 always exits 0 is not a gate.
+
+### Agent audit telemetry — default to the authenticated cloud, metadata only, global-config only
+
+**Symptom:** workplace use of a CLI agent required an audit log. The
+conversation transcript is a resume-shaped record, not the ops-shaped view a
+SIEM wants (who ran what, approved by which layer, what left the machine).
+
+**How to apply:**
+- **Default the backend to the cloud the tool already authenticates to**
+  (using Vertex → Cloud Logging of the same project): `enabled = true` is the
+  entire setup, zero collector infrastructure, and the audit trail lands next
+  to the model that produced it. Keep OTLP (grpc/http) alongside for org
+  collectors — internally just another exporter on one OTel SDK pipeline.
+- **Send metadata only**: tool names/outcomes/durations, approval decisions
+  with their deciding layer, the clipped shell command line (an audit trail
+  without the command is not an audit trail — state the trade), egress URLs,
+  token counts. Never prompts, responses, file contents, or thoughts — the
+  local record stays the full source.
+- **Telemetry config is global-config only**: the exporter is a new egress
+  channel; if a project-side file could enable or redirect it, a clone could
+  plant an exfiltration sink. Make it structurally impossible via schema
+  separation.
+- **Telemetry never hurts the tool**: batching, warn once then degrade
+  silently, a capped shutdown flush, and a nil sink when disabled (zero
+  call-site branching).
+- Verify on two layers: decode real protobuf from an httptest OTLP receiver,
+  and write-then-read-back against the live cloud API.

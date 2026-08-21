@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-21 (5)
+
+- 1 entry from adding workplace audit logging to a fallback CLI agent
+  (2026-08):
+  - **security** (1): default agent audit telemetry to the cloud the
+    tool already authenticates to; send metadata only (never
+    prompts/contents); keep telemetry config global-only so a cloned
+    project cannot plant an exfiltration sink; and never let telemetry
+    failures hurt the tool.
+
 ## 2026-08-21 (4)
 
 - 1 entry from a cancellation deadlock in a fallback CLI agent's shell
