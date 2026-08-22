@@ -373,3 +373,35 @@ one hole.
 - Add UI defense in depth for tools that ignore cancellation anyway: an
   escape ladder (second Ctrl+C warns, third quits) — with an append-only
   record you can honestly say "everything up to here is saved".
+
+### One width model per Go TUI — go-runewidth treats Ambiguous glyphs as wide under a CJK locale
+
+**Symptom:** In a Bubble Tea + glamour TUI, box art placed in a code
+block (an ER diagram) broke in a telling shape: **only lines containing
+text had their box gap widened; lines made of box-drawing characters
+only were fine** — and the scrollback hard-wrap then sheared the
+over-long tails. Under `LANG=ja_JP.UTF-8` go-runewidth sets
+`EastAsianWidth=true` and counts East Asian Ambiguous glyphs — box
+drawing ─│┌┐├┤, arrows ►◄, "…" — as two cells, while x/ansi, uniseg, and
+the common terminal setting in the same process count one. glamour pads
+each code-block line with go-runewidth, so lines with many box
+characters looked "already wide" and got less padding; real widths
+varied per line (measured 176/125/172/125 cells on consecutive lines).
+Under `LANG=C` every line was 176.
+
+**How to apply:**
+1. **Pin every width measurer in the process to one model**: at startup
+   set `runewidth.DefaultCondition.EastAsianWidth = false` (agreeing
+   with x/ansi, uniseg, and most terminals) — but honour an explicit
+   `RUNEWIDTH_EASTASIAN`, leaving an opt-in for operators whose
+   terminal renders Ambiguous glyphs wide.
+2. When a new width-measuring dependency arrives, **test it with
+   `EastAsianWidth = true` forced** and assert that rendered lines
+   containing box characters all have equal real width — a
+   locale-dependent bug does not reproduce unless the test reproduces
+   the locale on purpose.
+3. Telling the two failure modes apart: "only text-bearing lines
+   drift, box-only lines are fine" → a width-measurement mismatch in
+   the program; "only box-bearing lines drift" → the terminal's own
+   ambiguous-width setting.
+

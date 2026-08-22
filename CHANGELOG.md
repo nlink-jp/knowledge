@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (5)
+
+- 1 entry from fixing sheared box art in a fallback CLI agent's TUI
+  under a Japanese locale (2026-08):
+  - **config-and-io** (1): one width model per Go TUI — go-runewidth
+    flips East Asian Ambiguous glyphs to two cells under a CJK locale
+    and glamour pads code blocks with it; pin EastAsianWidth=false
+    (honour an explicit RUNEWIDTH_EASTASIAN), and test new
+    width-measuring dependencies with the wide setting forced.
+
 ## 2026-08-22 (4)
 
 - 1 entry from adding terminal rendering of mermaid diagrams to a
