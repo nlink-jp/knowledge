@@ -411,7 +411,21 @@ label plus a stray node.
    prediction), **fit** (one layout: fits or source; an alternative
    layout is a second failure mode), **verify** (generic). When a new
    construct breaks, the fix belongs in translate, or nowhere.
-9. **Test guards against the renderer's real output, not hand-written
+9. **Teach the writing style before you correct it in code** (operator
+   feedback). When the model's dialect does not match a downstream
+   tool, state the accepted dialect in the system prompt before adding
+   a rewriter. Measured (a CLI agent's mermaid rendering, 2026-08): the
+   next three diagrams followed the taught dialect with no violations
+   and all drew. Teaching wins because (a) the correcting code shrinks,
+   (b) it avoids **meaning-changing** corrections (flattening shapes,
+   substituting characters inside labels), and (c) the model's own
+   output — the transcript, anything copied elsewhere — becomes correct
+   too. Compliance is probabilistic, so **keep existing deterministic
+   translations as a frozen backstop**, and measure the cost of
+   removing them before deciding (here: 2–3 correct diagrams out of 18,
+   plus one wrong graph the guards did not catch). From then on, a new
+   dialect mismatch goes into the prompt, never into the table.
+10. **Test guards against the renderer's real output, not hand-written
    expectations.** The false negative above survived because the test
    used a hand-written `┌alpha┐ ─edge► ┌beta┐` — the real artifact had
    padding. Any code that verifies a derived rendering must be tested

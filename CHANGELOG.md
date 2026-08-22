@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (11)
+
+- 1 entry from an operator preferring instruction over correction in a
+  fallback CLI agent (2026-08):
+  - **llm-integration** (1): teach the accepted dialect in the system
+    prompt before writing a rewriter — measured compliance, avoids
+    meaning-changing corrections, and fixes the model's own output;
+    keep existing translations as a frozen backstop after measuring
+    what removing them costs.
+
 ## 2026-08-22 (10)
 
 - 1 entry from an operator calling out accumulated special cases in a
