@@ -365,7 +365,12 @@ label plus a stray node.
 3. **Verify fidelity before substituting**: every label extracted from
    the source (nodes, edges, participants, messages, entities) must
    appear in the rendering, or show the source instead. Never let a
-   renderer draw less than was written.
+   renderer draw less than was written. **Label presence alone is not
+   enough** — a diagram whose `A -- text --> B` edge syntax the renderer
+   misread as a node "A -- text" passed the label guard as a
+   plausible-looking wrong graph (measured). **Count structure too**:
+   the source's edge count (per arrow, |left| × |right| endpoints, fan-ins
+   included) must equal the arrowheads drawn, or fall back to source.
 4. Normalize what the renderer cannot parse into a content-preserving
    form (shape is presentation; the graph is the content); measure the
    width/height budget before accepting, retry with tighter settings,

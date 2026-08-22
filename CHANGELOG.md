@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-22 (6)
+
+- 1 amendment from a diagram drawn wrong in a fallback CLI agent
+  (2026-08):
+  - **llm-integration** (1, amended): a fidelity guard must count
+    structure (edges vs arrowheads), not only label presence — a
+    mis-parsed edge-label syntax produced a plausible wrong graph with
+    every label present.
+
 ## 2026-08-22 (5)
 
 - 1 entry from fixing sheared box art in a fallback CLI agent's TUI
