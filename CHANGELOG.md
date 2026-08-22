@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-22 (14)
+
+- 1 entry from a documentation audit of a fallback CLI agent that found
+  43 discrepancies across seven releases (2026-08):
+  - **development-process** (1): an en/ja mirror check that verifies
+    only pairing does not protect content — compare the identifiers a
+    translation must not change, include the root READMEs, and measure
+    the false-positive rate before adopting the rule.
+
 ## 2026-08-22 (13)
 
 - 2 entries from a cross-session memory feature that had never fired in

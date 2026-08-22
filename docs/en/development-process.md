@@ -334,6 +334,40 @@ changes share. If they overlap: keep ADRs as separate documents with individual
 approval, but implement under one version bump and mark the release notes
 "together".
 
+### An en/ja mirror check that only verifies pairing does not protect content — compare identifiers
+
+**Symptom:** A bilingual mirror script checked only that every
+`docs/en/X.md` had a `docs/ja/X.ja.md`. A feature commit updated
+`README.ja.md` and not `README.md`, so **the English README lost a whole
+capability for six releases** — the pair existed, so the check stayed
+green every time. The root READMEs were not even in scope. Both INDEX
+files meanwhile claimed "full parity, enforced by the script",
+**asserting a stronger guarantee than the script provided**.
+
+**Why:** From the correct premise that prose cannot be compared across a
+translation, the design jumped to the wrong conclusion that content
+cannot be checked at all. In fact some elements **must not change in
+translation** — tool names, config keys, CLI flags, slash commands — and
+those are exactly the things that go stale.
+
+**How to apply:**
+1. Extract only **identifiers** in backticks and outside fenced blocks
+   from both languages, and require the sets to be equal. Restrict the
+   pattern to language-invariant shapes: `--flag`, `/command`,
+   `snake_case`, `[section].key`.
+2. Exclude placeholders (`<escaped-path>` ↔ its translation), filenames
+   and prose. **Measure the false-positive rate over the whole set
+   before adopting it**: a naive "all code spans must match" rule fired
+   on 24 of 55 pairs, while the identifier-only rule fired on 0 — and
+   caught three real one-sided identifiers on its first run.
+3. **Include the root READMEs as a pair.** A check that walks only the
+   docs directory is not looking where the accident happens.
+4. When the check fires on prose, drop the backticks rather than
+   weakening the rule.
+5. Keep the guarantee the check provides and the wording in the INDEX in
+   step. If you write "enforced by the script", say precisely whether it
+   is structure or content.
+
 ## Documentation
 
 ### Architecture docs explain "why"
