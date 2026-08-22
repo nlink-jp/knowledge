@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-22 (12)
+
+- 1 entry generalizing the day's diagram-rendering lessons in a
+  fallback CLI agent (2026-08):
+  - **llm-integration** (1): silently correcting dynamic LLM output is
+    a bad move — the only valid responses are teach, verify+reject, or
+    surface to the human; the sole exception is meaning-preserving
+    parsing. Includes why it is structurally bad (unbounded shifting
+    input, the cheapest lever ignored, inverted failure mode,
+    source/display divergence).
+
 ## 2026-08-22 (11)
 
 - 1 entry from an operator preferring instruction over correction in a

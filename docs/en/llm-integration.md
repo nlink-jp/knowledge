@@ -104,6 +104,49 @@ dies").
 
 ## Defensive output handling
 
+### Silently correcting dynamic LLM output is a bad move — there are only three valid responses
+
+**Symptom:** A CLI agent that renders mermaid diagrams in the terminal
+gained a correction every time the model's dialect diverged from the
+renderer's grammar (shape normalizer, edge-syntax normalizer, a
+per-construct refusal, a complexity cap). Four field reports produced
+four special cases; two were **unnecessary or wrong**, and the wrong
+refusal made "the flowchart isn't drawn" recur for three sessions. The
+operator's formulation: **correcting dynamic LLM output in code is a
+bad move as a rule.**
+
+**Why it is structurally bad:**
+- The input space is unbounded and **shifts with every model update**.
+  A correction is n=1 engineering fitted to one observed sample; the
+  next sample breaks differently.
+- The model is **steerable**. Unlike a third-party API you can simply
+  ask it not to write that — correction ignores the cheapest lever.
+- **The failure mode inverts.** Without correction: wrong output is
+  visible and gets reported. With it: correct output is silently
+  suppressed and the cause is invisible — and the breakage looks like
+  "the model didn't produce one".
+- **Meaning-changing corrections** (flattening shapes, substituting
+  characters inside labels) split what the model wrote from what the
+  user sees: the source in the transcript and the display disagree.
+
+**How to apply.** There are only three valid responses to imperfect
+model output:
+1. **Teach** — state the accepted format/dialect in the prompt. First
+   choice: it improves the output itself, so transcripts and anything
+   copied elsewhere get better too.
+2. **Verify and reject / fall back** — a generic post-hoc check that
+   drops the output back to the source or a safe display. Rejection is
+   honest; correction hides.
+3. **Surface it to the human** — when the judgment is theirs
+   (readability, acceptability), escalate instead of deciding.
+
+The one exception is **meaning-preserving parsing**: extracting JSON
+from a fenced block, accepting a bare array as well as the wrapper,
+normalizing whitespace — reading the same content, changing nothing,
+and not preventable by teaching. Before adding any other
+transformation, ask whether 1–3 covers it; if you must add it,
+**freeze** it and route later additions to the prompt.
+
 ### Validate semantic consistency, not just schema
 
 **Symptom:** Output that is schema-valid but semantically contradictory (critical
