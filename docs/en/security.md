@@ -5,6 +5,33 @@ safe destructive operations. Each entry follows **symptom → why → how to app
 
 ---
 
+### Self-approval is not a defence — never let the party that proposed an action approve it
+
+**Symptom:** An agent's persistent-memory writes were placed in a
+"needs review" tier, with human approval at write time named as the
+defence. But in auto-approve mode the review tier is answered by a
+model evaluator, so **the model was approving its own saves as
+low-risk** (measured verbatim: "saving a project-scoped memory note is
+safe and low-risk"). The human never saw them.
+
+**Why it is dangerous:** Persistent memory is a **persistence vector
+for prompt injection**. If a poisoned tool result talks the model into
+"remember this instruction", the same poisoned context is in play for
+the approval decision — so the attack clears one step or two with equal
+ease. What looks like defence in depth has only one layer, because both
+layers are the same party.
+
+**How to apply:** If your design names human approval as the defence,
+never delegate that approval to the same party that proposed the action
+(same model, same context). When adding automation to reduce
+interruptions, put operations with **persistence, irreversibility, or
+privilege escalation** on an exclusion list. A policy the operator
+configures in advance is a different thing — a deliberate relaxation —
+so do not conflate "the operator decided beforehand" with "the model
+decided in the moment". This hole is unreachable, and therefore
+invisible, until the feature actually starts firing: **re-measure the
+approval path the moment it does.**
+
 ## Prompt injection
 
 ### Isolate untrusted data with nonce-tagged XML wrapping

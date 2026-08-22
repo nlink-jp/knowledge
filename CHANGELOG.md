@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-22 (13)
+
+- 2 entries from a cross-session memory feature that had never fired in
+  a fallback CLI agent (2026-08):
+  - **llm-integration** (1): a model-facing capability written as "you
+    can" never fires — state the trigger, balance the positive against
+    the prohibitions, and count proposals rather than trusting
+    precision (0 proposals in 39 sessions looked like a precise
+    feature).
+  - **security** (1): self-approval is not a defence — never let the
+    party that proposed an action approve it; exclude persistent,
+    irreversible, or privilege-escalating operations from
+    auto-approval, and re-measure the approval path once a dormant
+    feature starts firing.
+
 ## 2026-08-22 (12)
 
 - 1 entry generalizing the day's diagram-rendering lessons in a

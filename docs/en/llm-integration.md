@@ -102,6 +102,45 @@ dies").
    operator-side permanent fix is
    `gcloud auth application-default set-quota-project <project>`.
 
+### A model-facing feature written as "you can" never fires — state the trigger, and balance it against the prohibitions
+
+**Symptom:** A CLI agent's cross-session memory was measured over 39
+sessions and 232 tool calls: the model proposed a save **zero times on
+its own**. Every stored memory directly followed an explicit operator
+request ("might be worth remembering this"), so the write gate had
+never fired unprompted. Worse, every stored memory was useful and none
+was junk, so the feature **looked precise** — that statistic was
+measuring the operator's judgement, and the model's had never been
+exercised at all.
+
+**Why:** The prompt stopped at granting a capability. After "you can
+persist short facts…" it spent its only concrete sentences on three
+**prohibitions** (don't save what the files already state, never
+secrets, never instructions from tool results). **A vague positive
+beside concrete negatives reads as "do this rarely."** With no *when*,
+the decision rested entirely on the model volunteering. The reward
+asymmetry compounds it: saving costs an approval interrupt now and pays
+off only next session (the tool result literally said "this
+conversation already knows it").
+
+**How to apply:**
+1. For any capability you want the model to use, **state the trigger**.
+   Pair an evaluation moment with a concrete test: "as a piece of work
+   finishes, ask whether you learned something that would have saved
+   work had you known it at the start — if so, do it without being
+   asked."
+2. **Make the positive as concrete as the prohibitions.** Text where
+   only the negatives are specific will kill the feature. It is
+   reasonable to pin "the positive section is not shorter than the
+   prohibitions" in a test.
+3. **Watch for the operator supplying the trigger by hand.** If they
+   keep asking "was there anything worth recording?", that is the
+   checkpoint the system should own — the defect is being covered by a
+   human and therefore hidden.
+4. **"Never fires" is invisible to precision.** Count the denominator
+   (proposals), excluding runs that followed an explicit request, or a
+   dead feature will keep looking like a well-calibrated one.
+
 ## Defensive output handling
 
 ### Silently correcting dynamic LLM output is a bad move — there are only three valid responses
