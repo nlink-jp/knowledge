@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-22 (10)
+
+- 1 entry from an operator calling out accumulated special cases in a
+  fallback CLI agent (2026-08):
+  - **llm-integration** (1): stop bolting per-construct blacklists onto
+    a renderer — fold the design into translate / fit / verify and let
+    the generic verification be the single gate; one such blacklist was
+    written from an unverified assumption and refused correct output.
+
 ## 2026-08-22 (9)
 
 - 1 entry from a verification guard disabling a feature in a fallback

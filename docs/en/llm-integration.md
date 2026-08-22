@@ -398,7 +398,20 @@ label plus a stray node.
    (box drawing, block elements, arrowheads, whitespace) from both
    sides.** Worse, it hides: single-word labels never trip it, so it
    ships and only surfaces on a label containing a space.
-8. **Test guards against the renderer's real output, not hand-written
+8. **Do not accumulate external special cases — make the generic
+   post-hoc verification the single gate** (settled by operator
+   feedback). Adding "this construct breaks, so refuse it" per field
+   report is whack-a-mole. Of two such blacklists added that way, one
+   judged beauty and the other was **written from an assumption and
+   was simply wrong** — the renderer drew that construct correctly in
+   most diagrams, and where it did not the generic verification
+   already caught it; both were deleted. Fold the design into three
+   rules: **translate** (deterministic mapping of constructs the
+   renderer's grammar rejects — each entry a syntax fact, never a
+   prediction), **fit** (one layout: fits or source; an alternative
+   layout is a second failure mode), **verify** (generic). When a new
+   construct breaks, the fix belongs in translate, or nowhere.
+9. **Test guards against the renderer's real output, not hand-written
    expectations.** The false negative above survived because the test
    used a hand-written `┌alpha┐ ─edge► ┌beta┐` — the real artifact had
    padding. Any code that verifies a derived rendering must be tested
