@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-22 (3)
+
+- 1 entry from a whole-code review of a fallback CLI agent (2026-08):
+  - **security** (1): a permission justified by "only a human writes
+    this input" becomes a hole the moment delegation lets a model write
+    that input — audit input-channel trust premises when adding
+    sub-agents, grep the comments for the premise, and test
+    containment at the input preprocessing layer.
+
 ## 2026-08-22 (2)
 
 - 1 entry from rebuilding a fallback CLI agent's round limit

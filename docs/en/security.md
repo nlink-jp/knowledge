@@ -126,6 +126,31 @@ kills the feature), the boundary can only sit at the moment of writing.
    never build a structure where a cloned repo can carry in memories of
    unknown authorship.
 
+### A permission justified by "only a human writes this input" becomes a hole the moment delegation lets a model write it
+
+**Symptom:** A CLI agent's `@`-reference grammar allowed out-of-project
+absolute/`~` paths for images, documents, and media — on the explicit
+premise that "an @ is always operator-typed, never model-triggered".
+A read-only child agent was later added whose input is a model-authored
+question; it flowed through the same input path, so a poisoned file
+could steer the main model into writing `@~/Documents/x.pdf` into the
+question, and the child would attach and read the PDF and carry its
+contents back in its report. Every child tool was confined; this one
+input path was not. Found by an independent review.
+
+**How to apply:**
+1. Whenever model-written text flows through the same path as human
+   input — delegation, sub-agents, tool output re-entering as input —
+   **audit every permission that path carries for its trust premise**.
+   If the premise is "a human types this", switch it off structurally
+   for model-authored input (a per-input flag, a separate entry point).
+2. **Grep the comments for the premise**: phrases like "operator-typed"
+   or "never model-triggered" are the map of what depends on it.
+3. Verify containment claims ("every child path is in-project")
+   against the **input preprocessing** (reference expansion,
+   attachments, clipboard), not just the tool list. Pin it with a test:
+   a model-authored input containing `@` must add no attachment.
+
 ### Give LLM auto-approval the operator's instruction as alignment evidence
 
 **Symptom:** An agent's auto-approval (rule tier + LLM risk-evaluation
