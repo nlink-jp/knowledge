@@ -389,6 +389,20 @@ label plus a stray node.
    (lost labels, edge-count mismatch, phantom nodes, overflow off the
    screen) are enforced by machine; conditions that merely make it
    **ugly** are presented and left to the human.
+7. **The verification guard itself can kill the feature by false
+   negative** — when comparing a derived rendering against the source,
+   the renderer mixes in its own decoration (a horizontal edge label is
+   padded as `──IP─/─CIDR──`; one crossing a subgraph border becomes
+   `Domain│/ FQDN`). Normalizing only whitespace reads those as lost
+   labels and refuses correct diagrams outright. **Strip decoration
+   (box drawing, block elements, arrowheads, whitespace) from both
+   sides.** Worse, it hides: single-word labels never trip it, so it
+   ships and only surfaces on a label containing a space.
+8. **Test guards against the renderer's real output, not hand-written
+   expectations.** The false negative above survived because the test
+   used a hand-written `┌alpha┐ ─edge► ┌beta┐` — the real artifact had
+   padding. Any code that verifies a derived rendering must be tested
+   against output that actually went through the renderer.
 
 ### Make an agent's round limit an intervention ladder, not a guillotine
 

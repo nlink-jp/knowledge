@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (9)
+
+- 1 entry from a verification guard disabling a feature in a fallback
+  CLI agent (2026-08):
+  - **llm-integration** (1): a fidelity guard can kill the feature by
+    false negative — strip the renderer's own decoration from both
+    sides before comparing, and test guards against real rendered
+    output rather than hand-written art (the bug hid because
+    single-word labels never tripped it).
+
 ## 2026-08-22 (8)
 
 - 1 correction from operator feedback on a fallback CLI agent's
