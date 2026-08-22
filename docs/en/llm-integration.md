@@ -343,6 +343,40 @@ write permissions and stalled without producing artifacts.
 **How to apply:** Run tasks involving file creation/editing in the foreground;
 restrict background agents to read-only research.
 
+### Make an agent's round limit an intervention ladder, not a guillotine
+
+**Symptom:** A CLI agent implemented its per-turn round limit
+(max_turns) as a bare counter. A **monotonically progressing**
+50-round research turn was killed mid-pipeline (measured log:
+search → fetch → write-and-validate sections, zero repeated calls,
+cut at section six; one "continue" finished it in 10 more rounds).
+Meanwhile a genuine runaway loop burns every round up to the limit
+before anything intervenes. A bare counter is wrong in both
+directions — and spoils today's agentic-capable models.
+
+**How to apply:** Apply the approval-ladder shape (deterministic rule
+tier → model tier → human floor → a ceiling nothing lifts) to round
+control.
+1. **Loop detector (deterministic, immediate)**: N consecutive
+   identical (tool, canonical-args) calls escalate now — a runaway
+   never gets the remaining rounds for free. Legitimate repetition
+   exists (polling an async job), so detection escalates instead of
+   killing, and a "continue" verdict whitelists that signature for
+   the turn (polling asks once, not every N polls).
+2. **A model progress review at the limit**: the operator's
+   instruction plus the recent activity trace, evidence-wrapped —
+   progressing or stuck? Interactive: ask the human with the verdict
+   as evidence. Auto mode: continue by itself on a confident
+   "progressing" (faithful to auto mode's purpose — fewer
+   interruptions). Non-interactive: the review alone, fail-closed.
+3. **An absolute cap** (e.g. 3× max_turns) that no verdict can lift —
+   a fooled reviewer bounds the damage at a known spend.
+4. **Stop messages must teach recovery**: progress is saved in the
+   history; "continue" resumes. Advice that destroys the history
+   (/clear and kin) is the worst possible guidance — it breaks the
+   very recoverability that makes the stop survivable, and that is
+   exactly what the old message recommended.
+
 ### Narrow child-agent delegation to read-only, single-purpose
 
 **Symptom:** A CLI agent with an interactive approval gate considered a

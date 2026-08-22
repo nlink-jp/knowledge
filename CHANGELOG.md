@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (2)
+
+- 1 entry from rebuilding a fallback CLI agent's round limit
+  (2026-08):
+  - **llm-integration** (1): make an agent's round limit an
+    intervention ladder, not a guillotine — deterministic loop
+    detector that escalates early, a model progress review at the
+    threshold, per-mode decisions, an absolute cap no verdict lifts,
+    and stop messages that teach recovery instead of destroying it.
+
 ## 2026-08-22
 
 - 1 entry from adding instruction context to a fallback CLI agent's
