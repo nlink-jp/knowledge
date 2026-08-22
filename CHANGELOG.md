@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-22 (7)
+
+- 1 amendment from dense diagrams breaking in a fallback CLI agent
+  (2026-08):
+  - **llm-integration** (2, amended): layout quality is a limit
+    fidelity checks cannot phrase — cap readable complexity
+    (relationships, per-node degree) independently of width; recurring
+    breakage means you have hit the renderer's expressiveness limit.
+
 ## 2026-08-22 (6)
 
 - 1 amendment from a diagram drawn wrong in a fallback CLI agent
