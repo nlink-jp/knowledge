@@ -376,18 +376,19 @@ label plus a stray node.
    width/height budget before accepting, retry with tighter settings,
    then fall back to source. Rewrite only the display — the record of
    truth (history, transcript) keeps the original.
-5. **Layout quality is a limit fidelity checks cannot phrase** — a dense
-   graph (a multi-relationship ER diagram) draws every line yet crosses
-   into unreadability, passing both the label and edge guards. Measure
-   the readable-complexity ceiling (relationship count, per-node degree)
-   and fall back to source beyond it; a width guard alone lets a
-   crossing diagram through on a wide terminal, so the complexity cap
-   must be independent of width.
-6. **Recurring breakage is the sign you have hit the renderer's
-   expressiveness limit** — simple diagrams are clean, complex ones
-   break. Rather than stacking thresholds forever, accept it as a
-   simple-diagram feature and keep an honest boundary that falls back
-   to source.
+5. **Guard against being WRONG, never against being ugly** (settled by
+   operator feedback). A dense graph draws every line correctly yet
+   crosses into unreadability — that is aesthetics, not fidelity. A
+   complexity cap (relationship count, per-node degree) was implemented
+   and then reverted by the operator: "if it fits the screen, show the
+   result; a human tells the model it is too complex and asks for a
+   simpler one." Readability judgments belong to the human, and the
+   correction loop already exists in the conversation — a pre-emptive
+   quality gate is over-control.
+6. Where to draw the line: conditions that make the output **wrong**
+   (lost labels, edge-count mismatch, phantom nodes, overflow off the
+   screen) are enforced by machine; conditions that merely make it
+   **ugly** are presented and left to the human.
 
 ### Make an agent's round limit an intervention ladder, not a guillotine
 

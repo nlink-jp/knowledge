@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (8)
+
+- 1 correction from operator feedback on a fallback CLI agent's
+  diagram rendering (2026-08):
+  - **llm-integration** (1, corrected): guard derived renderings
+    against being wrong, never against being ugly — a readability
+    threshold (the previous entry's advice) was reverted by the
+    operator: show what fits, and let the human tell the model "too
+    complex". The correction loop lives in the conversation.
+
 ## 2026-08-22 (7)
 
 - 1 amendment from dense diagrams breaking in a fallback CLI agent
