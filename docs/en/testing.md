@@ -31,6 +31,47 @@ cannot reach. Each entry follows **symptom → why → how to apply**.
 - Never trust GUI error display until an error is deliberately triggered on the
   real app.
 
+## Mocks exercise the error path; nobody reads the sentence it produces
+
+Mocks cover the **branches** of a failure path. What they cannot cover is
+whether the sentence assembled at the end of that path **means anything to the
+person who reads it**. A substring assertion goes green on wording that is
+actively misleading.
+
+**Case (2026-08-23, mcp-bridge v0.1.0 pre-release verification).** Connecting to
+the live Slack MCP server with a revoked token surfaced two defects that no
+unit test had failed on.
+
+1. **The cause vanished along the path.** A 401 invalidated the credential, the
+   retry then failed for lack of one, and the only text reaching the user was
+   `no access token`. True, but it is the *after-effect* of invalidation rather
+   than the cause, and the reader goes looking for an empty token file. Fixed by
+   carrying all three facts to the end: the 401, the reason no replacement
+   exists, and the command that resolves it.
+2. **A successful run printed an error line.** With a self-signed loopback
+   callback the browser's first connection always fails the handshake — that
+   failure is exactly what produces the warning the user clicks through — and
+   `http.Server`'s default ErrorLog printed it as `tls: bad certificate` on
+   every login, right after the tool's own note saying the warning was expected.
+   **A successful login that reads as a failure.**
+
+The mocks took the same branches in both cases. The only difference was running
+it and **reading the output as a human**.
+
+**How to apply:**
+
+- In pre-release real-data verification, deliberately trigger the **failure**
+  paths and read the terminal output as written, not just the happy path. One
+  invalid credential is usually enough.
+- Do not test error text with substring matches alone: **pin the words that must
+  not appear**, too. (For case 1, the test now asserts `no access token` is
+  absent.)
+- When a dependency carries **its own logger** (`http.Server.ErrorLog` and
+  friends), run the production path once to see what it emits. Output you did
+  not write does not show up in tests you did write.
+
+Related: [[all-green-unit-tests-still-need-real-data-e2e]]
+
 ## A pipeline that ends in delivery is not verified until something is delivered
 
 **Symptom:** A feed-digest tool passed 315 unit tests and a real-data run from

@@ -142,6 +142,13 @@ README/LICENSE.
   `codesign --verify --strict` + `Authority=Developer ID Application` +
   identifier match. Only `.app` bundles can be assessed by `spctl`
   ("accepted, source=Notarized Developer ID").
+- **Whether a bare CLI is notarized can be checked directly** with
+  `codesign --test-requirement="=notarized" --verify`, which answers
+  `explicit requirement satisfied`. This is stronger than falling back to the
+  Authority and Identifier check above: it rejects a binary that is correctly
+  signed but never notarized. Run it against the asset fetched with
+  `gh release download`, not the local `dist/` copy (demonstrated on
+  mcp-bridge v0.1.0, 2026-08-23).
 - **Lightweight tags are invisible to `git describe`** (annotated-only by
   default). Derive versions with `git describe --tags` (includes lightweight).
 

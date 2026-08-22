@@ -120,6 +120,11 @@ dist-darwin: cross-build-darwin
   not seem to be an app"）— notarize の有無と無関係。CLI の確認は
   `codesign --verify --strict` + `Authority=Developer ID Application` + Identifier 一致で行う。
   `spctl` で "accepted, source=Notarized Developer ID" と評価できるのは `.app` だけ。
+- **bare CLI の notarize 有無そのものは `codesign --test-requirement="=notarized" --verify`
+  で直接確認できる** — 通れば `explicit requirement satisfied` を返す。上記の
+  「`spctl` が使えないので Authority と Identifier で代替する」より一段強い確認で、
+  「署名は正しいが notarize されていない」バイナリを弾ける。ローカル dist ではなく
+  `gh release download` した公開資産に対して実行すること（2026-08-23, mcp-bridge v0.1.0 で実証）。
 - **`git tag`（lightweight）は `git describe`（annotated 限定）から見えない**。Makefile の
   版数導出は `git describe --tags`（lightweight 込み）を使う。
 

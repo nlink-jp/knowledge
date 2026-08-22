@@ -32,7 +32,7 @@ English version: [README.md](README.md)
 | [llm-integration](docs/ja/llm-integration.md) | Gemini/genai SDK、出力検証、drift、トークン、dedup、パイプライン |
 | [security](docs/ja/security.md) | プロンプトインジェクション対策、秘密情報/PII、公開サービス、破壊的操作の安全設計 |
 | [build-and-packaging](docs/ja/build-and-packaging.md) | CGO クロスビルド、.gitignore の罠、CI 不使用の判断理由 |
-| [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、診断時の証拠の質 |
+| [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、エラー文言の質、診断時の証拠の質 |
 | [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント |
 | [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
