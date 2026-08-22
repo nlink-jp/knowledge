@@ -343,6 +343,35 @@ write permissions and stalled without producing artifacts.
 **How to apply:** Run tasks involving file creation/editing in the foreground;
 restrict background agents to read-only research.
 
+### When a derived rendering replaces source, verify fidelity and fall back to source on any loss
+
+**Symptom:** A CLI agent gained terminal rendering of mermaid diagrams
+that appear in chat. Two pure-Go renderers were measured on **real
+diagrams with Japanese labels**. One (22 advertised types) mangled
+UTF-8 in flowchart labels, misaligned double-width cells in sequence
+diagrams, and **silently dropped the back-edges** of a state diagram —
+a rendering that looks right but lacks information is worse than
+hard-to-read source. The other handled CJK widths correctly but did not
+parse node shapes beyond `[box]`, turning `B{decision}` into a literal
+label plus a stray node.
+
+**How to apply:**
+1. **Decide adoption by measuring with your own inputs (language,
+   syntax), not by the README.** "Supports many types" does not mean
+   "draws them correctly".
+2. **Keep the list of what you tell the model can be rendered and the
+   renderer's actual capability as ONE list, pinned by a test** — a
+   promise and an implementation written in two places will drift.
+3. **Verify fidelity before substituting**: every label extracted from
+   the source (nodes, edges, participants, messages, entities) must
+   appear in the rendering, or show the source instead. Never let a
+   renderer draw less than was written.
+4. Normalize what the renderer cannot parse into a content-preserving
+   form (shape is presentation; the graph is the content); measure the
+   width/height budget before accepting, retry with tighter settings,
+   then fall back to source. Rewrite only the display — the record of
+   truth (history, transcript) keeps the original.
+
 ### Make an agent's round limit an intervention ladder, not a guillotine
 
 **Symptom:** A CLI agent implemented its per-turn round limit

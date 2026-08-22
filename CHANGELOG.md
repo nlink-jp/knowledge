@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-22 (4)
+
+- 1 entry from adding terminal rendering of mermaid diagrams to a
+  fallback CLI agent (2026-08):
+  - **llm-integration** (1): when a derived rendering replaces source,
+    decide the renderer by measuring your own inputs, keep the
+    advertised capability and the implementation as one tested list,
+    verify fidelity (every source label present) before substituting,
+    and fall back to source on any loss.
+
 ## 2026-08-22 (3)
 
 - 1 entry from a whole-code review of a fallback CLI agent (2026-08):
