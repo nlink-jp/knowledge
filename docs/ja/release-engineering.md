@@ -125,6 +125,12 @@ dist-darwin: cross-build-darwin
   「`spctl` が使えないので Authority と Identifier で代替する」より一段強い確認で、
   「署名は正しいが notarize されていない」バイナリを弾ける。ローカル dist ではなく
   `gh release download` した公開資産に対して実行すること（2026-08-23, mcp-bridge v0.1.0 で実証）。
+  - **ただしこの検査は notarize 直後には落ちる。** bare Mach-O は staple できずチケットが
+    オンライン参照になるため、`notarytool` が `Accepted` を返した直後でも数十秒〜数分は
+    `code failed to satisfy specified code requirement(s)` を返す。**これを notarize 失敗と
+    読み違えないこと** — 権威は `notarytool` の `Accepted` であり、この検査が見ているのは
+    チケットの配信状況にすぎない。アップロード後に公開資産へ対して実行すれば自然に待ちが入る。
+    それでも落ちるなら until ループで再試行する（2026-08-23, mcp-bridge v0.1.1 で遭遇）。
 - **`git tag`（lightweight）は `git describe`（annotated 限定）から見えない**。Makefile の
   版数導出は `git describe --tags`（lightweight 込み）を使う。
 

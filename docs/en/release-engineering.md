@@ -149,6 +149,14 @@ README/LICENSE.
   signed but never notarized. Run it against the asset fetched with
   `gh release download`, not the local `dist/` copy (demonstrated on
   mcp-bridge v0.1.0, 2026-08-23).
+  - **This check does fail right after notarization, though.** A bare Mach-O
+    cannot be stapled, so its ticket is looked up online, and for seconds to
+    minutes after `notarytool` reports `Accepted` the check still answers `code
+    failed to satisfy specified code requirement(s)`. **Do not read that as a
+    failed notarization** — `notarytool`'s `Accepted` is the authority, and this
+    check only observes whether the ticket has been distributed yet. Running it
+    against the published asset after upload builds in the wait naturally; retry
+    in an until-loop if it still fails (hit on mcp-bridge v0.1.1, 2026-08-23).
 - **Lightweight tags are invisible to `git describe`** (annotated-only by
   default). Derive versions with `git describe --tags` (includes lightweight).
 
