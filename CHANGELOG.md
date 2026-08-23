@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-24 (1)
+
+- 4 entries from a false hardware-failure alarm on an internally run
+  DNS server, where a daily log-summary report attributed
+  two-year-old kernel errors to "yesterday" (2026-08):
+  - **testing** (1): establish a log's timestamp semantics before
+    drawing any conclusion about time — year presence, timezone
+    (writer, viewer, mixtures, DST), event versus ingestion time,
+    monotonicity, relative-time conversion. Includes recovering the
+    year from a year-less log via the line numbers of date-string
+    matches.
+  - **containers-and-infra** (3): rsyslog ships its logrotate config in
+    a separate `rsyslog-logrotate` subpackage, so without it only the
+    five files rsyslog writes grow unbounded while everything else
+    rotates normally; passing an individual config file to
+    `logrotate -f` discards `/etc/logrotate.conf` globals and silently
+    falls back to `rotate 0`; and `PerSourcePenalties` (OpenSSH 9.8+,
+    default on in 9.9) makes an SSH liveness check lock out the checker
+    itself, producing a symptom indistinguishable from a storage I/O
+    hang.
+
 ## 2026-08-22 (14)
 
 - 1 entry from a documentation audit of a fallback CLI agent that found

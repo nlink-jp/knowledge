@@ -575,3 +575,61 @@ that WAS wired.
 - Run one E2E per surface the feature passes through, not per surface where
   it visibly worked: here only the non-interactive (cmd) side was measured,
   and the interactive (TUI) side was the broken one.
+## Establish a log's timestamp semantics before drawing any conclusion about time
+
+**Symptom:** A daily log-summary report announced "disk I/O errors yesterday". The
+kernel lines (ATA command timeouts and link resets) were read correctly and a
+drive-failure diagnosis was built on them — but the entries were from the **same
+calendar date two years earlier**. `/var/log/messages` had gone 2.7 years without
+rotation, and because RFC 3164 timestamps carry no year, the report's date match
+picked up the identical date string from a previous year.
+
+**Why:** The interpretation of the content was right. What was false was the
+**time the evidence was assumed to carry**, and that invalidated the whole
+diagnosis. Timestamp ambiguity has several independent layers — presence of a
+year, presence of a timezone, re-rendering by the viewer, event time versus
+ingestion time, conversion of relative time. None of them are visible while
+reading the log; they all bite after the conclusion is drawn.
+
+**How to apply:** Settle these before reading the content.
+
+1. **Coverage** — `ls -la` (size), then `head -1` / `tail -1`. A quiet server
+   whose log is tens of megabytes is already a signal.
+2. **Does it carry a year?** — RFC 3164 (`Aug 22 06:37:29`) does not. **A
+   year-less format breaks date matching the moment the file spans more than a
+   year.**
+3. **Timezone** — the writer's side (RFC 3164 has no offset either); the viewer's
+   side (`journalctl` renders in the *reader's* timezone, so the same event shows
+   a different clock time than the text log); and mixtures (containers on UTC,
+   host on local time). **Where DST applies, one hour repeats and one hour does
+   not exist once a year, breaking both string sorting and date matching.**
+4. **Event time or ingestion time?** — forwarding and buffering turn it into the
+   latter.
+5. **Can monotonicity be assumed?** — "append order equals chronological order"
+   breaks with multiple writers, NTP step adjustments, and merged files.
+6. **Relative-time conversion** — `dmesg`'s `[12345.678]` is seconds since boot.
+   `dmesg -T` derives absolute times from boot time plus the monotonic clock, so
+   **it drifts whenever the clock is stepped**.
+
+Do not settle a date from a log that carries only ambiguous time. Go to a source
+that carries explicit time:
+
+```
+journalctl -k --since "YYYY-MM-DD" --until "YYYY-MM-DD" -o short-iso
+```
+
+journald stores realtime in UTC microseconds along with a boot ID, so year,
+timezone and boot count are all unambiguous. The point is not "cross-check
+against a second source" but **go to the source with better timestamp
+semantics**.
+
+To recover the year from a year-less log, look at where the date string lands:
+
+```
+grep -n "^Aug 22 " /var/log/messages | cut -d: -f1   # line numbers of matches
+grep -n "^Jan  1 00:0" /var/log/messages             # year boundaries
+```
+
+The same date string appearing at widely separated line numbers proves the file
+spans multiple years. Bracketing each cluster by the year boundaries fixes its
+year (this relies on the monotonicity assumption in 5).
