@@ -102,6 +102,38 @@ dies").
    operator-side permanent fix is
    `gcloud auth application-default set-quota-project <project>`.
 
+### Rejecting is honest; rejecting without telling the author is not
+
+**Symptom:** A CLI agent verified the diagrams in the model's output at
+render time and fell back to showing the source when one could not be
+drawn. The verification worked — but **the fallback was invisible to
+the model**. The rewrite happened at one place just before display, and
+the model's conversation kept the original text. A model that got the
+syntax wrong had no way to find out, and repeated the mistake.
+
+**Why it was missed:** Having implemented "do not silently correct —
+verify and reject", the design felt finished. But rejection has a second
+axis: *whom you tell*. The human could see it (the source appeared on
+screen); **the only party who could fix it — the model — could not.**
+
+**How to apply:**
+1. Whenever you build something that verifies and drops output, check
+   that the drop **and its reason reach the party that generated it**.
+   If they do not, it is silence as far as learning is concerned.
+2. The most reliable way to create that path is to make the verification
+   **a tool call rather than post-processing**. A tool's result goes
+   back to the author, who can correct and retry in the same turn — and
+   the human never sees the broken output at all.
+3. Make refusal reasons **actionable sentences**. A boolean or "failed"
+   teaches nothing. Give the measurement against the limit ("160 columns
+   wide, 144 usable") and the alternative ("use TD instead of LR").
+4. **Do not return large output to the author.** Show it on the side
+   channel (a terminal, a file) and return only a status; returning it
+   doubles the tokens and invites a bad reproduction.
+5. Verify by measurement: force a failure (here, a narrow terminal) and
+   watch the model read the reason and **switch approach** — observed as
+   LR → refused → refused → TD → drawn.
+
 ### A model-facing feature written as "you can" never fires — state the trigger, and balance it against the prohibitions
 
 **Symptom:** A CLI agent's cross-session memory was measured over 39
