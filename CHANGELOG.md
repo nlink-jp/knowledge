@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-24 (2)
+
+- 1 entry from moving diagram rendering behind a tool in a fallback CLI
+  agent (2026-08):
+  - **llm-integration** (1): rejecting is honest, but rejecting without
+    telling the author is not — route the rejection and its reason back
+    to the model, preferably by making the verification a tool call, and
+    make every reason actionable.
+
 ## 2026-08-24 (1)
 
 - 4 entries from a false hardware-failure alarm on an internally run
