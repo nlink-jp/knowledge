@@ -492,6 +492,19 @@ never a durable fix.
      function (pids in, decision out) and it unit-tests trivially
 - Pass through when the bundle ID is nil (bare dev binary) — enumeration is
   impossible there in the first place
+- SwiftUI `@main struct X: App` has no place to run code before its scenes:
+  stored-property initializers (the `@StateObject` model, often with a
+  started refresh loop) run before any `init()` body. Move `@main` to a
+  small `enum Main { static func main() }` that runs the guard first and
+  then calls `X.main()` — a duplicate then exits before the model ever
+  starts (rolled out across 10 GUI apps, 2026-08)
+- **A binary that doubles as a CLI guards only its GUI launch path.** Put
+  the check after argument dispatch (in the GUI branch), never at the top
+  of `main`: guarded CLI subcommands exit 0 with the "another instance"
+  note while the GUI runs — a silent no-op where real work was requested,
+  worst for a scheduled job (caught in nvme-lens, where a top-of-main
+  guard would have blanked `sample` runs; zip-porter's pack/unpack stay
+  concurrent for the same reason)
 - The guard protects the **launched** side. While an unguarded old version
   stays installed, the reverse direction (the old installed copy launched
   while a dev build runs) remains unprotected — shipping the fixed build is
