@@ -465,6 +465,42 @@ entry happened inside those seconds.
   constraint it works around is real.** Another shape of the same API may
   remove it outright.
 
+### Notification clicks resolve by bundle ID — resident apps must enforce a single instance
+
+**Symptom:** Clicking a notification banner of a resident menu-bar app did not
+bring the running instance forward — **a second copy of the app launched**
+(two menu bar items, double polling). (status-lens, 2026-08)
+
+**Why:** When a banner is clicked, notificationd asks LaunchServices to open
+the app for the bundle identifier. On a development machine the same bundle ID
+is typically registered at several paths — the dev build in the build output
+directory, copies extracted for release verification, the installed copy.
+LaunchServices resolves *some* registered copy, and **when it picks a
+different path than the running one, that copy starts as a new process** (the
+same shape as Xcode launching the DerivedData build instead). Every build
+re-registers the output directory's .app, so cleaning up with lsregister is
+never a durable fix.
+
+**How to apply:**
+- Give resident GUI apps a **two-layer guard**:
+  1. `LSMultipleInstancesProhibited: true` in Info.plist — stops
+     LaunchServices launches (notification clicks, `open`) at the LS level
+  2. At startup, enumerate
+     `NSRunningApplication.runningApplications(withBundleIdentifier:)`; if any
+     instance other than self exists, write one stderr line and exit 0 —
+     covers direct binary exec and `open -n`. Cut the decision as a pure
+     function (pids in, decision out) and it unit-tests trivially
+- Pass through when the bundle ID is nil (bare dev binary) — enumeration is
+  impossible there in the first place
+- The guard protects the **launched** side. While an unguarded old version
+  stays installed, the reverse direction (the old installed copy launched
+  while a dev build runs) remains unprotected — shipping the fixed build is
+  part of the fix
+- Verify on a real bundle via both routes: direct exec (guard message,
+  exit 0) and `open` (no duplicate via the LS route). Both work without
+  killing the running instance
+- Side effect: to try a dev build, quit the installed instance first
+
 ### Report one result per request, not per item
 
 **Symptom:** Opening N files selected together in Finder processed them one at a
