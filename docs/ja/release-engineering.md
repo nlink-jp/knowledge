@@ -27,13 +27,15 @@
 5. zip の notarize はバイトを変えない（staple 不可の CLI 配布物）。事後に
    同一 zip を再提出すれば公開済みアセットも sha もそのまま正常化できる —
    再アップロード不要かの判断材料として覚えておく。
-6. **GUI (.app) リポは 2026-08 に全数展開済み**: canonical の
-   notarize-darwin-app.sh がマーカーを書き（開始時に旧マーカーを rm — 再ビルド
-   された bundle の隣に古い判定を残さない）、各リポの `make verify-release` が
-   「マーカー + オフラインの `stapler validate`」の二重ゲートで判定する。
-   staple 済み bundle はオンライン照会に頼らず検証できるため、CLI と違い
-   spctl 遅延問題なしに第二ゲートを立てられる。vendored コピーは
-   check-org check10 が byte 比較で drift を検出する。
+6. **2026-08 に全数展開済み（GUI 15 + CLI 60）**: canonical の notarize スクリプト
+   両変種がマーカーを書き（開始時に旧マーカーを rm — 再ビルドされた成果物の隣に
+   古い判定を残さない）、各リポの `make verify-release` が二重ゲートで判定する。
+   第二ゲートは配布形式で異なる: **GUI はオフラインの `stapler validate`**
+   （staple 済み bundle はオンライン照会不要）、**CLI は `-nt` の鮮度テスト**
+   （zip は staple 不可なので「マーカーが zip より新しい」ことを要求 — マーカー後に
+   再ビルドされた zip は再 notarize しない限り落ちる）。vendored コピーは
+   check-org check10 が byte 比較で drift を検出する（slack-router の
+   build-tools/ 配置も対象）。
 
 
 macOS の署名・notarization、リリースアーカイブ、Homebrew tap 配布に関する知見集。
