@@ -1,5 +1,41 @@
 # Release Engineering
 
+## A fail-open step plus a verifier that only displays = a defective release with green checks
+
+**Symptom:** The notarize script deliberately fails open (warn and exit
+0 un-notarised) so contributors without credentials can still build.
+The day Apple's updated developer agreement broke the profile probe,
+the release went straight through and **an un-notarised zip shipped
+with every check green**. The verifier *displayed* the Gatekeeper
+verdict — but as `spctl … | head -2`, so only the pipeline tail's exit
+status counted and a `rejected` could never stop the chain. On top of
+that, the release operator compressed step output with `tail -1`,
+which also hid the displayed rejection. The accident needed all three
+failures stacked.
+
+**How to apply:**
+1. **Any step allowed to fail open needs a deterministic gate
+   downstream.** Write a success marker (`<zip>.notarized`, touched
+   only after confirming `status: Accepted`) and make the verifier
+   require it. Gate on local determinism, not an online lookup (spctl's
+   ticket check lags fresh submissions).
+2. **`cmd | head` / `cmd | tail` return the pipe tail's exit status** —
+   never put the command you are gating on inside a pipe. Separate the
+   display path from the verdict path.
+3. **If you compress a release step's output, grep for the success
+   token.** `tail -1` relies on the last line happening to be the
+   success message; on failure a hint line lands last and reads like
+   success. `grep Accepted` is empty exactly when it failed.
+4. **Exercise the gate in both directions**: it passes with the marker
+   and fails without it. A one-direction check cannot detect a gate
+   that never fires.
+5. Notarising a zip does not change its bytes (bare CLI distributables
+   cannot be stapled). Re-submitting the identical zip after the fact
+   heals an already-published asset — the sha and the download stay
+   valid. Worth remembering when deciding whether a re-upload is
+   needed.
+
+
 Lessons on macOS signing/notarization, release archives, and Homebrew tap
 distribution. Each entry follows **symptom → why → how to apply**, extracted from
 incidents on real projects. Prescriptive rules live in
