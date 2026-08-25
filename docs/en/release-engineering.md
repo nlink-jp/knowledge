@@ -99,9 +99,38 @@ Keys and profiles were perfectly valid.
 - The `notarytool history` pre-probe is flaky (it can falsely fail for one arch
   right after succeeding for another). If the script path fails, bypass it with
   `notarytool submit --wait` directly.
-- notarytool keychain profiles live in the **login keychain — machine-local**.
-  They do not sync to other machines; each build machine needs its own
-  `store-credentials`.
+- notarytool keychain profiles are **machine-local** (stored in the
+  data-protection keychain — see the screen-lock entry below). They do not sync
+  to other machines; each build machine needs its own `store-credentials`.
+
+## notarytool credentials are unreadable while the screen is locked (they look deleted)
+
+**Symptom:** Notarization that had just succeeded 8 times in a row on the same
+machine and profile started failing uniformly with
+`Error: No Keychain password item found for profile: <name>` partway through an
+unattended run (2026-08, during a 10-app GUI release batch). It looks like a
+deleted profile or a corrupted keychain — but the screen had simply locked.
+The moment it was unlocked, everything worked again with no re-registration.
+
+**Why:** `notarytool store-credentials` stores the credential in the
+**data-protection keychain** (invisible to the legacy
+`security find-generic-password` **even while unlocked** — which is what makes
+"it was deleted" such an easy misdiagnosis). Data-protection keychain items
+become unreadable while the console is locked, so a locked screen makes
+notarytool report the item as missing. `security show-keychain-info
+login.keychain-db` answering normally adds to the misdirection (login.keychain-db
+is not involved).
+
+**How to apply:**
+- On this error, first check `ioreg -n Root -d1 | grep IOConsoleLocked` — if
+  `Yes`, the credential is fine and **unlocking the screen is the whole fix**.
+  No profile re-creation needed.
+- Unattended releases (parallel agents, long batches) should either hold off
+  screen lock until notarization is done, or be designed to resume the stopped
+  portion later (resuming from a pushed tag with no GitHub release yet does not
+  reuse a version).
+- Never re-run `store-credentials` before checking the lock state — it is a
+  needless API-key operation and teaches the wrong root cause.
 
 ## Binaries under cloud-synced folders can get SIGKILLed (provenance xattr)
 

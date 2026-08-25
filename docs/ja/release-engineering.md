@@ -82,8 +82,32 @@ dist-darwin: cross-build-darwin
   403/agreement を検出したら契約再同意を案内するよう修正した（親切な誤診断は誤診断より悪い）。
 - `notarytool history` の事前 probe は flaky（成功直後に別 arch で偽 fail することがある）。
   スクリプト経由で落ちたら `notarytool submit --wait` を直接叩いて迂回する。
-- notarytool の keychain profile は **login キーチェーン＝マシンローカル**。
-  別マシンには同期されないので、ビルドマシンごとに `store-credentials` が必要。
+- notarytool の keychain profile は**マシンローカル**（保存先は data-protection
+  キーチェーン — 下の画面ロックの項を参照）。別マシンには同期されないので、
+  ビルドマシンごとに `store-credentials` が必要。
+
+## notarytool の資格情報は画面ロック中は読めない（消えたように見える）
+
+**事象:** 同一マシン・同一プロファイルで 8 本連続で通っていた notarize が、無人実行の
+途中から一律 `Error: No Keychain password item found for profile: <name>` で失敗し始めた
+（2026-08、GUI 10 本一括リリース中）。プロファイル消失・キーチェーン破損に見えるが、
+実際は**画面ロックがかかっただけ**だった。解除した瞬間に何の再登録もなく復旧した。
+
+**なぜ:** `notarytool store-credentials` は資格情報を **data-protection キーチェーン**に
+保存する（legacy な `security find-generic-password` では**ロック解除中でも見えない** —
+これで消失と誤診しやすい）。data-protection キーチェーンの項目はコンソールロック中は
+読み出し不可になるため、画面がロックされると notarytool は「item が無い」と報告する。
+`security show-keychain-info login.keychain-db` が正常応答するのも誤診を誘う
+（login.keychain-db 側は無関係）。
+
+**適用方法:**
+- このエラーを見たらまず `ioreg -n Root -d1 | grep IOConsoleLocked` — `Yes` なら
+  資格情報は無事で、**画面を解除するだけ**でよい。プロファイル再作成は不要。
+- 無人リリース（並列エージェント・長時間バッチ）は notarize が終わるまで画面ロックを
+  保留するか、途中でロックされたら止まった分だけ後で再開する設計にする
+  （tag 済み・release 未作成の状態からの再開は版数再利用にならない）。
+- 消失と断定して `store-credentials` をやり直す前に必ずロック状態を確認する —
+  再登録は不要な API キー操作であり、原因も誤って学習される。
 
 ## クラウド同期フォルダ配下のバイナリは SIGKILL され得る（provenance xattr）
 
