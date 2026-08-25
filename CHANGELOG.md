@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-25 (2)
+
+- 1 entry from an un-notarised zip shipping with green checks when
+  Apple's updated developer agreement broke the notary probe (2026-08):
+  - **release-engineering** (1): a fail-open step plus a verifier that
+    only displays equals a defective release with green checks — gate
+    on a local success marker, keep gated commands out of pipes, grep
+    for the success token instead of tailing output, and test the gate
+    in both directions.
+
 ## 2026-08-25 (1)
 
 - 1 entry from porting the org's Claude Code pre-tool guard into the
