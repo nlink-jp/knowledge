@@ -34,6 +34,14 @@ failures stacked.
    heals an already-published asset — the sha and the download stay
    valid. Worth remembering when deciding whether a re-upload is
    needed.
+6. **GUI (.app) repos: rolled out everywhere, 2026-08.** The canonical
+   notarize-darwin-app.sh writes the marker (and rm's any previous
+   marker at startup, so a rebuilt bundle never sits next to a stale
+   verdict), and each repo's `make verify-release` double-gates on
+   marker + an offline `stapler validate`. Stapled bundles verify
+   without the online lookup, so unlike CLI zips the second gate has no
+   spctl-propagation caveat. check-org check10 byte-compares the
+   vendored copies against the canonical to catch drift.
 
 
 Lessons on macOS signing/notarization, release archives, and Homebrew tap
