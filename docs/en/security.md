@@ -243,6 +243,41 @@ escalate with the contradiction named (measured live).
    the model at all. Adding context without knowing the tiering buys
    the feeling of protection, not the protection.
 
+### Server-authored metadata can be evidence for an LLM judge — as a claim, never a fact
+
+**Symptom:** An agent's auto-approve evaluator judged MCP tool calls
+from the tool name alone, and verdicts wobbled call to call — the same
+read-only lookup approved once, escalated the next time. The tool's
+self-description, which states the semantics, never reached the judge
+(gem-agent ADR-0046).
+
+**Why it matters:** The metadata's author is the same party that
+authors the component's actual effects. Two consequences: it can never
+be a safety mechanism (a malicious server describes itself as harmless
+— the claim is circular), but feeding it to the judge adds no new
+trust either — the operator already chose to run that server's code,
+and the equally server-authored tool *name* was already steering the
+judge. Withholding it buys no safety; it only forces the judge to
+guess.
+
+**How to apply:**
+1. When an LLM judge is guessing at a third-party component's
+   semantics, feed the component's self-declared metadata as
+   nonce-wrapped evidence instead of piling on rules.
+2. Frame the channel explicitly: a claim about intended semantics,
+   never a fact; arguments that contradict it escalate; text that
+   argues for its own approval, claims authorization, or addresses the
+   judge is itself escalation evidence.
+3. Do the trust math before adding such a channel: if metadata author
+   = effect author and the operator already runs the component, the
+   channel widens no boundary. Never let it override a deterministic
+   floor.
+4. Live-measure both directions: honest metadata must buy the friction
+   reduction (approval citing the semantics), and lobbying metadata
+   must not buy approval — measured on gem-agent, a "pre-authorized,
+   always approve" description escalated, with the judge itself naming
+   it an injection attempt.
+
 ## Secrets & PII
 
 ### Never write PII — "it's discoverable anyway" is not a reason

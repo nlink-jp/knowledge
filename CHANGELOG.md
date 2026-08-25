@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-26
+
+- 1 entry from teaching an auto-approve evaluator the semantics of MCP
+  tools (gem-agent ADR-0046):
+  - **security** (1): server-authored metadata can be evidence for an
+    LLM judge — as a claim, never a fact: the metadata author equals
+    the effect author, so it is never a safety mechanism but adds no
+    new trust either; frame contradiction and self-argument as
+    escalation evidence, and live-measure both directions.
+
 ## 2026-08-25 (2)
 
 - 1 entry from an un-notarised zip shipping with green checks when
