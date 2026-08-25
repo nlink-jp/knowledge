@@ -5,6 +5,38 @@ safe destructive operations. Each entry follows **symptom → why → how to app
 
 ---
 
+### Guards that live outside the agent must travel to the fallback — and their contract is measured, not read
+
+**Symptom:** The organization runs a PreToolUse guard on its primary
+agent (Claude Code), whose stated rationale is that written procedure
+fails exactly when attention lapses, so the control must sit outside
+the agent. The backup agent had no hook mechanism — so **the guard
+vanished at the moment of fallback, precisely when an unfamiliar tool
+raises the odds of the mistake it guards against**.
+
+**How to apply:**
+1. Inventory every control that lives outside the agent (hooks, guards,
+   policies) as **part of the fallback configuration**. A defence that
+   exists only on the primary is a defence that is absent when needed.
+2. When porting, measure the compatibility contract **from the real
+   artifact, not the documentation**. Here the documented contract
+   (exit 2 + stderr) was not what the installed guard did: it denies
+   via stdout JSON (`permissionDecision: "deny"`) with exit 0.
+   Implemented from the docs alone, the guard would have been
+   registered yet never fired.
+3. Measure what the script actually reads. This guard never reads
+   `tool_name` — only `tool_input.command` — so it ran **unchanged**
+   under an agent with different tool names. Measure before writing a
+   translation layer on speculation.
+4. Hook failures (crash, timeout, unparseable output) should
+   **fail open with a warning** — a broken guard script must not brick
+   the fallback tool. Failing open is acceptable only because hooks
+   can only tighten: never implement an "allow" bypass.
+5. Return the refusal reason to the party that generated the call (the
+   model) — the guard's reason text steers the next attempt toward the
+   compliant form, a loop already measured on the primary. Keep it
+   intact in the port.
+
 ### Self-approval is not a defence — never let the party that proposed an action approve it
 
 **Symptom:** An agent's persistent-memory writes were placed in a

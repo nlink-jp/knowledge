@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-25 (1)
+
+- 1 entry from porting the org's Claude Code pre-tool guard into the
+  fallback CLI agent (2026-08):
+  - **security** (1): guards that live outside the agent must travel to
+    the fallback, and their contract is measured from the real artifact
+    — the installed guard denied via stdout JSON, not the documented
+    exit code, and never read the tool name at all.
+
 ## 2026-08-24 (2)
 
 - 1 entry from moving diagram rendering behind a tool in a fallback CLI

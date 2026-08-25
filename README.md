@@ -32,7 +32,7 @@ Documents are consumed by reading `main` — there are no releases.
 | [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety |
 | [build-and-packaging](docs/en/build-and-packaging.md) | CGO cross-builds, .gitignore traps, CI-less release rationale |
 | [testing](docs/en/testing.md) | Real-data E2E, delivery verification, mockability, failure injection, MCP test harnesses, error-message quality, evidence quality when diagnosing, log timestamp semantics |
-| [containers-and-infra](docs/en/containers-and-infra.md) | Podman on macOS, DuckDB bind mounts, matplotlib fonts, log rotation, SSH liveness checks |
+| [containers-and-infra](docs/en/containers-and-infra.md) | Podman on macOS, DuckDB bind mounts, matplotlib fonts, log rotation, SSH liveness checks, why case-sensitive volumes break things |
 | [config-and-io](docs/en/config-and-io.md) | Canonical identifiers, strict config decode, storage-dir reconcile, volume free space, OAuth, terminal IO |
 | [shell-scripting](docs/en/shell-scripting.md) | BSD/GNU sed differences, zsh expansion quirks, Bash trap scope, substitution pitfalls |
 | [embedded](docs/en/embedded.md) | M5Stack / ESP32 lessons |

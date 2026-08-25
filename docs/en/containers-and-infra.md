@@ -124,3 +124,65 @@ total at `max`, **blocking the source for up to ten minutes**.
 - Running a retry loop during an investigation makes **the investigation itself
   produce the symptom**. Back off when connections start failing; penalties
   accumulate, so retrying without a pause only deepens the hole.
+
+## Never format a macOS volume as case-sensitive — Apple's own apps break silently
+
+**What happened:** A Photos library lived on an external NVMe formatted as case-sensitive
+APFS. `photolibraryd` pinned a CPU core for hours at a time, sometimes for tens of hours.
+For a library of 19k photos the database had bloated to 6 GB, and of its 210k detected-face
+records **98% were orphans whose referenced asset did not exist**. Repairing the library,
+rebuilding the people data, and finally recreating the library from scratch all failed to
+help. **Root cause took two days to find.** Every other device syncing the same data was
+working normally.
+
+**Why:** Apple explicitly states that a Photos library must not live on a case-sensitive
+volume — files may not be found, which can cause data loss. APFS is case-insensitive by
+default, but **case-sensitive is offered as a choice at format time**, which is the trap.
+
+macOS has assumed case-insensitivity since the beginning, and software that does not
+support it is common. Adobe Creative Cloud refuses to install on a case-sensitive volume
+and Steam refuses to start. **An app that refuses outright is the lucky case** — Apple's
+own apps do not refuse, they break quietly. The chain observed here:
+
+```
+case-sensitive volume
+  → asset reference resolution fails ("unexpectedly has no asset", hundreds per minute)
+  → records whose target cannot be resolved accumulate as orphans
+  → derived records keep being generated from them, growing into the hundreds of thousands
+  → the OS tries to deduplicate; cascading deletes plus extra fetches on save go O(n²)
+  → the daemon pins the CPU while committing nothing to disk
+```
+
+**How to apply:**
+- **Check before putting any Apple app library (Photos, Music, and friends) on external
+  storage.**
+
+  ```sh
+  diskutil info /Volumes/<name> | grep 'File System Personality'
+  # "APFS" = fine / "Case-sensitive APFS" = not supported
+  ```
+
+  Or verify empirically, by checking whether names differing only in case collide:
+
+  ```sh
+  touch /Volumes/<name>/.ctest_a
+  [ -f /Volumes/<name>/.ctest_A ] && echo OK || echo "NG (case-sensitive)"
+  rm -f /Volumes/<name>/.ctest_a
+  ```
+
+- **Do not choose case-sensitive when formatting** unless there is a concrete reason.
+  It is needed for things like hosting Linux source trees verbatim; media storage does not
+  need it.
+- **Other devices behaving normally proves nothing.** Corrupted data can propagate to other
+  devices through cloud sync, yet a device that has finished ingesting it keeps running
+  without symptoms. Nothing surfaces in the UI either — counting rows in the database is the
+  only way to see it.
+- **Do not settle for a partial fix.** Moving one library off the volume leaves every other
+  Apple library on it still violating the same rule. Revisit the whole volume layout.
+- **Check for case collisions before migrating.** Moving to a case-insensitive volume makes
+  names that differ only in case collide, and one of them is lost. Lowercase the paths, count
+  duplicates, and confirm zero before moving.
+- **As a general triage rule:** when several machines share the same data and only one
+  misbehaves, the cause is that machine's unique conditions, not the data. **Always include
+  the filesystem format in the checklist.** Asking "does this happen in any other
+  environment?" before digging into symptoms narrows the search dramatically.
