@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-26 (2)
+
+- 2 entries from an agent that asked for approval of a `cp` without ever
+  saying why (gem-agent ADR-0047):
+  - **llm-integration** (1): a thinking model's tool-call preamble goes
+    to thoughts, not text (measured: 1 text part in 349 tool-calling
+    turns) — give intent a required tool argument instead of inferring
+    it or asking for prose, inject it centrally, strip it before the
+    call runs, and surface its absence rather than refusing.
+  - **security** (1): a model-authored "why" is for the human only —
+    strip it before any LLM evaluator reads the call, or the evaluator
+    is handed the proposer's own justification as evidence.
+
 ## 2026-08-26
 
 - 1 entry from teaching an auto-approve evaluator the semantics of MCP

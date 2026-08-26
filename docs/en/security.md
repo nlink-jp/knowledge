@@ -66,6 +66,26 @@ approval path the moment it does.**
 
 ## Prompt injection
 
+### A model-authored "why" is for the human only — strip it before any evaluator
+
+**Symptom:** Giving gated tool calls a `purpose` field that the model fills in
+makes the approval prompt far more useful. It also creates a new path: if that
+field rides along into the payload an LLM risk-evaluator reads, the evaluator is
+being handed the **proposer's own justification** as evidence, and a call talked
+into existence by a poisoned tool result arrives pre-argued.
+
+**How to apply:**
+- Strip the declared purpose from the evaluator's payload, keep it out of
+  rule-tier inputs, and pin both with tests. The rule is the same one that keeps
+  a model from approving its own memory writes: **the evaluator must not be the
+  proposer**, and a self-declared intent field is the proposer speaking.
+- State the boundary where the field is defined, not only in the design record:
+  the next person to want "let's use the stated intent for the decision" needs to
+  meet the reason at the code.
+- Displaying it to a human is fine and is the entire point — humans weigh a
+  claim as a claim. Machines in the approval path must not read it at all.
+
+
 ### Isolate untrusted data with nonce-tagged XML wrapping
 
 **Symptom:** A security audit found applicant input embedded into prompts

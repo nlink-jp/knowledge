@@ -383,6 +383,37 @@ local models (measured 70% → 100% after local-specific optimization).
 
 ## Agents & subagents
 
+### A thinking model's tool-call preamble goes to thoughts, not text — give intent a field
+
+**Symptom:** An agent asked its operator to approve `cp report.csv /tmp/x/`.
+The prompt showed the command and why approval was required, but nothing about
+why the agent wanted it, and the operator could not decide. It looked like the
+model was saying something that the UI dropped.
+
+**Measured before designing** (45 session transcripts, 413 assistant turns):
+349 turns carried tool calls, and exactly **one** of those also carried a text
+part. Gemini 3 writes the preamble as a *thought summary*, not as text. Thought
+text is typically display-only — the transcript stores signatures because that
+is what replay needs — so the motivation existed nowhere durable.
+
+**How to apply:**
+- Do not infer intent from the arguments in code, and do not expect a prompt
+  instruction alone to produce a text preamble: without a structured slot the
+  instruction does not fire. **Add a required `purpose` argument to every tool
+  whose call stops for a human**, and show it above the arguments.
+- Inject it centrally where tool declarations are built, so first-party and
+  external (MCP) tools are covered identically, and **strip it again before the
+  call executes** — never hand a server an argument its own schema did not
+  declare. Stand down if a server publishes an argument of that name itself.
+- Scope by the static "needs approval" flag, not by runtime policy: an
+  advertised schema that changes mid-session re-warms the prompt cache.
+- **A missing declaration is surfaced, not punished.** The call still runs and
+  the prompt says "(no purpose declared)". Refusing invents a new failure at a
+  prompt the human cannot satisfy, over an annotation that is not a control.
+- Keep it out of any repeated-call signature (loop guards): re-worded
+  justifications would otherwise disguise the identical call.
+
+
 ### If you persist history for session resume, keep it in one log
 
 **Symptom:** Adding resume to a CLI agent, the first design put a "resume
