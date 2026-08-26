@@ -2,6 +2,16 @@
 
 ## 2026-08-26 (2)
 
+- 1 entry from building approval-rule learning from an operator's
+  recorded decisions (gem-agent ADR-0045):
+  - **security** (1): count sessions, not calls — a session allowlist
+    turns one keystroke into many approvals, so a call-counted
+    threshold measures how often the agent asked; plus the syntactic
+    shared key, recording the key with the decision, keeping the
+    learner model-free, and proposing rather than applying.
+
+## 2026-08-26 (2)
+
 - 2 entries from an agent that asked for approval of a `cp` without ever
   saying why (gem-agent ADR-0047):
   - **llm-integration** (1): a thinking model's tool-call preamble goes

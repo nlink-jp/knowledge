@@ -466,6 +466,55 @@ ship three things together:
 Also: make the verification command **exit non-zero on failure**. A check that
 always exits 0 is not a gate.
 
+### Learning permissions from a human's past decisions: count sessions, not calls
+
+**Symptom:** An agent's approval gate asked the same question every
+session. The obvious fix — learn a standing rule once the operator has
+approved something "N times" — was implemented, and the threshold
+turned out to be trivially reachable: a session allowlist ("always this
+session") turns ONE keystroke into any number of recorded approvals, and
+so does repeating the same command inside one session.
+
+**Why it matters:** The whole point of the threshold is "the human has
+decided this repeatedly." Counting calls measures how often the agent
+asked, not how often the human answered. A permission that widens on a
+miscount is the failure mode you cannot see in testing, because the
+counts look healthy.
+
+**How to apply:**
+1. **Collapse each session to one vote per key and outcome.** It removes
+   allowlist inflation and in-session repetition at once, and needs no
+   plumbing to tell an allowlist answer from a typed one.
+2. **Match on a syntactic key, never on similarity.** For shell
+   commands: the command name plus a second token only when it has
+   subcommand shape. Derive NO key — at learn time and at match time —
+   for anything that can hide the real target: pipes and separators,
+   command substitution, redirection, a path-shaped head (a file whose
+   contents can change under a key that says nothing about them), an
+   environment-assignment prefix. One shared derivation function for
+   the learner and the matcher; two copies drift, and a drift here fires
+   rules on commands nobody approved.
+3. **Record the key with the decision, not just the arguments.** The
+   learner then never pairs decisions back to calls positionally (wrong
+   silently, with several calls per round), and a future build's
+   derivation cannot retroactively re-interpret an old decision.
+4. **Keep the learner deterministic — no model reads the record.**
+   Transcripts are full of attacker-influenceable text; a model reading
+   them and proposing policy is a route from prompt injection to
+   persistent permission. Exclude the model's own stated intent too:
+   the proposer must not testify in the decision that records the
+   operator's judgement.
+5. **Propose; never apply.** Learned rules must stay ordinary policy —
+   visible with provenance, removable, subordinate to the deterministic
+   floor (a learned "stop asking" must not lift a hard block or skip an
+   out-of-band guard), and scoped to the project they were learned in.
+   A command settled in one repository says nothing about the next
+   clone, where the same rule would auto-run.
+6. **Only proposals that change something.** Skip keys the policy
+   already answers and keys the hard floor blocks anyway — a rule that
+   changes nothing spends the operator's attention and teaches them the
+   feature is noise.
+
 ### Agent audit telemetry — default to the authenticated cloud, metadata only, global-config only
 
 **Symptom:** workplace use of a CLI agent required an audit log. The
