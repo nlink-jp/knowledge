@@ -2,6 +2,17 @@
 
 ## 2026-08-27
 
+- 1 entry from a field report on a CLI agent destroying large documents
+  it was asked to revise (gem-agent v0.50.0, ADR-0051):
+  - **llm-integration** (1): an agent revising a large document destroys
+    it by summarizing — the harness manufactures the failure (economy
+    steering, whole-file writes, mid-task compaction, truncation caps);
+    floors: a declared-intent shrink guard, a regeneration rule, a
+    staleness warning in the compaction stand-in, and a size delta on
+    the approval UI.
+
+## 2026-08-27
+
 - 1 entry from an operator's UX sweep of a CLI agent's command output
   (gem-agent v0.49.1–v0.49.2):
   - **development-process** (1): status output is not documentation —

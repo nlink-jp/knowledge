@@ -639,6 +639,59 @@ three problems disappear structurally.
 - Return the report to the parent as untrusted data derived from file
   contents, under the same isolation (nonce wrap) as any tool result.
 
+### An agent revising a large document destroys it by summarizing — the harness manufactures the failure
+
+**Symptom:** while a project's documents are small the agent revises them
+fine; once they grow, revisions come back shorter — sections gone, prose
+compressed, the requested change applied to a corpse. Blaming the model's
+long-reproduction compression is easy, but four harness factors
+manufacture the conditions, and one of them explains why the symptom
+scales with document size:
+
+1. **Context-economy steering points away from full reads.** Windowed-read
+   and summarize-this-file guidance is right for code navigation and wrong
+   immediately before whole-file regeneration: the model holds a partial or
+   summarized copy, then writes the whole file from it.
+2. **A whole-file write tool cannot see destruction.** It forces the model
+   to reproduce the entire document inside one function-call argument —
+   the exact shape where long reproduction drifts and compresses — and
+   replacing 42KB with 8KB reports "wrote 8192 bytes": success.
+3. **Mid-task compaction replaces the verbatim copy with prose — the size
+   correlation.** A large document (a) pushes occupancy toward the
+   auto-compact threshold just by being read and (b) takes enough rounds
+   to revise that compaction fires *between the read and the write*. The
+   model then writes the file from a summary of it. Small documents
+   survive to the end of the task verbatim; large ones do not.
+4. **Truncation caps seed bad copies** (tool read caps, instruction-file
+   injection caps): a model that "already knows" the document from a
+   truncated copy has a truncated document to write back.
+
+**How to apply:**
+- **Deterministic floor first**: refuse overwriting an existing file above
+  a small size floor with content under ~70% of its current size unless
+  the call declares an explicit boolean (`allow_shrink`). Make the refusal
+  instructive — both sizes, both remedies (targeted edits, or re-read then
+  declare). The declaration is an argument, so it appears on the approval
+  UI and lands in the transcript: destroying a document now requires
+  either targeted edits or a recorded claim of intent. Live measurement:
+  the model learns the protocol from the tool description alone and
+  declares upfront for intentional condensation — legitimate shrinks are
+  priced, not blocked.
+- **State the regeneration rule in the same breath as the economy
+  guidance**: never overwrite an existing file without a full read in
+  this conversation *after any compaction*.
+- **Put a staleness warning in the compaction stand-in message** (the
+  harness's trusted framing, not summarizer output — deterministic by
+  construction): file contents before this point are no longer verbatim;
+  re-read before editing, never rewrite from the summary alone.
+- **Annotate overwrites on the approval UI** with what they replace
+  (`replaces existing file: 42KB → 8KB`) — the shrink becomes visible at
+  the moment of consent.
+- Rejected: tracking read-before-write in the tool layer. The dangerous
+  case is precisely a read that compaction later discarded, which the
+  tool layer cannot see — the tracking would certify exactly the stale
+  copies.
+
 ## Documentation & licensing
 
 ### Never claim "fully offline" for tools running in an LLM session
