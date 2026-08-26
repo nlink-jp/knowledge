@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-26 (4)
+
+- 1 entry from withdrawing an approval-rule learner the operator judged
+  dangerous after real use (gem-agent ADR-0049):
+  - **security** (1): a human confirmation step is not a durable
+    boundary for granting standing permissions — primed one-keystroke
+    consent, bundled risk, momentary evidence buying permanent grants,
+    and post-consent invisibility compound; prefer observability over
+    grant automation, enumerate or make grants ephemeral, and build
+    the management surface before the granter.
+
+
 ## 2026-08-26 (3)
 
 - 1 entry from an approval-rule learner that proposed nothing on its

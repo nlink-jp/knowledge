@@ -515,6 +515,56 @@ counts look healthy.
    changes nothing spends the operator's attention and teaches them the
    feature is noise.
 
+### A human confirmation step is not a durable boundary for granting standing permissions
+
+**Symptom:** An approval-rule learner proposed standing "stop asking"
+rules, each confirmed individually by the operator with the full list
+of what the rule would cover. The operator accepted several — then,
+after living with the result, judged it dangerous and had the feature
+withdrawn. The consent was real, informed, and freely given; it still
+did not protect the equilibrium the operator actually wanted.
+
+**Why it matters:** Four forces compound against confirmation-as-boundary:
+
+- Consent is offered at the worst moment — right after a work session
+  spent answering yes — and costs one keystroke, the same as approving
+  a single call. The cheapness that makes the flow pleasant is exactly
+  what makes the grant undeliberate.
+- A bundled grant (a server wildcard, a category rule) mixes risk
+  levels into one yes/no; disclosure lists the contents honestly and
+  people take the bundle anyway.
+- The evidence is momentary and contextual (this investigation, this
+  afternoon) while the grant is permanent and context-free. Nothing
+  scales the one to the other.
+- After the moment of consent the grant disappears from view unless a
+  management surface shows it — and an invisible standing permission
+  is never reconsidered.
+
+The deeper mechanism: where a policy's asymmetry says "loosening must
+be an explicit act", the COST of the act is part of the design.
+Writing the rule by hand is deliberate because it is manual. A feature
+whose purpose is to remove that friction succeeds by moving a boundary
+the cost structure was holding in place — it works as designed, and
+the design is the problem.
+
+**How to apply:**
+1. Treat per-item confirmation as necessary and NOT sufficient for any
+   standing grant. Ask what else bounds the grant when the yes was
+   primed, tired, or bundled.
+2. Prefer observability over automation of grants: show the friction
+   report (what was approved repeatedly, where the checks disagree)
+   and let the human author the rule manually. Keep loosening
+   expensive on purpose.
+3. If a mechanism grants at all: grant exactly the evidenced items
+   (enumerate, never wildcard), or grant ephemerally (session-scoped,
+   expiring) so momentary evidence buys a momentary relief.
+4. Build the management surface BEFORE the granting mechanism — every
+   standing grant visible and revocable from day one, or the granter
+   ships ahead of the ability to regret.
+5. When a threshold has been tuned once in each direction and both
+   sides failed in the field, stop tuning: the knob is on the wrong
+   machine.
+
 ### Agent audit telemetry — default to the authenticated cloud, metadata only, global-config only
 
 **Symptom:** workplace use of a CLI agent required an audit log. The
