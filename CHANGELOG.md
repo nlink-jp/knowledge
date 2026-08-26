@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-27
+
+- 1 entry from an operator's UX sweep of a CLI agent's command output
+  (gem-agent v0.49.1–v0.49.2):
+  - **development-process** (1): status output is not documentation —
+    sort operator-facing text by the question it answers (session
+    facts in output, feature explanation in docs, teaching in empty
+    states, per-event disclosures stay); help is a map, exits get a
+    receipt, and never hand-wrap sentences in source strings.
+
+
 ## 2026-08-26 (5)
 
 - 1 entry from rebuilding a withdrawn approval learner as a risk

@@ -503,3 +503,43 @@ RTF 0.04 at runtime. It looked nearly free. It was **not adopted**.
   "will not be added" under "Changed" makes the file unreadable as what it is.
   Decisions go in the ADR, contributor warnings in AGENTS.md; the changelog moves
   only when behaviour or user-facing docs actually moved.
+
+### Status output is not documentation — a true line shown every time still reads as "so what?"
+
+**Symptom:** An operator's field test flagged a family of UI text in a
+CLI agent: a caption on every `/usage` render ("cache saves
+cost/latency, not window space"), a "(hand-written)" label on a file
+the operator wrote by hand, a two-line feature explainer on every
+`/mcp` listing, design rationale inside `/help` ("because you typed
+them yourself"), and a help text whose hand-wrapped source lines broke
+at half the width of a wide terminal. Every line was accurate. The
+operator's reaction to each was "…so what?"
+
+**Why it matters:** These lines are design-document prose leaked into
+the UI — they answer the *designer's* concern (an honesty caveat, a
+taxonomy, a rationale), not the question the operator has at that
+moment. A caption that is true but unactionable on every viewing
+trains the reader to skim, and skimming is fatal exactly where a line
+finally matters (a warning, a disclosure). The cost is paid on every
+render, forever.
+
+**How to apply:** Sort operator-facing text by the question it answers:
+1. **Session facts** (numbers, states, provenance that varies, what
+   just happened) → belongs in command output.
+2. **Feature explanation** (caveats, rationale, taxonomy, how-to) →
+   belongs in the reference docs, stated once. Moving it there is the
+   fix — not deleting the fact.
+3. **Teaching belongs in empty states** — the one place the operator
+   actually asks "so what do I do?": an empty listing that names the
+   file to write and the command to run is good UX, the same sentence
+   on a full listing is noise.
+4. **Per-event disclosures stay** (clipped lines, hidden rows, a
+   queued message handed back): they are actionable at the moment
+   they appear.
+5. Help is a **map, not a manual**: one line per item, aligned, blank
+   lines between sections, no rationale — and never hand-wrap
+   sentences in the source, because authored line breaks become
+   half-width wrapping on wide terminals.
+6. Exits deserve a **receipt, not a lecture**: the last lines in the
+   scrollback should answer "how do I get back" (resume command) and
+   "what did this cost" — two lines, only when something happened.
