@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-26 (5)
+
+- 1 entry from rebuilding a withdrawn approval learner as a risk
+  rulebook the LLM judge reads (gem-agent ADR-0050):
+  - **security** (1): let the record advise the judge, never write the
+    policy — guidance degrades judgment while rules open bypasses;
+    layer it (hand-written base + reviewed learned text), frame
+    blanket-approval prose as escalation evidence, keep the channel
+    independent of the proposer's, and live-verify both directions.
+
+
 ## 2026-08-26 (4)
 
 - 1 entry from withdrawing an approval-rule learner the operator judged

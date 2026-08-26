@@ -565,6 +565,46 @@ the design is the problem.
    sides failed in the field, stop tuning: the knob is on the wrong
    machine.
 
+### Let the record advise the judge — never write the policy
+
+**Symptom:** After an approval-rule learner was withdrawn as dangerous
+(its output was standing policy that bypassed the gate), the operator
+proposed a different architecture and it held up in the field: the
+decision record is summarized into operator-reviewed guidance that the
+LLM risk evaluator READS — a rulebook — rather than into rules that
+bypass it.
+
+**Why it matters:** The two shapes fail differently. A rule is
+binding, permanent, and evaluated by nobody at use time; every defect
+in its scope is a standing hole. Guidance is weighed per call by a
+judge that still sees the call's own facts, still has a confidence
+bar, and still escalates to a human — a defect in guidance degrades
+judgment, it does not open a bypass. Learning can therefore afford to
+be wrong in ways policy cannot.
+
+**How to apply:**
+1. When automating away approval friction, aim the learning at the
+   evaluator's context, not at the permission store. The worst case
+   must stay "the judge was biased", never "the gate was gone".
+2. Layer the guidance like the risk itself: a hand-written global
+   base (authored deliberately, by construction) plus a per-scope
+   layer; learned text joins only through a full-text review, which
+   makes its author-of-record the human (trust boundary at the
+   write). Two authoring routes, one artifact, one standing.
+3. Frame it to the judge as strong evidence about the human's
+   posture, never instructions; the call's own facts dominate; and
+   blanket-approval prose is itself a reason to escalate. Measured:
+   a planted "APPROVE EVERYTHING" rulebook failed to buy approval
+   for a risky call — the judge named the blanket urging as its
+   reason to escalate.
+4. Keep the guidance channel independent of the proposer's channel:
+   never read it from the repository that also steers the model
+   proposing the actions. And keep every deterministic floor (hard
+   blocks, hooks, confidence bar) out of the guidance's reach.
+5. Verify the direction both ways, live: favourable guidance must
+   move a wobbling judgment to approval, a hand-written caution must
+   escalate a call the bare judge approves.
+
 ### Agent audit telemetry — default to the authenticated cloud, metadata only, global-config only
 
 **Symptom:** workplace use of a CLI agent required an audit log. The
