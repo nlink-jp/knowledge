@@ -633,3 +633,35 @@ grep -n "^Jan  1 00:0" /var/log/messages             # year boundaries
 The same date string appearing at widely separated line numbers proves the file
 spans multiple years. Bracketing each cluster by the year boundaries fixes its
 year (this relies on the monotonicity assumption in 5).
+
+### A feature that learns from usage must be tested against usage-shaped data
+
+**Symptom:** An approval-rule learner shipped with unit tests, an E2E,
+and a threshold of "approved in three separate sessions". Its first
+real session — 25 escalations, all approved — produced zero proposals.
+The E2E had seeded exactly three sessions to satisfy the threshold, so
+it measured whether the mechanism worked and never whether the
+threshold was reachable.
+
+**Why it matters:** Fixtures written to satisfy a threshold cannot
+falsify it. The tests were green, the feature ran, and the defect was
+invisible until real data arrived — the same class as a feature that
+never fires, but hiding behind passing tests rather than behind silence.
+
+**How to apply:**
+1. **Shape at least one fixture like production, not like the
+   threshold.** For a learner, that means the distribution real usage
+   produces: work concentrated in one session, many one-off items, a
+   long tail — whatever the domain actually looks like.
+2. **Ask "is this bar reachable?" separately from "does this work?"**
+   They are different questions and only the first needs real
+   distributions. Answer it before shipping, with numbers.
+3. **When the real report arrives, reproduce before diagnosing.** A
+   synthetic transcript in the reported shape turned a plausible story
+   into two measured causes in one test run — and became the
+   regression test.
+4. **Check whether the friction even has the shape you are counting.**
+   Here half the problem was categorical: per-tool frequency cannot see
+   friction made of many different tools called once each. No threshold
+   over that counter is both safe and reachable, so the unit of the
+   rule had to change, not its number.

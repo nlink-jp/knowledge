@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-26 (3)
+
+- 1 entry from an approval-rule learner that proposed nothing on its
+  first real session (gem-agent ADR-0048):
+  - **testing** (1): a feature that learns from usage must be tested
+    against usage-shaped data — fixtures written to satisfy a
+    threshold cannot falsify it; ask "is this bar reachable?"
+    separately, reproduce before diagnosing, and check whether the
+    friction even has the shape you are counting.
+
+
 ## 2026-08-26 (2)
 
 - 1 entry from building approval-rule learning from an operator's
