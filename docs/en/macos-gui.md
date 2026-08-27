@@ -647,6 +647,37 @@ of them is updated.
 - The only fixed sizes worth keeping are the ones a container legitimately owns,
   such as a popover's width.
 
+### Apple Mail multi-message drags arrive only via the pre-10.12 file-promise protocol
+
+**Symptom:** A drop target registered for
+`NSFilePromiseReceiver.readableDraggedTypes` accepted single-message drags from
+Apple Mail but rejected multi-message drags outright — the drag never matched.
+
+**Why:** Sampling the drag pasteboard (`NSPasteboard(name: .drag)`) shows that a
+single-message Mail drag carries both the modern promise types and the
+pre-10.12 legacy protocol (`com.apple.pasteboard.promised-file-url` /
+`NSPromiseContentsPboardType`), while a **multi-message drag carries only the
+legacy protocol** — the modern types vanish from the pasteboard entirely. On
+top of that, `receivePromisedFiles`' reader block frequently never fires for
+Mail (a known platform bug).
+
+**How to apply:**
+- Register `com.apple.pasteboard.promised-file-url` in
+  `registerForDraggedTypes` and resolve it inside `performDragOperation` via
+  the deprecated `namesOfPromisedFilesDropped(atDestination:)` — the only API
+  that keeps Mail's multi-message promise, and it returns the **exact count of
+  promised file names** (which also speeds up single-drop completion).
+- The files are written asynchronously. Decide completion by "promised count
+  reached and every file's size stable for a window", with a hard deadline
+  that **always** produces an outcome (zero files at the deadline is a visible
+  failure, never a silent timeout).
+- Give every drop its own unique temp subdirectory: name collisions,
+  back-to-back-drop races, and directory-diff snapshots all disappear.
+- For diagnosis, a small sniffer that polls the drag pasteboard every 100 ms
+  and prints the type list plus
+  `canReadObject(forClasses: [NSFilePromiseReceiver.self])` settles the
+  question decisively. No drop needed — start a drag and cancel with Esc.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

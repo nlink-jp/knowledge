@@ -564,6 +564,34 @@ attributed string に埋め込んだ画像は指定された色のまま描画�
   確保をやめる。使わない領域を確保し続けると、本体の描画領域が痩せる
 - 残してよい固定値は「入れ物が自分で決めるべき寸法」（ポップオーバーの幅など）だけ
 
+### Apple Mail の複数メッセージ D&D は旧式 file promise プロトコルでしか受け取れない
+
+**事象:** `NSFilePromiseReceiver.readableDraggedTypes` を登録したドロップターゲットが、
+Apple Mail の 1 通ドラッグは受理するのに、複数通ドラッグは型不一致でドラッグごと
+拒否した。
+
+**なぜ:** ドラッグ用ペーストボード（`NSPasteboard(name: .drag)`）の実測で、Mail の
+1 通ドラッグはモダン promise 型と pre-10.12 の旧型
+（`com.apple.pasteboard.promised-file-url` / `NSPromiseContentsPboardType`）の両方を
+載せるが、**複数通ドラッグは旧型のみ**を載せ、モダン型はペーストボードから消える。
+さらに `receivePromisedFiles` の reader ブロックは Mail 相手では発火しないことが
+多い（既知のプラットフォーム不具合）。
+
+**適用方法:**
+- `registerForDraggedTypes` に `com.apple.pasteboard.promised-file-url` を追加し、
+  `performDragOperation` 内で非推奨の `namesOfPromisedFilesDropped(atDestination:)`
+  で解決する。deprecated だが Mail の複数通 promise を受けられる唯一の API で、
+  **正確な約束ファイル名の数**も得られる（1 通ドロップの完了判定も速くなる）。
+- ファイル実体は非同期に書き込まれる。完了判定は「約束数が揃い、全ファイルの
+  サイズが一定時間変化しない」で行い、ハードデッドラインで**必ず**結果を出す
+  （0 件なら失敗として UI に通知する。無言のタイムアウトにしない）。
+- ドロップごとに一意な一時サブディレクトリを掘ると、同名衝突・連続ドロップの
+  競合・ディレクトリ差分スナップショットが全て不要になる。
+- 診断には drag ペーストボードを 100ms 間隔でポーリングして型一覧と
+  `canReadObject(forClasses: [NSFilePromiseReceiver.self])` の結果を出力する
+  小さな sniffer スクリプトが決定的に効く。ドロップは不要で、ドラッグ開始
+  → Esc キャンセルだけで観測できる。
+
 ## Wails（Go + WebView）
 
 ### window.alert() は確実に表示されない
