@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-28
+
+- 1 entry from a field report on a CLI agent's navigation degrading in
+  grown projects (gem-agent, ADR-0052):
+  - **llm-integration** (1): enumeration tools break at scale unless
+    ignore-aware — 99.3% of the walk was generated content and it was
+    the noise; two-layer skipping (builtin list + gitignore semantics),
+    filter enumeration only, report every skip, cross-check a
+    hand-written gitignore matcher against git check-ignore, and
+    distribute caps so nothing starves.
+
 ## 2026-08-27
 
 - 1 entry from a field report on a CLI agent destroying large documents

@@ -383,6 +383,45 @@ local models (measured 70% → 100% after local-specific optimization).
 
 ## Agents & subagents
 
+### An agent's enumeration tools break at scale unless they are ignore-aware — measure the denominator first
+
+**Symptom:** Tree-listing and grep tools that felt fine in small projects get
+slow as a project grows, search results drown in dependency noise, targeting
+precision drops, and the model just calls the tools more often.
+
+**Why:** Measured (CLI agent, 2026-08): on a real 19k-file project, 99.3% of
+what the walk scanned was generated content — node_modules / target / dist.
+The walk was alphabetical, and node_modules sorts before src: the tree cap was
+86% consumed by generated directories so src never printed, and a search's
+match cap could be exhausted entirely inside dependencies, showing zero
+project matches. The design premise "at project scale a sequential scan is
+enough, no index needed" was itself correct; what broke was the denominator —
+what was scanned was not the project. Skip the garbage and the same search
+runs in 10ms warm (from 1.4s). No index, no parallelism required.
+
+**How to apply:**
+- Enumeration walks skip in two independent layers: a builtin list of
+  well-known dependency/build directory names (works in non-git projects) plus
+  .gitignore semantics. A .gitignore negation must not re-include the builtin
+  layer (the layers are independent).
+- **Filter enumeration only.** Explicit-path tools never consult the filter,
+  and a walk explicitly rooted inside an ignored area shows everything with a
+  note — ignoring a place the caller asked to see just returns a mystifying
+  empty result.
+- Report every skip and provide an escape-hatch argument. Show ignored
+  directories with a marker — their contents are noise, their existence is
+  information.
+- If you implement a gitignore matcher yourself, add a **cross-check test
+  against `git check-ignore` as ground truth**. Its very first run caught two
+  divergences: a fixture mistake (builtin-layer names mixed into the git
+  comparison) and git's real behavior that a trailing `/**` **matches the
+  directory itself** (git appends `/` to directory paths before matching; a
+  same-named file does not match) — the implementation written from the docs
+  alone missed the latter.
+- Distribute caps so nothing starves: per-directory elision in the tree (one
+  huge directory cannot starve every sibling after it), a per-file display cap
+  plus true totals in search (a capped result still carries the distribution).
+
 ### A thinking model's tool-call preamble goes to thoughts, not text — give intent a field
 
 **Symptom:** An agent asked its operator to approve `cp report.csv /tmp/x/`.
