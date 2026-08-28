@@ -672,3 +672,35 @@ deliberation.
 - Denial messages carry both the "why" (the escalation reason) and the
   "what now" (flag or policy names). A pipeline that ends in denials
   is precisely where the operator reconstructs the run from stderr.
+
+### Keep piped stdin out of an LLM agent's instruction channel — carry it on the data lane
+
+**Symptom:** A CLI agent with a `-p` one-shot mode needed pipe support:
+`curl … | agent -p "investigate this"`. The naive implementation most
+wrappers choose is concatenating stdin into the prompt — but this
+agent's risk evaluator trusts "what the operator typed" as **the one
+channel an injection attacker cannot write**, and uses it as alignment
+evidence on every call it judges. Concatenation would deliver whatever
+the pipe fetched — the triggering example piped an HTTP response
+verbatim — to the evaluator labeled "operator instruction", breaking
+the trust arithmetic at its root.
+
+**Why it matters:** Pipe content is, by definition, untrusted data some
+upstream command fetched. The trusted channel's whole value is that
+attackers cannot write it; open one inflow of external data into it and
+every later judgment loses that premise. Meanwhile an agent usually
+already has a lane for nonce-wrapped untrusted text (tool results, file
+attachments) — put stdin there and the send-time wrap, transcript
+persistence, and exclusion from the instruction channel are all
+**inherited, not built**.
+
+**How to apply:**
+- Data the operator *chose* but did not *write* — piped input, pastes,
+  fetched URLs — never concatenates into the prompt string; it rides
+  the same untrusted-data lane as tool results.
+- Pin the instruction/data boundary with a test that directly asserts
+  the piped content does not appear in the risk-evaluation payload
+  (the trusted side).
+- Bound the read (history is resent every round) and disclose any clip
+  inside the attachment itself. Keep binary off this lane; point it at
+  the explicit file-reference path instead.

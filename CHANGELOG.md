@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-29 (2)
+
+- 1 entry from piped-stdin support on a CLI agent (gem-agent,
+  ADR-0055):
+  - **security** (1): keep piped stdin out of an LLM agent's trusted
+    instruction channel — carry operator-chosen-but-not-written data
+    on the same nonce-wrapped lane as tool results, and pin the
+    boundary with a test on the trusted-side payload.
+
 ## 2026-08-29
 
 - 2 entries from headless approval-control work on a CLI agent
