@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-29
+
+- 2 entries from headless approval-control work on a CLI agent
+  (gem-agent, ADR-0053/0054):
+  - **security** (1): with no human present, degrade "ask the human"
+    to "deny with the reason" instead of killing the ladder; arm
+    unattended automation per-invocation on the command line, never
+    from a standing config file.
+  - **testing** (1): a constant that bounds a feature needs a reach
+    measurement — a 3-round window set by intuition covered only 30%
+    of real evaluations, and every beyond-window escalation was
+    hand-approved friction.
+
 ## 2026-08-28
 
 - 1 entry from a field report on a CLI agent's navigation degrading in

@@ -665,3 +665,38 @@ never fires, but hiding behind passing tests rather than behind silence.
    friction made of many different tools called once each. No threshold
    over that counter is both safe and reachable, so the unit of the
    rule had to change, not its number.
+
+## A constant that bounds a feature: measure the population its window covers
+
+**Symptom:** An agent's risk evaluator gained a feature — the operator's
+instruction rides along as alignment evidence — bounded, by intuition, to
+**the first 3 rounds of a turn** ("early calls trace to the request; deep
+calls serve sub-goals it never names"). Weeks later, reconstructing round
+positions from every real session transcript: **70%** of model-tier
+evaluations fell outside the window, and **63%** of turns placed their
+*terminal* gated call — sends, saves, the actions whose alignment matters
+most — outside it. Where records existed, every beyond-window escalation
+had been hand-approved by the operator afterwards: in practice, false
+alarms on read-only research calls.
+
+**Why it matters:** A cutoff constant encodes the usage shape imagined at
+design time. Real usage is heavy-tailed (rounds 8–48 held half the
+volume), and **no constant fits a heavy tail** — sometimes the honest
+measurement result is that no fitting number exists. This is a variant of
+"a feature that never fires cannot be caught by precision — count the
+denominator": **a window's coverage is invisible until you count its
+denominator too.** The feature works, tests pass, and inside the window
+it behaves correctly, which is exactly why nobody notices.
+
+**How to apply:**
+- When a feature is bounded by a cutoff constant (rounds, counts, sizes,
+  elapsed time), measure after release **what fraction of the real
+  population the window covers**. If coverage is a minority, question the
+  cutoff itself rather than tuning the number.
+- Log so the measurement is possible: include position (round number
+  etc.) in decision events, or keep transcripts from which position can
+  be reconstructed from the message sequence. This measurement used the
+  latter.
+- Whether the outside-the-window path produces false alarms is measured
+  by pairing each escalation with the human's next decision. Escalations
+  that are approved every time are friction, not defense.

@@ -631,3 +631,44 @@ SIEM wants (who ran what, approved by which layer, what left the machine).
   call-site branching).
 - Verify on two layers: decode real protobuf from an httptest OTLP receiver,
   and write-then-read-back against the live cloud API.
+
+### With no human present, degrade "ask the human" to "deny with the reason" — do not kill the ladder
+
+**Symptom:** An agent with a two-tier auto-approve ladder ending in
+"escalate to the human when uncertain" also had a headless (one-shot
+pipeline) mode. Since nobody can answer a prompt there, the
+implementation **disabled the whole ladder and denied everything** —
+the evaluator never ran, and the config file's auto-approve switch was
+silently ignored by one uncommented conjunction. Neither decision was
+recorded anywhere.
+
+**Why it matters:** No ladder redesign was needed. Replacing the
+terminal "ask the human" with "print the reason and deny" keeps every
+path fail-closed and the ladder intact. The deterministic floors
+(block tier, must-ask policies, hooks) already land on "always ask",
+which with nobody to ask becomes "always deny" — no floor moves. The
+"auto-deny the risky tier" shape rejected for interactive UX turns out
+to be exactly right unattended: the same mechanism has a different
+optimum depending on whether a fallback human exists.
+
+The other half is the arming path. If unattended auto-approval can be
+enabled from a **standing config file**, the grant is invisible at the
+point of launch (a cron line shows nothing). "Weakening the primary
+defense must be a deliberate opt-in" is only satisfied unattended when
+strengthened to **per-invocation, visible on the command line** — a
+flag written in a script is auditable, and writing it is itself the
+deliberation.
+
+**How to apply:**
+- When giving a human-gated automation a headless mode, degrade the
+  gate's terminal to "deny + reason + named remedy" and keep the
+  ladder. Blanket denial is safe, but killing the ladder is not a
+  requirement of it.
+- Arm unattended automation with an **invocation flag**, not a config
+  key. If a config key is ignored in the unattended mode, document
+  that as intent — a silent conjunction is an unrecorded design
+  decision that someone will later have to re-investigate as
+  "bug or feature?".
+- Denial messages carry both the "why" (the escalation reason) and the
+  "what now" (flag or policy names). A pipeline that ends in denials
+  is precisely where the operator reconstructs the run from stderr.
