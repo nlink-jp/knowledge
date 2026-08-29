@@ -147,6 +147,44 @@ was deliberately **not** created.
 - Keep **paths per-tool** (`~/.config/<tool-name>/config.toml`) — preserving each
   tool's ability to point at an independent GCP project (staging vs production).
 
+### The Gemini 3 family is global-endpoint only — move the model name and the location together
+
+**Symptom:** Swapping just the model name to a Gemini 3 model makes every tool
+still pointing at a regional `location` fail with `404 NOT_FOUND`. Vertex AI
+serves the Gemini 3 family from the global endpoint only (measured for both
+text and image models; Gemini 2.5 models still answer regionally, so nothing
+surfaces until the migration). The 404 body only says the model name may be
+invalid or unavailable in that region — it never points at the location.
+
+**How to apply:**
+- In the migration change, **move the `[model].name` and `[gcp].location`
+  defaults at the same time**. Moving one leaves a default pair that cannot work.
+- Document in the README that pinning an older-generation model now requires
+  setting a regional location explicitly.
+- **Add a hint to the 404** client-side: when the model name starts with
+  `gemini-3` and the location is not `global`, append "this model is served
+  only from the global endpoint" to the error. Without it, users keep
+  suspecting a mistyped model name.
+- Probe availability with `:countTokens` — it costs **nothing**, returns 404
+  where the model is absent and 200 where it is served. No generation needed.
+
+### "This model always returns PNG" does not survive a generation change
+
+**Symptom:** A tool that assumed image models always return PNG implemented
+conversion one way only (PNG to JPEG). Switching to a new-generation
+lightweight image model (the flash-lite tier) made it write JPEG bytes into a
+file named `.png`. The flash and pro models of the same generation return PNG,
+so the bug stays hidden until the model changes.
+
+**How to apply:**
+- Decide the format from the **response MIME type / magic bytes**, and convert
+  when it differs from what was requested. Implement conversion both ways.
+  "The model always returns X" is an observation about one generation, not a
+  contract.
+- In Go, `png.Encode` widens the YCbCr that a JPEG decodes to into 16 bits per
+  channel; flattening to 8-bit `NRGBA` first cuts roughly 30% of the file size.
+- Pass unknown formats through unchanged rather than swallowing them.
+
 ### A stale quota_project_id in ADC 404s all of GCS — while Vertex keeps working
 
 **What happened:** With ADC that ran Vertex AI (genai SDK) fine, every

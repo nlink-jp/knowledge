@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-30 (3)
+
+- 2 entries from migrating an image-generation CLI to the current model
+  generation (gem-image, ADR-009):
+  - **llm-integration** (2): the Gemini 3 family is served from the global
+    endpoint only, so a generation migration has to move the model name and
+    the location together — plus a free `:countTokens` availability probe and
+    a client-side hint for the uninformative 404; and "this model always
+    returns PNG" does not survive a generation change, because the
+    lightweight image tier returns JPEG where flash and pro return PNG.
+
 ## 2026-08-30 (2)
 
 - 1 entry from making a CLI agent's sessions priceable (gem-agent,
