@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-30 (2)
+
+- 1 entry from making a CLI agent's sessions priceable (gem-agent,
+  ADR-0057):
+  - **llm-integration** (1): the API reports tokens and never money, so
+    usage must be written down at call time — one accounting record per
+    call with its source and model, bucket semantics measured
+    (thoughts bill as output, cached is a share of prompt), and exactly
+    one place that counts.
+
 ## 2026-08-30
 
 - 1 entry from a false stall warning on a CLI agent (gem-agent,

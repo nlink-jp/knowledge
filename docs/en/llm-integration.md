@@ -89,6 +89,40 @@ signal at any layer** — not chunks, not response bytes — that separates
   that fires during healthy work is one operators learn to ignore, and then a
   real stall has no way to reach them.
 
+### Write usage down at call time — the LLM API never reports money
+
+**Symptom:** Answering "what did this session cost" after the fact found the
+record incomplete (CLI agent, 2026-08). The transcript held only main-loop
+rounds; 309 risk evaluations and every compaction had their tokens in an
+in-memory tally that left with the process. Side-call records carried `prompt`
+and `output` only, which cannot be priced at all.
+
+**Why:** LLM APIs report tokens, not money (Vertex/Gemini `usageMetadata`).
+The cloud's billing side reports cost per SKU per day, which cannot be
+attributed to a session, a turn, or a call. So cost is **token counts ×
+catalog price**, and those counts are unrecoverable unless they are persisted
+**at the moment of the call**. A tally kept for display is not a record.
+
+**How to apply:**
+- Write **one accounting record per model call**, whether it is the main loop
+  or a side call (risk evaluation, summarisation, compaction, a child agent,
+  search grounding). Always include `source` (which path spent it) and `model`
+  (which price applies) — in a tool that mixes models, a record that can be
+  priced on its own is what makes aggregation possible.
+- **Measure the bucket semantics before summing** (measured on Gemini/Vertex):
+  thoughts come back separate from output and bill as output; `cached` is a
+  discounted **share of** `prompt`, not an addition to it; `total` is the API's
+  own count, so `prompt + output + thoughts == total` is a checksum. Real logs
+  can run past 80% cache hits, where ignoring `cached` is wrong by multiples.
+- **Keep exactly one place that counts.** Repeating the numbers on a
+  descriptive record invites the first aggregator ever written to
+  double-count.
+- Do not bake a price table into the tool (prices churn) — read it from config
+  or the billing catalog API, and record the region too: prices resolve per SKU
+  per region.
+- Per-request charges such as search grounding are invisible in token counts;
+  record the call count separately.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
