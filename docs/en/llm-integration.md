@@ -56,6 +56,39 @@ code used to work).
   failure lands after the operator believes they are back at work. Name the
   recorded model in the error.
 
+### A function call arrives as one whole part — nothing streams while it is composed
+
+**Symptom:** A streaming UI's "no data for 20s — the connection may be stalled"
+warning fired on every large file write. The operator's report: "the model is
+clearly still working, but it says the connection stalled". Measured (Vertex
+`GenerateContentStream`, a Gemini 3 flash model, CLI agent, 2026-08): one write
+tool call with 21,761 bytes of content produced four thought-summary chunks in
+the first 9s and then **33s with no chunk at all**. Tapping the HTTP response
+body through a RoundTripper showed **40.4s without a single byte read**, then
+~37KB flushed at once when the call completed.
+
+**Why:** A function call is not streamed argument-by-argument; it is sent as
+**one finished part**. Text streams incrementally, which is what makes the
+contrast look like breakage. The silence scales with the argument (~650 B/s
+measured, so a 100KB file is minutes of it). Consequently the client has **no
+signal at any layer** — not chunks, not response bytes — that separates
+"composing a large argument" from "the connection died".
+
+**How to apply:**
+- Set the stall threshold from measurement, generously (40s of silence for a
+  21KB write means anything in the tens of seconds is a false alarm). Do not try
+  to build a byte-level heartbeat — measured impossible.
+- Do not add an automatic timeout; it kills legitimate long generation. Show the
+  elapsed silence and leave the decision to the human.
+- **Do not put the reason on screen.** "A function call arrives as one part" is
+  the supplier's business and the user cannot act on it. Constraints like this
+  belong in ADRs, comments and commit messages.
+- Design for the asymmetry: expected silence differs between a text answer and a
+  function call.
+- The cost of a false alarm is not information but the signal itself: a warning
+  that fires during healthy work is one operators learn to ignore, and then a
+  real stall has no way to reach them.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant

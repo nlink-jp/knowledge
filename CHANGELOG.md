@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-30
+
+- 1 entry from a false stall warning on a CLI agent (gem-agent,
+  ADR-0056):
+  - **llm-integration** (1): a function call arrives as one whole
+    part, so nothing — not a chunk, not a byte — reaches the client
+    while the model composes a large argument (measured 40s of dead
+    wire for a 21KB write); set stall thresholds from that
+    measurement, and keep the supplier's reason off the screen.
+
 ## 2026-08-29 (2)
 
 - 1 entry from piped-stdin support on a CLI agent (gem-agent,
