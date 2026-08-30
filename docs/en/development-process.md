@@ -224,6 +224,43 @@ for safety.
   hosting side's archived state as truth and exclude them. Duplicate checkouts of
   one repo cause double commits.
 
+### A linked worktree breaks in a repository that needs `core.worktree`
+
+**Symptom:** A task was dispatched into a fresh `git worktree` inside a
+submodule. In the new worktree every tracked file showed as deleted and the git
+directory's own contents (`HEAD`, `config`, `hooks/`, `index`, `info/`, `logs/`)
+showed as untracked. The main checkout was untouched and healthy.
+
+**Why:** A submodule's git directory lives outside its checkout, so it *must*
+carry `core.worktree` — a path relative to the git directory. Enabling
+`extensions.worktreeConfig` without migrating `core.worktree` into the main
+worktree's `config.worktree` leaves it in the shared config, where every linked
+worktree inherits it. The same relative path then resolves from a different
+base:
+
+| resolved from | lands on |
+|---|---|
+| main gitdir `…/modules/<name>` | the checkout ✅ |
+| linked gitdir `…/modules/<name>/worktrees/<wt>` | the git directory itself ❌ |
+
+The work-tree root becomes the git directory, which is exactly the symptom.
+
+**How to apply:**
+- The condition is **not** "it is a submodule" — it is
+  `git config --get core.worktree` returning anything. A standalone repository
+  with the same extension enabled is fine, because it has no `core.worktree` to
+  inherit. Check that before dispatching work into an isolated worktree.
+- A fresh submodule does not reproduce it: `git worktree add` alone is harmless.
+  The breakage needs the extension enabled without the migration, which is what
+  the isolation tooling does.
+- Recovery: `git worktree remove --force <full path>`, delete the leftover
+  branch, `git config --unset extensions.worktreeConfig`, then **prove** it by
+  creating one worktree and checking `git rev-parse --show-toplevel` before
+  removing it again.
+- Sweep for residue across the org: `grep -l worktreeConfig */.git/modules/*/config`
+  and a `find` for orphaned worktree directories. Registration and directory can
+  outlive each other in either order.
+
 ### Bulk renames process longer identifiers first
 
 **Symptom:** Running `register-object` → `register_object` first mutated

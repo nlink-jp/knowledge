@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-31
+
+- 2 entries, and one correction, from taking a fleet of seven file-mediated MCP
+  servers off `workspace_root` and giving the client the guard instead
+  (abuse/asn/mac/malware/otx/rdns/urlscan-lookup, gem-agent):
+  - **mcp-server-design** (1 + 1 correction): a server cannot know the model's
+    context window, so bounding a response is the caller's job and spilling an
+    oversized one is the client's — seven servers had each grown the same
+    threshold, and the file escape hatch made every one of them depend on the
+    client owning a filesystem it could *name*. Reachability, not the file, is
+    what has to survive the removal. This supersedes the older advice to offer
+    an untrimmed result as a file: a trim should be escapable in place, with a
+    knob that raises the cut.
+  - **development-process** (1): a linked worktree breaks in any repository that
+    needs `core.worktree` — enabling `extensions.worktreeConfig` without
+    migrating that setting leaves every linked worktree resolving its work tree
+    onto the git directory itself. The condition is what `git config --get
+    core.worktree` returns, not whether the repository is a submodule.
+
 ## 2026-08-30 (5)
 
 - 3 entries from connecting a stdio-to-HTTP MCP bridge to a provider with no

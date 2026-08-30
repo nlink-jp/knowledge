@@ -198,6 +198,39 @@ opt-out flag を 1 個だけ足すと入力経路ごとに flag が連鎖して�
   ホスティング側の archived 状態を正として除外する。同一リポジトリの二重チェック
   アウトがあると sweep が二重コミットする。
 
+### `core.worktree` を要するリポジトリではリンク worktree が壊れる
+
+**症状:** submodule の中に新しい `git worktree` を作ってタスクを投入したところ、
+その worktree では追跡ファイルが全て「削除済み」に見え、git ディレクトリ自身の
+中身（`HEAD` / `config` / `hooks/` / `index` / `info/` / `logs/`）が untracked と
+して現れた。メインのチェックアウトは無傷で健全だった。
+
+**なぜ:** submodule の git ディレクトリはチェックアウトの外にあるため、
+`core.worktree`（git ディレクトリからの相対パス）を**必須**とする。
+`extensions.worktreeConfig` を有効化しながら `core.worktree` をメイン worktree 専用の
+`config.worktree` へ退避させないと、共有 config に残ったそれを**リンク worktree が
+継承する**。同じ相対パスが、解決の起点によって別の場所に着地する:
+
+| 解決の起点 | 着地先 |
+|---|---|
+| メイン gitdir `…/modules/<name>` | チェックアウト ✅ |
+| リンク gitdir `…/modules/<name>/worktrees/<wt>` | git ディレクトリ自身 ❌ |
+
+作業ツリーのルートが git ディレクトリになる。症状はこれで説明が付く。
+
+**どう適用するか:**
+- 条件は「submodule だから」では**ない**。`git config --get core.worktree` が
+  何かを返すかどうかである。同じ拡張が有効な standalone リポジトリは正常に動く —
+  継承すべき `core.worktree` を持たないからだ。隔離 worktree へ作業を投入する前に
+  これを確認する。
+- 新規 submodule では再現しない。`git worktree add` 単体は無害である。壊れるには
+  「拡張が有効かつ退避がされていない」状態が要り、それを作るのは隔離側の仕組みである。
+- 復旧: `git worktree remove --force <フルパス>` → 残ったブランチを削除 →
+  `git config --unset extensions.worktreeConfig` → worktree を 1 つ作って
+  `git rev-parse --show-toplevel` が正しいことを**実証**してから削除する。
+- 残骸の全数確認: `grep -l worktreeConfig */.git/modules/*/config` と、孤児化した
+  worktree ディレクトリの `find`。登録とディレクトリはどちらの順でも生き残り得る。
+
 ### 一括リネームは長い識別子から処理する
 
 **事象:** `register-object` → `register_object` を先に走らせた結果、

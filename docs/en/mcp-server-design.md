@@ -233,10 +233,47 @@ aggregate; the failure needs real data with a long tail.
   because nothing signals that a view is partial.
 - Emit the accounting fields **only when something was trimmed**, so their
   presence is itself the signal.
-- Offer the untrimmed result as a file when a workspace is available; trimming
-  should cost a file read, not the data.
+- Make the trim **escapable in place**: a knob that raises the cut (`context_top`,
+  `references_top`, `-1` for none) keeps the tail reachable in the same result.
+  Do not reach for a file here — see the next entry.
 - Put the cap in the **face that has the budget**. A CLI's `--json` feeding a
   pipeline should stay complete; only the tool response needs bounding.
+
+### A server cannot know the model's context window
+
+**Symptom:** Seven file-mediated servers in one fleet had independently grown a
+`workspace_root` argument: past a threshold each wrote its result to a
+caller-supplied directory and returned the path. The client calling them had no
+size cap of its own on tool results, so every server was implementing the
+missing guard — seven times, in the seven processes least able to do it.
+
+**Why:** "Too big" is a property of the caller's context window and of the model
+behind it, and a server can observe neither. Its threshold is therefore a guess
+that is wrong for every client but the one it was tuned against. The escape
+hatch costs more than the guess: it makes the server depend on the client owning
+a filesystem it can *name*. A client speaking MCP over a transport with no
+shared disk cannot read its own result, and a sandboxed client cannot open a
+path outside its roots.
+
+**How to apply:**
+- **Bounding a response is the caller's job; spilling an oversized one is the
+  client's.** Give the caller a knob that bounds the response (`per_page`,
+  `limit` + `offset`, a `*_top` cap), make every value reachable through it, and
+  then return what was asked for whole and inline.
+- Preserve **reachability**, not the file. A file that only ever held what
+  `limit` had already fetched reached nothing further; pagination that walks to
+  the end replaces it exactly. Check this before removing a file path — if the
+  file did reach further, add the paging first.
+- Cap on the client side once, where tool results enter the conversation, and
+  **save rather than truncate**: hand the model a preview plus a path it can
+  open. A built-in tool cap that truncates while MCP results pass through
+  unbounded is the worst of both.
+- Binary is the one case where a file is intrinsic — audio, video, a rendered
+  image. Even there, prefer MCP content blocks when the payload fits the
+  transport: a path is useless to a client that cannot read the server's disk.
+- Dropping file mediation removes a dependency, not a capability. Say so in the
+  CHANGELOG with the migration (a smaller page plus a loop), because the
+  argument disappearing from the schema is a breaking change.
 
 ### Don't expose internal IDs in tool results
 
