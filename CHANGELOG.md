@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-31 (2)
+
+- 2 entries from the same day's failure retrospective (lint restoration,
+  release round, ADR-0058 risk-ladder gap):
+  - **development-process** (2): absence of findings is not success — a
+    panicking linter, a fixer whose "0 findings" meant a broken build, and a
+    release step that skipped silently are the same failure, so pair every
+    zero with proof the checker ran and audit the whole result surface after a
+    mechanical sweep; and changing a boundary invariant means dispositioning
+    every consumer of the old one — grep the identifier that encodes the
+    boundary before shipping, record each consumer's disposition in the ADR,
+    and keep audit wording in step with the boundary, because the bug class is
+    "component nobody re-asked", not "wrong code".
+
 ## 2026-08-31
 
 - 2 entries, and one correction, from taking a fleet of seven file-mediated MCP

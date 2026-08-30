@@ -224,6 +224,64 @@ for safety.
   hosting side's archived state as truth and exclude them. Duplicate checkouts of
   one repo cause double commits.
 
+### Absence of findings is not success — prove the checker ran
+
+**Symptom:** Three shapes of the same failure in one day. A linter that had
+been panicking for weeks hid the fact that six repos had no lint config at all
+— "no complaints" read as "clean". An automated errcheck fixer reported "0
+findings", which was actually "the build broke, so the linter found nothing".
+And a 15-repo release was reported complete with the tap-update step silently
+skipped — nothing failed, because nothing had run.
+
+**Why:** A gate produces two kinds of silence: "checked and clean" and "never
+checked". They are indistinguishable in the output unless something forces the
+distinction, and every mechanical loop that reads only the finding count will
+mistake breakage for progress.
+
+**How to apply:**
+- Pair every "0 findings" with evidence the finder executed: build + tests in
+  the same loop (a fixer that edits code must gate each pass on `go build`),
+  the checker's own exit status, and a before-count that makes "50 → 0"
+  meaningful in a way "0" alone is not.
+- After any mechanical sweep, audit the *whole* result surface — build, tests,
+  lint — not the metric the sweep optimises. The sweep's own success number is
+  the one number it can corrupt.
+- For multi-step procedures, completeness comes from the authoritative
+  checklist, not from the absence of errors: enumerate the steps and tick them
+  against the canonical document, because a skipped step fails silently by
+  construction.
+
+### Changing a boundary invariant means dispositioning every consumer
+
+**Symptom:** A second writable root (a per-session work directory) was added
+beside the project directory. The sandbox profile, the file tools, the system
+prompt, and the status display were all updated — but the auto-approve risk
+ladder still judged "outside the project" against one root, so every
+work-directory write cost a model review or a human prompt (three cases in the
+first field transcript, one spending 1,871 tokens to reach the wrong answer).
+Fixing the ladder and re-applying the lesson turned up one more consumer: the
+`@`-reference resolver.
+
+**Why:** An invariant like "the writable universe is the project directory"
+is not stored in one place — it is re-implemented by every consumer that ever
+asked "is this path inside?". Updating the producers of the new boundary
+(sandbox, tools) feels complete because those are the components being built;
+the stale consumers keep working, silently, against the old boundary, and each
+one surfaces later as its own confusing bug.
+
+**How to apply:**
+- The invariant lives wherever its identifier is consumed: `grep -rn
+  projectDir` (or whatever encodes the boundary) and list every hit **before**
+  shipping the change.
+- Disposition each consumer explicitly — change it, or record why it stays
+  (an @-completion that stays project-scoped is a decision worth one comment;
+  an undispositioned consumer is a latent bug).
+- Write the disposition list into the ADR. The field bug class here is not
+  "wrong code" but "component nobody re-asked".
+- Reasons and audit lines that name the boundary must follow it: recording a
+  work-directory write as "inside the project" — or refusing with a message
+  that claims a root that does not exist — turns the audit trail false.
+
 ### A linked worktree breaks in a repository that needs `core.worktree`
 
 **Symptom:** A task was dispatched into a fresh `git worktree` inside a
