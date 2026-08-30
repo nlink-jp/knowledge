@@ -28,7 +28,7 @@ English version: [README.md](README.md)
 | [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数 |
 | [macos-gui](docs/ja/macos-gui.md) | SwiftUI/AppKit の罠、メニューバーアプリ、Wails |
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
-| [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、stdio 衛生、構造化エラー、LLM 向けツール設計 |
+| [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計 |
 | [llm-integration](docs/ja/llm-integration.md) | Gemini/genai SDK、出力検証、drift、トークン、dedup、パイプライン |
 | [security](docs/ja/security.md) | プロンプトインジェクション対策、秘密情報/PII、公開サービス、破壊的操作の安全設計 |
 | [build-and-packaging](docs/ja/build-and-packaging.md) | CGO クロスビルド、.gitignore の罠、CI 不使用の判断理由 |

@@ -27,7 +27,7 @@ Documents are consumed by reading `main` — there are no releases.
 | [release-engineering](docs/en/release-engineering.md) | Signing, notarization, Homebrew tap, release archives, versioning |
 | [macos-gui](docs/en/macos-gui.md) | SwiftUI/AppKit traps, menu-bar apps, Wails |
 | [web-ui](docs/en/web-ui.md) | CSS/layout traps in WebView frontends and self-contained HTML reports |
-| [mcp-server-design](docs/en/mcp-server-design.md) | MCP protocol limits, stdio hygiene, structured errors, LLM-facing tool design |
+| [mcp-server-design](docs/en/mcp-server-design.md) | MCP protocol limits, OAuth discovery limits, stdio hygiene, structured errors, LLM-facing tool design |
 | [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines |
 | [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety |
 | [build-and-packaging](docs/en/build-and-packaging.md) | CGO cross-builds, .gitignore traps, CI-less release rationale |

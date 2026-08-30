@@ -102,6 +102,36 @@ mcpOut := os.NewFile(uintptr(saved), "mcp-stdout") // transport writes here
   testing.md). Contamination shows as blank/non-JSON lines in the response
   stream.
 
+### RFC 9728 metadata coming back does not mean DCR is available
+
+**Symptom:** An upstream MCP server answered 401 with
+`WWW-Authenticate: ... resource_metadata=...`, the protected-resource metadata
+(RFC 9728) fetched correctly, so a bridge was configured to "discover the
+endpoints and register a client automatically" — and the login never completed.
+
+**Why:** Discovery is two independent stages. The first (RFC 9728 → identify the
+authorization server → fetch its RFC 8414 metadata) can succeed while the
+second, dynamic client registration (RFC 7591), cannot happen at all: it only
+works when that metadata carries a `registration_endpoint`. Large providers
+routinely omit it, leaving no option but registering an OAuth client by hand.
+The trap is that metadata coming back *looks* like proof the automatic route
+will work.
+
+**How to apply:**
+- Before trying automatic discovery, **fetch the metadata and check whether
+  `registration_endpoint` is present**. If it is absent, only the pre-registered
+  route (client_id / client_secret / fixed redirect URI) exists. One curl
+  settles it, faster than inferring it from a failed login.
+- When the authorization server's issuer has a path, RFC 8414 inserts the
+  well-known segment *before* that path (issuer `https://host/login/oauth` →
+  `https://host/.well-known/oauth-authorization-server/login/oauth`). Appending
+  it to the issuer, OIDC-style, returns 404 — try both shapes.
+- A provider without `registration_endpoint` may still accept a token an
+  existing CLI already holds, or a personal access token. A route that obtains
+  the token from an external command avoids registering an OAuth app entirely.
+- An implementation that reports a discovery failure as merely "not logged in"
+  hides the cause. Say **which stage failed**.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON
@@ -220,6 +250,62 @@ dedicated UI path).
 - Exclude IDs of content already shown to the user in dedicated UI.
 - Convey "display was handled" with minimal status
   ("SUCCESS: ... displayed to the user. Reply briefly.").
+
+### A tool list is context paid for every session — let clients pick a subset at connect time
+
+**Symptom:** An MCP server returning 44 tools answered `tools/list` with roughly
+121 KB. Barely a dozen were ever used; the rest were context read on every
+session and nothing else.
+
+**Why:** `tools/list` is read in full when a session opens, and the model carries
+that whole text as context. At a few hundred bytes of description each, a few
+dozen tools become a major part of the prompt. The weight is not proportional to
+the count either — it concentrates in the **few tools with long descriptions**.
+Measured: narrowing by group (category) from 44 to 38 tools moved 121 KB only to
+106 KB, while naming 12 individual tools dropped it to 32 KB. Group-level
+selection barely helps.
+
+**How to apply:**
+- A server with more than about 20 tools should offer **a way to select a subset
+  at connect time** — a request header, a URL path, or a launch flag. The useful
+  axes are allowlist, denylist, and read-only.
+- Group (category) selection alone is not enough. Always offer **selection by
+  individual tool name**.
+- Do the narrowing **upstream, at the server**. Discarding tools in a relay or
+  client still pays for the transfer, and in a transparent relay it also breaks
+  the invariant that messages are never interpreted.
+- Decide and document how unknown names behave. An allowlist that fails to start
+  on an unknown name while a group selection ignores one silently is an
+  asymmetry users cannot discover.
+- Name lists stop matching silently when the upstream renames a tool. Document
+  them as something to re-check, not to set and forget.
+
+### Enumerate the capability surface before building a control layer
+
+**Symptom:** A requirement — "make the worst operation (deleting a repository)
+unreachable" — led to a plan for hiding tools in a relay. Enumerating all 89
+upstream tools first showed that **no repository-deletion tool existed**. There
+was no branch, tag or release deletion and no force push either; the only
+destructive primitive was file deletion.
+
+**Why:** "What the API permits" and "what the MCP server exposes as tools" are
+different sets, and the second is usually far narrower. Building a control layer
+against a threat imagined from the first leaves a feature with nothing to
+protect — and an unused feature is maintenance cost on its own.
+
+**How to apply:**
+- Before designing controls, fetch the whole `tools/list` and scan **both names
+  and descriptions** for destructive words (delete / remove / destroy / archive /
+  transfer). Deletions hide behind names that do not say so (a method argument
+  of some `*_write` tool), so the descriptions matter.
+- When a permanent limit is required, impose it through the **credential's
+  authority, not a denylist of tool names**. A name list is bypassed the moment
+  the upstream adds or renames a tool; a credential without the permission
+  cannot execute one even after it ships.
+- Record the enumeration with its date. Tool inventories change on the
+  upstream's schedule, so write "absent as of <date>".
+- Before adding a feature to a relay, check whether the upstream already
+  provides it. If it does, not implementing is the right answer.
 
 ## Server implementation structure
 

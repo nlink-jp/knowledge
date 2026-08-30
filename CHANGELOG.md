@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-30 (5)
+
+- 3 entries from connecting a stdio-to-HTTP MCP bridge to a provider with no
+  dynamic client registration (mcp-bridge, GitHub setup guide):
+  - **mcp-server-design** (3): RFC 9728 metadata coming back does not mean DCR
+    is available — the two discovery stages are independent, so check for
+    `registration_endpoint` with one curl instead of inferring it from a failed
+    login (and mind that RFC 8414 inserts the well-known segment before a
+    path-bearing issuer); a tool list is context paid for every session, so
+    servers past ~20 tools should let clients pick a subset at connect time by
+    individual name, because group-level selection barely moves the number; and
+    enumerate the capability surface before building a control layer, because
+    what the API permits is not what the server exposes — a permanent limit
+    belongs in the credential's authority, not a denylist of tool names.
+
 ## 2026-08-30 (4)
 
 - 2 entries from replacing an LLM-authored-JSON transcription tool with one
