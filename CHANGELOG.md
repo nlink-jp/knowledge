@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-30 (4)
+
+- 2 entries from replacing an LLM-authored-JSON transcription tool with one
+  built on a specialised model (gem-scribe, ADR-0001):
+  - **llm-integration** (2): if a specialised model exists, stop stacking
+    mitigations on a general LLM writing your structure — the mitigations
+    tolerate a freehand document rather than making it correct, and a salvage
+    pass buys survival by silently discarding content; and once the structure
+    is guaranteed, the remaining errors turn quiet, so the failure shapes
+    validation cannot catch need names and one result field to carry them.
+
 ## 2026-08-30 (3)
 
 - 2 entries from migrating an image-generation CLI to the current model

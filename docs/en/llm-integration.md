@@ -147,6 +147,54 @@ was deliberately **not** created.
 - Keep **paths per-tool** (`~/.config/<tool-name>/config.toml`) — preserving each
   tool's ability to point at an independent GCP project (staging vs production).
 
+### If a specialised model exists, stop asking a general LLM to author the structure
+
+**Symptom:** A transcription tool asked a general LLM to reply with a JSON document of
+segments. On long input the model emitted malformed JSON and the run stopped. Two
+mitigations were added — a salvage pass that dropped whatever failed to parse, and a
+response schema constraining generation — and **malformed JSON still occurred with the
+schema in place** (repair carried the run). Worse, the salvage pass bought survival by
+silently discarding content: an output missing part of the input and one missing nothing
+look identical to the caller apart from a counter.
+
+Where a **specialised model** for the same task exists (ASR, translation, embeddings),
+the API returns the structure. Speaker turns arrive as separate response parts and times
+arrive as numeric fields. The layer that asks a model to author structure disappears, and
+the failure mode is gone rather than mitigated.
+
+**How to apply:**
+- The moment you start stacking mitigations on "the LLM wrote broken JSON", **check
+  whether a specialised model exists first**. Every mitigation is a way of tolerating a
+  freehand document; none makes it correct.
+- Moving to a specialised model drops the side jobs the general model was doing anyway
+  (translation, assigning proper names). Split those into a **second pass over the output
+  text**. The input becomes bounded, so the same class of work is far sturdier, and a
+  failure loses an enrichment rather than the artifact.
+- **A specialised model may belong to a different service.** A translation-specialised
+  model appeared in the model-garden UI but lived behind a different API — different
+  client, different IAM role, different region. Appearing in the catalog does not mean
+  sharing the API.
+- Fields kept for compatibility (a "discarded count", say) stay, reporting 0. Removing
+  one breaks consumers written against the older implementation.
+
+### Once the structure is guaranteed, errors turn quiet
+
+**Symptom:** Migrating to a specialised ASR model removed the malformed JSON, but **when
+the model fails to separate two similar voices it returns a perfectly valid transcript**
+— no error, no warning, everyone collapsed into one speaker. The documentation separately
+called speaker attribution beyond two people experimental. Structural validity had
+stopped implying substantive correctness.
+
+**How to apply:**
+- After moving to a structured API, enumerate and **name the failure shapes validation
+  cannot catch**: "collapsed to one speaker", "more speakers than attribution is reliable
+  for", "every timestamp is zero".
+- Carry them in **one field of the result** (`warning` or similar). An agent cannot
+  perceive the source material — audio, an image — so without that field it has no way to
+  tell a good result from a confident wrong one.
+- Keep it to one field. An agent that reads it reads all of it, and a second field is a
+  second thing to forget.
+
 ### The Gemini 3 family is global-endpoint only — move the model name and the location together
 
 **Symptom:** Swapping just the model name to a Gemini 3 model makes every tool
