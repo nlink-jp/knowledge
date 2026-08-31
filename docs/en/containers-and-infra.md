@@ -186,3 +186,32 @@ case-sensitive volume
   misbehaves, the cause is that machine's unique conditions, not the data. **Always include
   the filesystem format in the checklist.** Asking "does this happen in any other
   environment?" before digging into symptoms narrows the search dramatically.
+
+## launchd periodic jobs can be delayed or dropped, and there is no way to observe it
+
+**Symptom:** A 30-minute launchd job (launching an AI-agent batch analysis)
+had one firing skipped and ran an hour late. The unprocessed backlog grew,
+stretching turn time and token consumption in a positive-feedback loop. A
+post-hoc AI investigation could not determine the cause.
+
+**Why:** Since OS X 10.9, launchd timers are coalesced for power efficiency
+(firings can be delayed). Additionally, while a job with the same label is
+still running, the next firing is **dropped** (not queued). There is no way to
+tell after the fact which happened: launchd cannot be queried for the next
+fire time and keeps no record of a skip. Once the unified log retention
+(days) has passed, the trail is gone entirely.
+
+**How to apply:**
+- `LegacyTimers: true` in the plist disables coalescing (precise firing at
+  the cost of power efficiency).
+- If a job's run time can exceed its period, do not use launchd periodic
+  execution — a firing that lands mid-run is silently dropped.
+- For periodic tasks where "it did not run" must be observable, use
+  [task-clock](https://github.com/nlink-jp/task-clock): it evaluates cron
+  itself and records every fire as scheduled-vs-actual
+  (`on_time` / `queued` / `missed` with reasons), keeping launchd only for
+  KeepAlive residency.
+- Give resident daemons `ProcessType: Interactive` to avoid background
+  throttling, and structure the timing loop as a short-interval ticker poll
+  instead of one long sleep-until-next-fire timer — under App Nap /
+  coalescing the worst-case delay stays bounded by the tick interval.
