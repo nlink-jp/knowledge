@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-31 (3)
+
+- 1 entry from a TUI feature's pre-release testing (deny-with-reason
+  dialog field):
+  - **config-and-io** (1): call Focus() on a bubbles component before
+    storing it into the Bubble Tea model — a pointer-receiver call
+    after the value copy mutates only the local variable, and an
+    unfocused textinput silently drops every key; fix the order
+    (create → configure → Focus → assign), keep the returned tea.Cmd,
+    and pin it with a KeyMsg-after-store regression test.
+
 ## 2026-08-31 (2)
 
 - 2 entries from the same day's failure retrospective (lint restoration,
