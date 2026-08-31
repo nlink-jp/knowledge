@@ -405,3 +405,30 @@ Under `LANG=C` every line was 176.
    the program; "only box-bearing lines drift" → the terminal's own
    ambiguous-width setting.
 
+### Call Focus() on a bubbles component BEFORE storing it into the Bubble Tea model
+
+**Symptom:** A one-line textinput field added to a TUI approval dialog
+ignored every keystroke — placeholder and cursor rendered, not a single
+character landed. The wiring looked correct; only the unit test's
+Value() assertion failed (Go CLI agent, 2026-08).
+
+**Why:** Bubble Tea models travel by value copy through every Update.
+Written as `ti := textinput.New()` → configure → `m.input = ti` →
+`ti.Focus()`, Focus (a pointer receiver) mutates only the local
+variable; the copy already stored in the model stays unfocused. An
+unfocused textinput.Update silently drops keys, so there is no error
+and no panic — just a field that cannot be typed into. Same root cause
+as the noCopy-type panics (strings.Builder et al.), but this variant
+makes no noise, which is worse.
+
+**How to apply:**
+1. Fix the order: create → configure → **Focus() (keep the returned
+   tea.Cmd) → assign into the model last**. Cursor blink starts from
+   that tea.Cmd, so return it rather than dropping it.
+2. Every time a bubbles component is added to a model, ask "did every
+   pointer-receiver call happen before the copy?" — an addition to the
+   existing "does this type survive value copies?" check.
+3. Pin it with a regression test that feeds a KeyMsg AFTER the field
+   is stored in the model and asserts Value() changed. View-level
+   checks (the field renders) cannot catch it.
+
