@@ -326,6 +326,48 @@ conversation already knows it").
    (proposals), excluding runs that followed an explicit request, or a
    dead feature will keep looking like a well-calibrated one.
 
+### Model-facing guidance has layers, and the in-band layer wins — put triggers upstream, and let no layer name the competing path
+
+**Symptom:** A delegated-search tool whose description named its
+trigger ("far cheaper than several rounds of list/search/read for
+where/how questions") fired **zero times unprompted** across 75
+sessions and 788 tool calls. The system prompt's working-style section
+prescribed the manual loop by name and in order — orient, locate,
+read — and never mentioned the tool. After the prompt was fixed, the
+first live run delegated correctly and then **re-explored with 29
+navigation calls anyway**: the report's own header said "quotes may be
+lossy; verify exact lines with read_file before editing" at the exact
+moment the model read the report.
+
+**Why:** Guidance reaches the model through (at least) three layers —
+the system prompt (workflow), tool descriptions (schema), and text
+inside tool results (in-band). They are not equal. An explicit prompt
+workflow beats a description-level trigger, and in-band text arrives
+at the decision moment and beats both. A trigger placed in a weak
+layer, or a counter-invitation left in a strong one, produces a dead
+or self-defeating feature — and no behavioural test catches "guidance
+silently absent". This is the message-consistency lesson in another
+coat: every surface carrying one message must carry the same
+conditional.
+
+**How to apply:**
+1. **Put a feature's trigger in the strongest layer you control** —
+   the system prompt's workflow — not only in the tool description.
+   The description restates it; it cannot carry it alone.
+2. **Audit for counter-triggers before concluding the model "won't use
+   it".** A workflow bullet that names the competing tools, or a
+   result header that invites the competing action, wins over your
+   recommendation. Grep every layer for the competing path's name.
+3. **Scope in-band caveats to the action that needs them.** "Verify
+   before editing those exact lines" protects edits; a blanket "verify
+   with read_file" re-runs the exploration the feature existed to
+   avoid.
+4. **Verify by transcript, twice.** Once that the feature fires
+   unprompted, and once that the follow-on behaviour changed (here:
+   post-report re-reads 29 → 6). Pin the wiring with string-level
+   tests — the defect class is absence, which nothing else catches
+   cheaply.
+
 ## Defensive output handling
 
 ### Silently correcting dynamic LLM output is a bad move — there are only three valid responses

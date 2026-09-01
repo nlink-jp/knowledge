@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-02 (1)
+
+- 1 entry from reviving a dormant delegated-search tool (zero
+  spontaneous firings in 75 sessions):
+  - **llm-integration** (1): model-facing guidance has layers — system
+    prompt beats tool description, and in-band text inside tool
+    results beats both; put a feature's trigger in the strongest
+    layer, audit every layer for counter-triggers naming the
+    competing path, scope in-band caveats to the action that needs
+    them, and verify by transcript both that the feature fires and
+    that the follow-on behaviour changed.
+
 ## 2026-08-31 (3)
 
 - 1 entry from a TUI feature's pre-release testing (deny-with-reason
