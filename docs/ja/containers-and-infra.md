@@ -195,3 +195,29 @@ case-sensitive ボリューム
 - 常駐デーモンの plist は `ProcessType: Interactive` にして background 絞り込みを
   回避する。タイミングループは「次回まで眠る長い timer 一本」ではなく短周期 ticker
   のポーリングにする — App Nap / coalescing 下でも最悪遅延が ticker 間隔に有界化される。
+
+## launchd デーモンのバイナリを他者のライフサイクルに置かない
+
+**事象:** GUI アプリ同梱の CLI から `install` したデーモンの plist が
+`os.Executable()`（= .app 内部パス）を指していた。アプリを終了しただけで
+デーモンが道連れになり、実行中タスクが kill されて作業が失われた。
+
+**なぜ:** launchd はプログラムパスの実体が消えれば spawn できず、実行中でも
+親アプリの終了処理・cask upgrade（.app 差し替え）・`brew upgrade`（Cellar 削除）・
+再ビルド（dist/ 再署名）がバイナリを壊す。plist に書いたパスの寿命 = デーモンの
+寿命になる。
+
+**適用方法:**
+- install はバイナリを**デーモン専用のホーム**（例: `data_dir/bin/<name>`）へ
+  自己コピーし、plist はそこだけを指す。順序は bootout → copy → plist 書き込み →
+  bootstrap（実行中バイナリの差し替えは署名変更で SIGKILL される・copy 失敗時に
+  実体のないパスを指す plist を残さない）。
+- 停止の永続化は `launchctl disable` + `bootout`。disable なしの bootout は
+  次回ログインの RunAtLoad で意図に反して蘇る。disable されたサービスの
+  bootstrap は拒否されるため、起動側は必ず `enable` を先に打つ。
+- デーモン停止で子プロセスの作業を失わせない設計は、**spawn 時に**
+  pid + プロセス開始時刻（`ps -o lstart=`）をレジストリへ記録し、次のデーモンが
+  生存 + 開始時刻一致を確認して引き取る（graceful 停止専用の停止時記録は
+  クラッシュを守れない。コマンド列照合は run 内 exec で偽陰性・pid 再利用で
+  偽陽性になる — 開始時刻は exec を跨いで不変かつ pid 再利用で必ず変わる）。
+  実装例: [task-clock](https://github.com/nlink-jp/task-clock) の live-run registry。

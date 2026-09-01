@@ -215,3 +215,35 @@ fire time and keeps no record of a skip. Once the unified log retention
   throttling, and structure the timing loop as a short-interval ticker poll
   instead of one long sleep-until-next-fire timer — under App Nap /
   coalescing the worst-case delay stays bounded by the tick interval.
+
+## Never park a launchd daemon's binary inside someone else's lifecycle
+
+**Incident:** a daemon installed from a GUI-bundled CLI wrote
+`os.Executable()` — an .app-interior path — into its plist. Merely
+quitting the app took the daemon down with it, and a running task was
+killed mid-flight; the work was lost.
+
+**Why:** launchd cannot spawn a program whose path has vanished, and even a
+running daemon is destroyed by whatever owns that path: the parent app
+quitting, a cask upgrade replacing the .app, `brew upgrade` deleting the
+Cellar, a rebuild re-signing dist/. The lifetime of the path in the plist
+becomes the lifetime of the daemon.
+
+**How to apply:**
+- Have install self-copy the binary into a **daemon-owned home** (e.g.
+  `data_dir/bin/<name>`) and point the plist only there. Order:
+  bootout → copy → write plist → bootstrap (replacing a running binary
+  gets it SIGKILLed on signature change; a failed copy must not leave a
+  plist pointing at nothing).
+- A durable stop is `launchctl disable` + `bootout`. A bootout without the
+  disable is silently undone by RunAtLoad at the next login; and since
+  launchd refuses to bootstrap a disabled service, the start path must
+  `enable` first.
+- To keep a daemon stop from destroying child work, record pid + process
+  start time (`ps -o lstart=`) in a registry **at spawn time**, and have
+  the next daemon adopt processes that are alive with a matching start
+  time. Stop-time bookkeeping cannot cover a crash; command-line matching
+  yields false negatives after an in-run exec and false positives after
+  pid reuse — the start time survives exec and always changes with reuse.
+  Reference implementation:
+  [task-clock](https://github.com/nlink-jp/task-clock)'s live-run registry.
