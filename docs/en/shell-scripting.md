@@ -92,3 +92,36 @@ pat='$(OUT)'; echo "${s//"$pat"/$val}"  # => dist/tool  correct
 **How to apply:** For placeholder substitution in bash, put the pattern in a
 variable and write `${s//"$pat"/$rep}`. Suspect any existing inline form. Never
 "simplify" it back inline (leave a prohibition comment in the code).
+
+## An operational script must not infer its root from $PWD — and a skipped check must never summarize green
+
+**Symptom:** an org-wide health-check script defaulted its target root to
+`$(pwd)`. Run by an agent whose shell had silently persisted in another
+repository's directory, every repo came back "not found locally" — as a
+warning — and the run still printed **"Result: all checks passed." with
+exit 0, having checked nothing**. The wrong-cwd invocation was not a
+one-off: an agent environment's working directory persists invisibly
+between shell calls and drifts away from what the operator believes.
+
+**Why:** two defects compounding. (1) The script could derive its root
+from its own location (`BASH_SOURCE`) but delegated it to the caller's
+cwd — the least trustworthy input deciding the most important question.
+(2) Missing repositories were warnings, not counted failures — a
+fail-open skip that made unexamined targets look like passing ones.
+Either alone is survivable (with only the first, an INCOMPLETE verdict
+surfaces the mistake; with only the second, the right root is used);
+composed, they manufacture a green result out of zero checks.
+
+**How to apply:**
+- A script that lives inside the tree it examines derives its root
+  **relative to `BASH_SOURCE`** (`SCRIPT_DIR/../..`), keeping an explicit
+  argument as the override. A `$PWD` default is an unverified assumption
+  that the caller stands in the right place.
+- A checking script **separates skips from passes**: targets it could not
+  find or read are counted, the summary says "INCOMPLETE — N not
+  checked", and the exit status is non-zero. Green means "every target
+  examined, every check passed" and nothing less — a check must never
+  claim more than it verified.
+- The operator-side twin habit: prefix agent shell calls with
+  `cd /absolute/path &&`. But discipline slips somewhere eventually,
+  which is why the script-side mechanism is the real wall.

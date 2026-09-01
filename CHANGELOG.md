@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-02 (3)
+
+- 1 entry from an org health check that summarized all-green after
+  checking nothing (wrong caller cwd + fail-open skips):
+  - **shell-scripting** (1): an operational script must not infer its
+    root from `$PWD` — derive it from `BASH_SOURCE` and keep the
+    explicit argument as override; and a checking script must count
+    skipped targets into the verdict (INCOMPLETE, non-zero exit)
+    instead of warning and summarizing green. Either defect alone is
+    survivable; composed they manufacture a green run out of zero
+    checks.
+
 ## 2026-09-02 (2)
 
 - 3 entries from retiring a chat-diagram tool whose feedback loop was
