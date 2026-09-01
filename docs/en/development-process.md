@@ -9,7 +9,37 @@ typed commits) lives in CONVENTIONS.md.
 
 ## Design & implementation decisions
 
-### Rewrite or refactor — decide by three conditions
+### Consult the knowledge base at the decision point, keyed by mechanism name
+
+**Symptom:** One session produced two GUI defects whose preventions were
+already recorded (2026-09, a menu-bar GUI). (1) Asked for a user-resizable
+panel, a grip-based workaround was built on MenuBarExtra, felt wrong, and was
+scrapped — only then were the documented "resizable menu-bar NSPanel"
+precedent and its two trap entries found. (2) Click-away: an entry stating
+"a `.nonactivatingPanel` can miss resign events entirely; shown-only event
+monitors are the established fix" existed and **had been read during that
+same migration**, yet was not applied — the panel shipped once without
+click-to-close.
+
+**Why:** The consultation trigger was "at project kickoff". Reading the index
+at the start does not survive to the individual design decisions that follow
+(choosing a resize approach, designing the close path). Neither defect came
+from missing knowledge — both came from **missing retrieval at the decision
+point**. "Read but not applied" costs more than "never knew": the memory of
+having read it produces a false sense of having checked.
+
+**How to apply:**
+- The trigger is **every design decision and every newly adopted mechanism**
+  (not once per project). Search the knowledge base and the workspace memory
+  by the mechanism's name (NSPanel, notarize, reload, cask, …) and read every
+  hit before writing code.
+- When porting from a reference project, read its CLAUDE.md / AGENTS.md
+  **in full, before the code** — the traps are recorded there, not visible in
+  the code itself.
+- Do not stop at reading: state **which of the entries constrain the design
+  at hand** before implementing.
+- The binding norm lives in `.github/CONVENTIONS.md` §Consult and feed the
+  knowledge base.
 
 **Symptom:** A tool that was one 636-line main.go was faster to rewrite from its
 spec than to refactor. Another tool, already split into files with moderate
