@@ -287,6 +287,18 @@ screen); **the only party who could fix it — the model — could not.**
    watch the model read the reason and **switch approach** — observed as
    LR → refused → refused → TD → drawn.
 
+**Sequel (measured two months later):** the tool-based loop was
+exercised **once** in 76 sessions; in practice the human closed the
+loop (looking at the screen and saying "simplify"). Meanwhile the
+tool's standing costs — one extra round per diagram, status lines
+interleaved into the reply — and the avoidance behavior its guidance
+bred (next entry) ran daily. The principle stands (tell the author
+when you can), but **the value of an in-turn feedback loop is a claim
+to measure, not assume** — do not pay a standing cost for a loop that
+is almost never exercised. This design was eventually replaced by
+silent view-layer rendering plus a one-line reader-facing note, making
+the human-closes-the-loop assumption explicit.
+
 ### A model-facing feature written as "you can" never fires — state the trigger, and balance it against the prohibitions
 
 **Symptom:** A CLI agent's cross-session memory was measured over 39
@@ -325,6 +337,43 @@ conversation already knows it").
 4. **"Never fires" is invisible to precision.** Count the denominator
    (proposals), excluding runs that followed an explicit request, or a
    dead feature will keep looking like a well-calibrated one.
+
+### "Do not do X" over-generalizes — remove the trigger for unwanted behavior instead of prohibiting it
+
+**Symptom:** When a CLI agent's chat diagrams were moved to a tool, the
+prompt gained "do NOT write a ```mermaid fence in a reply (it is shown
+as raw source and nothing draws it)". Measured two months and 76
+sessions later: mermaid fences disappeared as instructed — and **the
+model started hand-drawing box-art diagrams inside plain fences**, in
+replies and in Markdown files whose diagrams should have been mermaid.
+The prohibition generalized past its category ("fences in replies") to
+"mermaid itself", and the model invented a third path nobody had
+anticipated — or forbidden. The hand-drawn art sat outside every
+transform, guard, and verification, sheared at other widths, and
+polluted deliverables.
+
+**Why:** the aggravated form of the previous entry's "vague positive
+beside concrete negatives". A prohibition removes the behavior but
+**leaves the demand (the model wants to draw) with its exit blocked**,
+so the model satisfies the demand through an unspecified path — one
+that sits outside everything the designer built. Operator's
+formulation: **"do not do X" is the pattern to avoid.**
+
+**How to apply:**
+1. When you see unwanted model behavior, first ask whether **your own
+   prohibition or steering text is its trigger**. The fix is removing
+   the trigger, not adding another prohibition.
+2. If the behavior you want matches the model's trained conventions
+   (diagrams in Markdown are mermaid fences, etc.), **saying nothing is
+   the strongest instruction**: trust the prior and put the handling on
+   the runtime side (here: display-time rendering). Silence can be
+   pinned by a test that the system prompt never mentions the topic.
+3. If a prohibition is truly needed, pair it with a positive
+   alternative at least as concrete and as long (the previous entry's
+   balancing rule).
+4. Measure guidance changes as a distribution: not "did the forbidden
+   thing disappear" but **where did the demand flow** — if it flowed
+   into an unanticipated path, that is this defect.
 
 ### Model-facing guidance has layers, and the in-band layer wins — put triggers upstream, and let no layer name the competing path
 

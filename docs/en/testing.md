@@ -228,6 +228,39 @@ assumption cannot be tested against itself**.
   Discovering it later is worse, because a wall of green tests will have been
   informing the judgement in the meantime.
 
+## Before calling something "measured", ask whether the probe input represents the real thing
+
+**Symptom:** how a terminal Markdown renderer treats over-wide code-block lines
+was "measured" with a single 132-cell line of box-drawing characters **containing
+no spaces**, and the conclusion — "it neither truncates nor wraps; lines pass
+through unmodified" — went into a design document as a measured fact. An
+independent review re-measured with real box art, which **contains spaces between
+boxes**, and found the renderer word-wraps code-block lines at spaces: any
+drawing wider than the wrap width was sheared into interleaved fragments before
+the terminal ever saw it. The probe input happened not to carry the mechanism
+(word boundaries), so the behavior that mattered was unobservable.
+
+**Why:** a synthesized minimal input can lack exactly the ingredient the property
+under test operates on. Claiming a general statement ("this renderer does not
+wrap") from an n=1 probe manufactures one false "measured" per missing
+ingredient — and a claim wearing the "measured" badge is rarely re-verified,
+while the designer, whose probe is optimized for their own hypothesis, cannot
+see what it omits.
+
+**How to apply:**
+- Take probe inputs from **the real artifacts that flow through the path in
+  production** (real renderer output, real model output, real logs). When you
+  must synthesize, deliberately include the ingredients the property could
+  operate on: spaces, double-width characters, control characters, length.
+- When a document claims "measured", **record the input's provenance** (what was
+  fed, and how). A measurement is only a claim when a re-measurer can judge its
+  representativeness.
+- Give any independent verification pass the instruction "re-verify every claim
+  against code or a probe before accepting it" — that instruction is what caught
+  this case. A sibling precedent: hand-written test expectations that lacked the
+  real renderer's decorations shipped a false negative — expectations and probes
+  alike are built from real artifacts.
+
 ## Verify a GUI on the assumption that what you can see and what actually runs are independent
 
 **Symptom:** a menu-bar app's bar label rendered correctly, which was taken as

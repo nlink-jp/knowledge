@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-02 (2)
+
+- 3 entries from retiring a chat-diagram tool whose feedback loop was
+  measured firing once in 76 sessions, while its fence prohibition had
+  bred hand-drawn box art:
+  - **llm-integration** (2): "do not do X" over-generalizes — a
+    prohibition blocks the exit but leaves the demand, which the model
+    routes through an unanticipated, unguarded third path; remove the
+    trigger instead of prohibiting, and when the wanted behavior
+    matches the model's trained prior, say nothing and pin the silence
+    by test. Plus a sequel to "rejecting without telling the author":
+    the value of an in-turn feedback loop is a claim to measure, not
+    assume — a loop almost never exercised does not justify a standing
+    per-use cost.
+  - **testing** (1): before calling something "measured", ask whether
+    the probe input represents the real thing — a space-free probe
+    line concluded a renderer "never wraps code-block lines" while
+    real box art (which contains spaces) was word-wrapped and sheared;
+    build probes and expectations from real artifacts, and record a
+    measured claim's input provenance.
+
 ## 2026-09-02 (1)
 
 - 1 entry from reviving a dormant delegated-search tool (zero
