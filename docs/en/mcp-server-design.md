@@ -380,3 +380,43 @@ on restart". The same trap was hit twice.
 - **Guard-decision trap**: guards reading in-memory values
   (`if Title != "New Session"`) misfire for the same reason. Pin both modes in
   tests: stale-overwrite (Mode A) and wrong-guard (Mode B).
+
+### Serve a huge upstream document as an index first, then page one section
+
+**Symptom:** a single sandbox behaviour summary exceeded 2 MB (a dozen-odd
+sections holding thousands of items each) and an ATT&CK tree measured 258 KB —
+neither could go into a tool response whole (lookup CLI+MCP project, 2026-09).
+
+**Why:** budgeting the whole response (above) presupposes a list a limit can
+bound; an API that answers with *one document* has none, and dropping a ranked
+tail does not work either — only the caller knows which section it needs.
+
+**How to apply:**
+- Make the first response an **index**: section names and item counts, no
+  content. Only scalars (verdicts, flags) ride along.
+- Later calls open **one section**, paged by `section` + `offset`/`limit`, so
+  every item stays reachable inside the same tool (the reachability rule).
+- **Maps are sections too, not just lists.** A live summary carried a 63-key
+  map that would have ridden the index and blown the budget; page maps in key
+  order as {key, value} entries.
+- Fetch and cache the upstream document once; section paging is local — do
+  not re-fetch 2 MB per page turn.
+- For trees (ATT&CK and kin), default to a **compact identity view** and open
+  the raw tree behind `full: true`. Account for what the compact view drops.
+
+### Never cache live account state
+
+**Symptom:** caching the account's own detection-ruleset list looked natural,
+but the API's typical caller is someone who just toggled a rule in the console
+and asks whether it took (lookup CLI+MCP project, 2026-09).
+
+**Why:** observations of the outside world merely go stale under a TTL; the
+account's own configuration is something **the caller just changed**. A cached
+"disabled" reports an applied change as ineffective and makes the operator
+doubt their own action.
+
+**How to apply:**
+- Result caches hold observations of the outside world only. Tools returning
+  the account's own configuration or state always answer live.
+- For firing conditions like enabled/disabled, state the **consequence**, not
+  just the value (enabled: false → "this rule will not fire").

@@ -700,3 +700,33 @@ it behaves correctly, which is exactly why nobody notices.
 - Whether the outside-the-window path produces false alarms is measured
   by pairing each escalation with the human's next decision. Escalations
   that are approved every time are friction, not defense.
+
+## An external API's vocabulary and visibility vary by licence tier — measure with your own key, not the docs
+
+**Symptom:** the filter vocabulary in the official documentation (hyphenated)
+was rejected by the live API with 400, and the accepted vocabulary
+(underscored) appeared nowhere in the docs. Even accepted types were
+tier-dependent inside: content gated to higher licences answered **empty, not
+an error**. The vendor's own published reference implementation used the
+documented vocabulary and did not work as shipped (lookup CLI+MCP project,
+2026-09).
+
+**Why:** an API's answer is the product of endpoint specification × key
+entitlement. Documentation tends to be written from the top licence's view,
+and a reference implementation's existence is not evidence of correctness.
+Empty, 400 and 403 all read as "unusable" but mean different things — without
+separating them you conflate "does not exist" with "not visible from this
+tier".
+
+**How to apply:**
+- Before integrating, run a sorting measurement **with your own key**: 400
+  (vocabulary/syntax rejected) / 403 (endpoint refused) / empty (content
+  tier-gated). Record the results with the date and the key's tier.
+- If a privileges endpoint exists, read it first — one request beats
+  inferring entitlements from behaviour.
+- **Do not ship what you cannot exercise with your own key.** Speculatively
+  implementing features that "should work" on a higher licence leaves
+  permanently unverifiable code paths. Cut scope to the feature set you can
+  verify, and state that decision and its reason in user-facing docs.
+- Where a tier-gated empty answer reaches users as a tool result, the
+  user-facing docs must say "empty ≠ nonexistent".
