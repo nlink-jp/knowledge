@@ -849,3 +849,39 @@ This is the same principle as showing the version string in the panel: for a
 menu-bar app with no menu, no About item and no log file, **what is on screen is
 the entire information channel** — for state, and for the technical cause of a
 failure.
+
+### CLI stderr warnings never reach the GUI — put deliberate "$0 / skipped" states into the JSON contract so the UI can name them
+
+**Symptom:** A menu-bar app that is a thin front-end over a usage-accounting CLI
+kept showing a new model's turns as $0 (twice, for different models, 2026-07
+and 2026-09). The CLI had the right design — "a model missing from the rate
+table is stored at $0 and a warning goes to stderr" — but the app calls
+`ingest` every minute, the exit code is 0, and nobody reads stderr. All the
+user saw was a complete-looking number that was silently too small.
+
+**Why:** "A deliberate hold-off state must name itself in the UI in the same
+commit" (above) breaks at a process boundary. The CLI author considers the duty
+done once the warning is printed; the GUI author reads only JSON. A warning
+emitted at event time (the moment of ingest) is gone unless the GUI is present
+at that moment. And after an app update ships a newer rate table, the rows the
+old build stored at $0 are still there — the state lives in **stored data, not
+in an event**.
+
+**How to apply:**
+- Make every deliberate hold-off state (unpriced, skipped, partial failure) a
+  **field of the JSON the GUI already reads**. stderr, logs and exit codes are
+  not a contract.
+- **Derive the state from stored data** (e.g. "rows with tokens but zero
+  cost"). Event-time counters vanish on restart and on update; a row-derived
+  count is right every time, including the "updated but not yet repriced"
+  case. Deriving it without the rate table keeps it independent of
+  configuration.
+- Make the fields optional on the GUI side and treat absence as healthy, so an
+  older CLI still works.
+- In the UI, name the count and the subject, and **put the exit in the same
+  box** (here a "Reprice" button that runs the CLI's recomputation from the
+  GUI). If the state survives that exit, switch the wording to the next exit
+  (update the app) and disable the button.
+- Mark the always-visible number too (the menu-bar figure). For a user who
+  never opens the popover, that mark is the only way to say "this number is
+  incomplete".

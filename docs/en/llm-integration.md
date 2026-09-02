@@ -123,6 +123,44 @@ catalog price**, and those counts are unrecoverable unless they are persisted
 - Per-request charges such as search grounding are invisible in token counts;
   record the call count separately.
 
+### When syncing a price table, check every multiplier column and the footnotes — not just the base price
+
+**Symptom:** A tool that aggregates token usage from local logs into a cost
+estimate needed its rate table updated after a new model became the default.
+The new model's base prices were identical to the previous generation's, so
+copying that entry looked sufficient — but a **footnote** on the pricing page
+set its cache-read multiplier at 0.025× instead of the usual 0.1× (usage
+accounting CLI, 2026-09). The same sync revealed that another model's
+"introductory price until date X" had been made permanent, while the table had
+baked in the post-increase price.
+
+**Why:** In long agentic sessions most tokens are cache reads. Measured over 30
+days of real data, cache reads were 69% of the notional cost and output tokens
+10% — so **one multiplier moves the result more than the base price does**.
+Copying the previous entry yields "base prices right, total about 2× too high",
+which nothing catches without a cross-check. Multipliers also tend to be
+implemented as model-independent constants, so the first exception breaks the
+structure rather than a value. The introductory-price side failed the other
+way: a table comment predicting "rises to X on date Y" went quietly stale when
+the vendor cancelled the increase.
+
+**How to apply:**
+- Sync **every column** (base in/out, cache write 5m/1h, cache read, batch,
+  per-request charges) **and the footnotes**. "Same base price" does not mean
+  "same entry".
+- Keep cache multipliers as per-model fields, never constants. Standard
+  defaults are fine, but the structure must express an exception in one line.
+  Pin two things separately in tests: the exception model's multiplier differs
+  from the standard one, and the cost engine takes the multiplier from the
+  record's own model.
+- Do not write **future schedules** into table comments ("introductory until
+  X, then Y"). Record only the verification date and the source, and confirm at
+  the next sync that the schedule actually happened.
+- Let users override per-model multipliers in config so a stopgap needs no
+  release (here, four lines of TOML restored the right figure).
+- Measure once, on real workload data, **which column dominates cost** — that
+  ranking is the list of columns an error is fatal in.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant

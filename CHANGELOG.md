@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-02 (4)
+
+- 2 entries from a usage-accounting CLI + menu-bar app that showed a new
+  default model's turns as $0 for the second time:
+  - **llm-integration** (1): when syncing a price table, check every
+    multiplier column and the footnotes, not just the base price — a
+    footnoted 0.025× cache-read rate moved the total by ~2× on a
+    workload where cache reads are 69% of cost; keep multipliers
+    per-model, never write future price schedules into comments, and
+    let config override per-model multipliers as a no-release stopgap.
+  - **macos-gui** (1): a CLI's stderr warning never reaches its GUI —
+    put deliberate "$0 / skipped" states into the JSON contract, derive
+    them from stored rows (they survive restarts and updates), keep the
+    fields optional on the GUI side, and put the exit (a Reprice
+    action) in the same box as the state.
+
 ## 2026-09-02 (3)
 
 - 1 entry from an org health check that summarized all-green after
