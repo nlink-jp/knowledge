@@ -407,3 +407,22 @@ go-runewidth が `EastAsianWidth=true` になり、East Asian Ambiguous の罫�
 3. 回帰テストは「モデルへ格納後に KeyMsg を流し、Value() が変わる」こと
    を固定する。表示検査（View に欄が出るか）では捕まらない。
 
+### Go の `flag.FlagSet.Output()` は stderr — 人が読むレポートも明示的に stdout へ
+
+**事象:** サブコマンドの整形レポートを `printReport(fs.Output(), …)` と書いた
+ツールで、`--json` 出力は stdout に出るのに、テキスト版だけが stderr に出ていた
+（使用量集計 CLI、2026-09）。単体テストは `io.Writer` を注入していたので緑のまま。
+独立検証者が `2>/dev/null` を付けて実行し、何も出ないことで発見した。
+
+**なぜ:** `flag.FlagSet.Output()` は usage / エラー用の writer で、既定は
+**os.Stderr**。「FlagSet が持っている writer」は出力先として手近に見えるが、
+用途が違う。テストが writer を注入する設計だと、本番の 1 呼び出し箇所だけが
+検査から漏れる（「依存注入した機能は本番の 1 呼び出し箇所が最弱点」の一例）。
+
+**適用方法:**
+- レポート・データはすべて `os.Stdout` を明示して渡す。`fs.Output()` は
+  usage とフラグエラー専用と決めておく。
+- リリース前の実機シミュレーションに `<cmd> 2>/dev/null` を 1 本入れる —
+  stdout に出るべきものが消えないかを機械的に見る。
+- util-series の「stdout は data、UI/診断は stderr」の規約に照らすと、
+  `--json` と同じ内容のテキスト版は data 側。

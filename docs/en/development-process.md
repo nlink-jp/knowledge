@@ -234,6 +234,32 @@ the requirement could be bent.
 - If only one candidate clears the requirements, that is the answer. The
   accuracy comparison shrinks to picking a variant within it.
 
+### A fork inherits the reference project's *unapplied* lessons too — point the independent pass at the origin as well
+
+**Symptom:** A sister tool was forked from an existing menu-bar GUI. The
+independent verification pass flagged "when notification permission is
+denied, nothing appears on screen and the toggle stays ON" (the counterpart
+of a usage-accounting GUI, 2026-09). The defect existed in the origin; the
+knowledge base already said "when denied, the UI must say so and offer a way
+to the settings pane". The origin predated that entry, so it never applied it,
+and the fork carried it over verbatim. The same pass also found a JSON field
+the fork itself had added (checksum-mismatch count) that was decoded but
+rendered nowhere.
+
+**Why:** "Copy proven code" does not mean "copy code audited against today's
+lessons". Reading the reference project's CLAUDE.md / AGENTS.md in full does
+not reveal lessons it never applied. An independent verifier owes the origin
+no loyalty, so "it was already like that" is not a reason to let it pass.
+
+**How to apply:**
+- When forking, explicitly include in the verification brief "lessons
+  recorded after the origin was written" (use the dates in the knowledge base
+  and memory to enumerate entries newer than the origin).
+- A defect traced to the origin is fixed in the fork *and* filed against the
+  origin — the symptom continues there otherwise.
+- A field added to a contract but never rendered: grep for its consumers in
+  the commit that adds it — the author is the one most likely to miss it.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates

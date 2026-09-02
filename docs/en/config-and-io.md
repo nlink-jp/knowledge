@@ -479,3 +479,25 @@ makes no noise, which is worse.
    is stored in the model and asserts Value() changed. View-level
    checks (the field renders) cannot catch it.
 
+### Go's `flag.FlagSet.Output()` is stderr — send human-readable reports explicitly to stdout
+
+**Symptom:** A subcommand rendered its formatted report with
+`printReport(fs.Output(), …)`. The `--json` variant went to stdout, the text
+variant went to stderr (a usage-accounting CLI, 2026-09). Unit tests injected
+an `io.Writer`, so they stayed green. An independent verifier ran the command
+with `2>/dev/null`, saw nothing, and caught it.
+
+**Why:** `flag.FlagSet.Output()` is the writer for usage and flag errors and
+defaults to **os.Stderr**. "The writer the FlagSet already holds" looks like a
+handy destination, but it serves a different purpose. When tests inject the
+writer, the one production call site is the one thing they never exercise
+(an instance of "the single production call site is the weakest point of an
+injected dependency").
+
+**How to apply:**
+- Pass `os.Stdout` explicitly for every report and data output; reserve
+  `fs.Output()` for usage and flag errors.
+- Add one `<cmd> 2>/dev/null` run to the pre-release simulation — a mechanical
+  check that nothing meant for stdout disappears.
+- Under util-series' "stdout is data, UI/diagnostics are stderr" rule, a text
+  rendering of the same content as `--json` is data.
