@@ -374,6 +374,53 @@ one hole.
   escape ladder (second Ctrl+C warns, third quits) — with an append-only
   record you can honestly say "everything up to here is saved".
 
+### In-process walks need the same "return is guaranteed" contract — a tool that merely receives ctx ignores Ctrl+C
+
+**Symptom:** Ctrl+C during an agent's file search stayed on
+"interrupting…" while the walk ran on; on a slow filesystem the wait
+was the whole remaining walk. `search_files`/`list_tree` took `ctx` as
+a parameter and never consulted `ctx.Err()`, and the caller ran
+`tool.Run(ctx, …)` synchronously with no floor under it — all Ctrl+C
+did was cancel a context nobody read. Fixing the exec grandchild hole
+(the entry above) for the shell had given the in-process tools no
+equivalent contract. A faithful probe (30k files, SSD) cancelled at
+20 ms: the shipped walk returned after 1.6 s (the full walk), a walk
+with per-dir/per-file ctx checks after 2 ms, a goroutine+select
+wrapper after 1 ms.
+
+**How to apply:**
+- Two layers. ① **Cooperative**: the walk checks `ctx.Err()` before
+  every directory and file read (and every N lines of a long file) and
+  returns what it found, labelled "[interrupted after N files —
+  partial]" — a partial result is a result, not an error, and a cut is
+  never silent. ② **The floor**: the caller runs `Run` in a goroutine,
+  selects on `ctx.Done()`, waits a short grace (~1 s) for the
+  cooperative return after a cancel, then abandons the call — a
+  blocking syscall (ReadDir on a hung NFS/SMB mount) cannot be stopped
+  from Go, so ① alone is not enough. Stop is best-effort, return is
+  guaranteed: the exec rule again.
+- Size the grace so the cooperative return wins the race: one syscall
+  on a healthy filesystem is short, but keep it **longer than exec's
+  `WaitDelay`** or the floor discards a shell call's output a moment
+  before Wait returns it. Pin the ordering with a test.
+- Keep outside the floor: the approval gate, and any **tool that waits
+  on the operator's own input** (ask_user). An abandoned stdin read is
+  a second reader on the shared stdin and silently eats the next typed
+  line. Let the tool declare it with a flag (WaitsOnOperator).
+- Account for what you abandon: count running abandoned calls on the
+  exit receipt, write an audit record on a late return, and when a
+  **mutating** call completes late, tell the model at the start of the
+  next turn (its last word was "result discarded"; the write landed).
+- The escape ladder belongs at every entry point: `signal.NotifyContext`
+  swallows every SIGINT after the first while registered, so a
+  three-press exit built only into the TUI leaves the plain REPL/-p
+  with no way out. Pin the call sites with a source-scan test.
+- The reproduction can be made deterministic with a FIFO: mkfifo in the
+  walk's first directory; the test's open-for-write blocks until the
+  walk is inside the read (the sync point), then cancel, then close for
+  EOF. Unfixed code walks on into the next directory; fixed code
+  returns at its next check.
+
 ### One width model per Go TUI — go-runewidth treats Ambiguous glyphs as wide under a CJK locale
 
 **Symptom:** In a Bubble Tea + glamour TUI, box art placed in a code
