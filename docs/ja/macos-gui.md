@@ -304,7 +304,19 @@ id にすると、SwiftUI が別々の行を同一の行として扱う。保存
   意味を持つ唯一の瞬間で、そこでアプリが OS に登録される。
 - **既に ON なのに未要求という過去状態を起動時に検知して救う**（版数を跨いだ移行）。
 - 拒否されている場合は UI がそう述べ、解除できる設定ペインを開く導線を出す。
-  ON なのに何も届かないスイッチを黙って表示しない。
+  ON なのに何も届かないスイッチを黙って表示しない。そのためには
+  `requestAuthorization` の `granted`/`error` を**捨てずに公開プロパティへ写す**
+  （`{ _, _ in }` は拒否を見えなくする）。拒否は `granted == false` か
+  UNErrorDomain 1 "not allowed for this application" のどちらかで届く。
+- 設定画面の表示時と `didBecomeActive` で `getNotificationSettings` を読み直す。
+  ユーザーがシステム設定でスイッチを戻したら、こちらの拒否表示も自動で消える。
+  拒否と見なすのは `.denied` だけ — `.notDetermined` は「まだ聞いていない」であり
+  プロンプトはこれから出る。
+- **`UNUserNotificationCenter.current()` は `.app` バンドル外で abort する**
+  （"bundleProxyForCurrentProcess is nil"）。素の `swift run` バイナリと xctest ランナーが
+  該当し、xctest は `bundleIdentifier` を**持っている**ので identifier での判定は効かない。
+  `Bundle.main.bundleURL.pathExtension == "app"` で判定し、外ではセンターに触らない。
+  こうしておけばテストターゲットからのオフスクリーン描画（testing.md 参照）も通る。
 - 通知に限らず位置情報・カレンダー等、OS 許可全般に当てはまる。
 
 ### UNUserNotificationCenterDelegate が無いと、前面にいる間はバナーが出ない

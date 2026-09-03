@@ -347,7 +347,20 @@ never arrives.
 - **Heal a switch left on by an earlier version** by checking at launch for
   "enabled but never asked".
 - When permission is refused, say so in the UI and offer a way to the settings
-  pane that undoes it — never show an on switch that delivers nothing.
+  pane that undoes it — never show an on switch that delivers nothing. That
+  requires **keeping** `requestAuthorization`'s `granted`/`error` in a published
+  property (`{ _, _ in }` makes a refusal invisible). A refusal arrives either
+  as `granted == false` or as UNErrorDomain 1 "not allowed for this application".
+- Re-read `getNotificationSettings` when the settings view appears and on
+  `didBecomeActive`, so the denial line clears by itself once the user flips
+  the switch in System Settings. Only `.denied` counts as a denial —
+  `.notDetermined` means "not asked yet"; the prompt is still to come.
+- **`UNUserNotificationCenter.current()` aborts outside a `.app` bundle**
+  ("bundleProxyForCurrentProcess is nil"): a bare `swift run` binary and the
+  xctest runner both hit it, and xctest **does** have a `bundleIdentifier`, so
+  checking the identifier does not help. Test
+  `Bundle.main.bundleURL.pathExtension == "app"` and skip the center otherwise;
+  that also lets off-screen renders from the test target (see testing.md) run.
 - The same holds for location, calendar and other OS permissions.
 
 ### Without a UNUserNotificationCenterDelegate, no banner appears while the app is frontmost
