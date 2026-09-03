@@ -164,6 +164,40 @@ the vendor cancelled the increase.
 - Measure once, on real workload data, **which column dominates cost** — that
   ranking is the list of columns an error is fatal in.
 
+### A pricing page repeats "the same" row per model generation — match by section heading, never by first hit
+
+**Symptom:** The Grounding with Google Search rate was read off the
+Vertex AI pricing page as "$35 per 1,000" and baked into a usage-accounting tool
+for Gemini 3 models. The next day, re-checking the same page to add a new model,
+the Gemini 3 section turned out to have its own "Grounding with Google Search"
+table: **$14 per 1,000 Grounding Queries, with 5,000 queries per month at no
+charge**. The $35 row belonged to the Gemini 2.x section (usage-accounting CLI,
+2026-09). The design document had even asserted the opposite — "the 5,000 free
+per month does not exist on Vertex".
+
+**Why:** One page holds a section per model generation, and the feature tables
+(grounding and the like) are repeated per section with **the same heading and
+the same columns**. Whether by table scraping or by eye, the first in-page match
+reads as "the rate for that feature". The unit differed by generation too — the
+old one bills per "grounding prompt", the new one per "grounding query" (one
+prompt may issue several) — so swapping the number alone also mistakes the
+billing granularity.
+
+**How to apply:**
+- Before taking a feature rate, pin down **which generation's section the table
+  belongs to** (nearest heading, footnote marker, model column). Make a scraper
+  emit the heading alongside the rows, and when several same-named tables
+  exist, line them all up and compare.
+- Compare the billing **unit** (prompt / query / request) and any **free tier**
+  as columns of their own. A different unit changes whether the tool's "one
+  call = one charge" is exact or a lower bound; if it is a lower bound, say so.
+- Write a **negative assertion** ("Vertex has no X") only after checking that X
+  is absent from the other sections of the same page — it was present in the
+  next generation's.
+- If the design stamps a verification date, re-check every column at every
+  sync (see the previous entry). Values may be unchanged while a neighbouring
+  table has appeared.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
