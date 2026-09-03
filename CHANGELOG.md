@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-04 (1)
+
+- 1 correction from re-measuring a Vertex endpoint claim after a model
+  generation went GA:
+  - **llm-integration** (1): the Gemini 3 family is served from `global`
+    **and the `us` / `eu` multi-regions**, not `global` only — the
+    2026-08 measurement had seen the `us-central1` 404 and never tried a
+    multi-region. Entry retitled; the client-side 404 hint now names all
+    three; new rule of thumb: record a negative conclusion together with
+    the candidates actually tried — an untried one is "unverified", not
+    "does not work".
+
 ## 2026-09-02 (4)
 
 - 2 entries from a usage-accounting CLI + menu-bar app that showed a new

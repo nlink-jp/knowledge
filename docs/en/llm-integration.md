@@ -270,14 +270,21 @@ stopped implying substantive correctness.
 - Keep it to one field. An agent that reads it reads all of it, and a second field is a
   second thing to forget.
 
-### The Gemini 3 family is global-endpoint only — move the model name and the location together
+### The Gemini 3 family is served from global and the us/eu multi-regions only — move the model name and the location together
 
 **Symptom:** Swapping just the model name to a Gemini 3 model makes every tool
-still pointing at a regional `location` fail with `404 NOT_FOUND`. Vertex AI
-serves the Gemini 3 family from the global endpoint only (measured for both
-text and image models; Gemini 2.5 models still answer regionally, so nothing
-surfaces until the migration). The 404 body only says the model name may be
-invalid or unavailable in that region — it never points at the location.
+still pointing at a single-region `location` fail with `404 NOT_FOUND`. Vertex
+AI serves the Gemini 3 family from the global endpoint and the `us` / `eu`
+multi-regions only (measured for both text and image models; Gemini 2.5
+models still answer from single regions, so nothing surfaces until the
+migration). The 404 body only says the model name may be invalid or
+unavailable in that region — it never points at the location.
+
+The first measurement (2026-08) concluded "global only" — it had seen the
+`us-central1` 404 and never tried a multi-region. A re-measurement after GA
+(2026-09, gemini-3.8-flash / 3.7-flash) showed `us` answering. **Record a
+negative conclusion ("works only on X") together with the list of candidates
+actually tried** — an untried candidate is "unverified", not "does not work".
 
 **How to apply:**
 - In the migration change, **move the `[model].name` and `[gcp].location`
@@ -285,9 +292,9 @@ invalid or unavailable in that region — it never points at the location.
 - Document in the README that pinning an older-generation model now requires
   setting a regional location explicitly.
 - **Add a hint to the 404** client-side: when the model name starts with
-  `gemini-3` and the location is not `global`, append "this model is served
-  only from the global endpoint" to the error. Without it, users keep
-  suspecting a mistyped model name.
+  `gemini-3` and the location is none of `global` / `us` / `eu`, append "this
+  model is served only from global or the us/eu multi-regions" to the error.
+  Without it, users keep suspecting a mistyped model name.
 - Probe availability with `:countTokens` — it costs **nothing**, returns 404
   where the model is absent and 200 where it is served. No generation needed.
 
