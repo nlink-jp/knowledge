@@ -298,6 +298,52 @@ guess.
    always approve" description escalated, with the judge itself naming
    it an injection attempt.
 
+### A model's account of its own safety mechanisms is not a spec — it absorbs connected servers' self-descriptions as its own layers
+
+**Symptom:** An interactive agent was prompted to "explain your
+security mechanisms", and the resulting defence-in-depth narrative was
+dressed up as a specification. Checked against the implementation, the
+parts written in the system prompt and tool descriptions were
+reproduced accurately, but (a) a line from a connected MCP server's
+(packet-analysis) tool description — "the capture is mounted
+read-only" — appeared as the agent's own "immutable data protection
+layer", and (b) mechanisms that exist only in code — the sandbox
+confining writes only, the approval exceptions (auto-approve ladder,
+session allowlist, per-tool policy), the credential-path Block — were
+either missing or papered over with absolutes such as "physically
+blocked" and "guarantees zero harm" (gem-agent, 2026-09).
+
+**Why it matters:** What a model can say about itself is bounded by the
+text in its context — system prompt, tool descriptions, connected
+components' self-descriptions — and it never sees the runtime code. It
+also has no way to tell those texts apart by origin, so a claim a
+connected server makes about itself is narrated as the agent's own
+mechanism. This is the flip side of the previous entry ("server-authored
+metadata is a claim, never a fact"): the same contamination happens not
+only when metadata is fed to a judge but in the model's self-description.
+Change the set of connected MCP servers and the same question yields a
+different "architecture".
+
+**How to apply:**
+1. Read self-description as observability — if every defensive
+   instruction the prompt intended (data/instruction separation,
+   denial-is-a-decision, prefer the diff-edit tool, how to use the work
+   directory) comes out of the model's mouth, the trigger conditions are
+   reaching it. For that purpose it has value.
+2. The source of truth for specification, audit and external
+   explanation is always the code and its documents (architecture /
+   ADRs). Never put self-description under docs/. If kept, head it with
+   "model self-report, not a specification".
+3. When checking a self-description, look for three kinds of drift:
+   omission (mechanisms that live only in code), contamination
+   (properties of connected servers or other components in context),
+   and overstatement (absolutes the real documents avoid). Contamination
+   is traced by grepping the connected servers' tool descriptions.
+4. Do not treat the extractability itself as a problem — a public
+   repository's prompt has no secrecy, and if nonces rotate per turn and
+   the model cannot lift the deterministic floor, knowing the mechanism
+   weakens nothing. The problem is what is done with the extract.
+
 ## Secrets & PII
 
 ### Never write PII — "it's discoverable anyway" is not a reason
