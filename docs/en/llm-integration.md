@@ -112,8 +112,11 @@ catalog price**, and those counts are unrecoverable unless they are persisted
 - **Measure the bucket semantics before summing** (measured on Gemini/Vertex):
   thoughts come back separate from output and bill as output; `cached` is a
   discounted **share of** `prompt`, not an addition to it; `total` is the API's
-  own count, so `prompt + output + thoughts == total` is a checksum. Real logs
-  can run past 80% cache hits, where ignoring `cached` is wrong by multiples.
+  own count, so `prompt + output + thoughts + tool_prompt == total` is a
+  checksum (the fourth term is the built-in tool results — see "Vertex's
+  `totalTokenCount` is the sum of FOUR buckets" below; a main-loop-only probe
+  never sees it). Real logs can run past 80% cache hits, where ignoring
+  `cached` is wrong by multiples.
 - **Keep exactly one place that counts.** Repeating the numbers on a
   descriptive record invites the first aggregator ever written to
   double-count.

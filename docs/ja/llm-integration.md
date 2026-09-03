@@ -93,7 +93,9 @@ output だけで、そもそも値付けできなかった。
 - **バケツの意味論を実測してから足す**（Gemini/Vertex 実測）: thoughts は
   output とは別枠で返り、課金は output 扱い。cached は prompt への加算ではなく
   割引される**内訳**。`total` は API 自身のカウントなので
-  `prompt + output + thoughts == total` が検算になる。実運用ログではキャッシュ
+  `prompt + output + thoughts + tool_prompt == total` が検算になる（第 4 項は
+  組み込みツールの結果 — 後述「Vertex の `totalTokenCount` は 4 バケットの和」
+  参照。主ループだけのプローブでは見えない）。実運用ログではキャッシュ
   ヒットが prompt の 8 割を超えることがあり、cached を無視した計算は倍数で
   外れる。
 - **数えられる場所を 1 つに絞る。** 記述用のレコードにも同じ数字を書くと、
