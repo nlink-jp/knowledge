@@ -965,3 +965,27 @@ initial prompt（`--prompt`）に正しい表記を入れれば直ると考え�
 - 罠: ツール宣言をエージェント構築時にキャッシュする実装では、**ツール登録は構築前**。
   スナップショット閉包は構築後に代入されるポインタを遅延参照させる（ツールは実行
   ループ内でしか呼ばれないので nil には当たらない）。
+
+### Vertex の `totalTokenCount` は 4 バケットの和 — `toolUsePromptTokenCount` を落とすとチェックサムが崩れる
+
+**事象:** 会計レコード（prompt / output / thoughts / cached / total）を transcript に
+書くエージェントと、それを `prompt + output + thoughts == total` で検算する集計ツールの
+組で、別マシンの transcript 2 件が検算に落ちた（2026-09）。どちらも Google 検索
+グラウンディング / URL context を使った呼び出しで、ツールが返した内容の分だけ
+`total` が大きかった。
+
+**なぜ:** genai SDK の `GenerateContentResponseUsageMetadata` は `totalTokenCount` を
+「prompt + candidates + **tool_use_prompt** + thoughts の和」と定義している。
+`toolUsePromptTokenCount` は組み込みツール実行の結果がモデルに入力として戻された分で、
+組み込みツールを使わない主ループでは常に 0 なので、主ループの実測だけで導いた
+「3 バケット = total」の等式は成立して見えた。プローブが実物代表でない n=1 の誤結論。
+
+**適用方法:**
+- 会計レコードを設計するときは、API のメタデータ型の**全フィールド**を列挙し、
+  `total` の定義文を SDK の doc comment から引用して等式を書く。実測は定義の確認に使う。
+- 「ツールを使う呼び出し」を検算のフィクスチャに必ず含める（主ループだけでは
+  このバケットが 0 で沈黙する）。
+- 下流の集計側は、上流が書かなかったバケットを **残差として導出できるか** を
+  API の定義から判断する。唯一の未記録バケットなら残差は厳密値で、検算失敗より
+  「導出済み」の可視化が正しい。total が和より**小さい**場合は導出せず失敗のまま残す。
+- `toolUsePromptTokenCount` は入力単価で課金される（キャッシュ対象外）。

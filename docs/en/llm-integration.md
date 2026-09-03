@@ -1167,3 +1167,30 @@ process — there was simply no tool handing it over.
   the tool before constructing the agent** and let the snapshot closure
   lazily dereference a pointer assigned afterwards (the tool only ever runs
   inside the loop, so it never sees nil).
+
+### Vertex's `totalTokenCount` is the sum of FOUR buckets — dropping `toolUsePromptTokenCount` breaks the checksum
+
+**Symptom:** An agent writes accounting records (prompt / output / thoughts /
+cached / total) into its transcripts and an aggregator checks them with
+`prompt + output + thoughts == total`. Two records on another machine failed
+the check (2026-09). Both were calls that used Google Search grounding / URL
+context, and `total` was larger by exactly the content the tool returned.
+
+**Why:** The genai SDK's `GenerateContentResponseUsageMetadata` defines
+`totalTokenCount` as the sum of prompt, candidates, **tool_use_prompt** and
+thoughts. `toolUsePromptTokenCount` is the results of built-in tool executions
+fed back to the model as input; on a main loop that uses no built-in tools it
+is always 0, so a three-bucket identity measured only on main-loop rounds
+appeared to hold. An n=1 conclusion from a probe that was not representative.
+
+**How to apply:**
+- When designing an accounting record, enumerate **every** field of the API's
+  metadata type and write the identity from the SDK's doc comment on `total`;
+  use measurement to confirm the definition, not to invent it.
+- Include a tool-using call in the checksum fixtures — on the main loop alone
+  this bucket is 0 and silent.
+- Downstream, decide from the API definition whether an unwritten bucket can
+  be **derived as the remainder**. When it is the only unwritten bucket the
+  remainder is exact, and "derived" is the right label rather than a failed
+  checksum. A total *below* the sum is never derived — it stays a failure.
+- `toolUsePromptTokenCount` bills at the input price and is never cached.
