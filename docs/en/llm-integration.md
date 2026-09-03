@@ -1194,3 +1194,9 @@ appeared to hold. An n=1 conclusion from a probe that was not representative.
   remainder is exact, and "derived" is the right label rather than a failed
   checksum. A total *below* the sum is never derived — it stays a failure.
 - `toolUsePromptTokenCount` bills at the input price and is never cached.
+- Upstream, when the producer adds the missing bucket to a persisted record,
+  **write it always, zero included — no `omitempty`**. Key absence is then the
+  one signal a consumer has to tell a pre-change record (derive the remainder)
+  from a measured zero (trust it); `omitempty` folds the two cases into one.
+  (gem-agent ADR-0066 / gem-usage-lens: the lens reads `tool_prompt` when the
+  key is present and derives only when it is absent.)
