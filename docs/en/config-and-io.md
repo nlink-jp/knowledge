@@ -537,3 +537,29 @@ runtime by parent pid only patched that case and invented the next.
   run under `-p`. Whether a value expands, and from whose environment,
   cannot be known any other way.
 
+### SQLite FTS5's default tokenizer makes Japanese one token — use trigram, and scan for terms under three characters
+
+**Symptom:** an FTS5 table built with the default tokenizer (unicode61)
+splits only on whitespace and punctuation. "gem-agent からの返信テスト"
+made "からの返信テスト" one token, and `MATCH '返信テスト'` returned
+nothing. Only words that happened to sit between brackets matched, so
+English-only tests never noticed; the first Japanese record in real
+use did.
+
+**How to apply:**
+- Build an FTS5 table that must search Japanese with
+  `tokenize='trigram'` (SQLite 3.34+, available in modernc.org/sqlite).
+  It matches any substring of three or more characters in any script
+  and folds case by simple Unicode mapping. Migrate an existing table
+  with DROP → CREATE → `INSERT INTO t(t) VALUES('rebuild')` from the
+  content table (recreate the triggers of an external-content table).
+- Trigram **never** answers a term under three characters. When a plain
+  query carries one, switch to a scan in the application. Fold case for
+  the scan **in Go** (`strings.ToLower`): SQLite's `LIKE` and `lower()`
+  fold ASCII only without ICU, so the answer would otherwise depend on
+  which path the query took.
+- Substrings match inside longer words ("warm" in "swarm"). Show the
+  body in the result and let the reader verify.
+- Write the tests with Japanese bodies. English-only tests pass the
+  default tokenizer's defect through.
+
