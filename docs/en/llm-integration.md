@@ -542,6 +542,50 @@ conditional.
    tests — the defect class is absence, which nothing else catches
    cheaply.
 
+### Drop-in compatibility reproduces the facts the other runtime supplies implicitly, not just its file format — and read-only is not harmless
+
+**What happened:** An agent reads another runtime's skill format
+(`SKILL.md` + `scripts/`) as-is. A skill body said
+`python3 SKILL_DIR/scripts/validate.py`, defining `SKILL_DIR` as "the
+directory containing this SKILL.md" — a definition the original runtime
+satisfies by opening every load result with the line
+`Base directory for this skill: <path>`. The compatible runtime had no such
+line. Skills under the project happened to work through cwd-relative paths;
+a globally installed skill was reachable by no relative path at all, and the
+model, "confirming where the scripts are", ran
+`find / -name validate.py 2>/dev/null`. The sandbox denies writes only, so the
+walk crossed every mount — SMB shares and remote backups included — until it
+was killed by hand after 65 s. Worse, `find` and `grep` were in the rule
+tier's read-only set: without the `2>/dev/null` the command would have been
+Safe, run unprompted in auto-approve mode. The prompt the operator did get was
+an accident — the redirect rule did not know `/dev` was writable and Blocked
+the command for a reason that was not true.
+
+**Why:** What was missing was a **fact** (where the skill lives), not a
+permission. Deprived of the fact, the model invented a rational substitute
+that lay outside every assumption of the design. "Read-only" is a property of
+the classification, not a safety property: with the read side of the sandbox
+open, the cost of a walk is set by the mount table, not by the project. And
+because "where a shell may write" was defined twice — once in the sandbox,
+once in the rule tier — the reason shown to the operator was false.
+
+**How to apply:**
+1. When adopting another runtime's format as drop-in, grep that runtime's
+   **real transcripts** for what it prepends to results (base-directory line,
+   environment variables, cwd) and reproduce it **in the same words**. The
+   cheapest compatibility is the identical sentence.
+2. Do not close the unwanted search with "never search" (two entries up). The
+   cause is a missing fact; supply the fact.
+3. In risk classification, do not let "read-only command" be sufficient for
+   Safe. A tree walk (`find`, `fd`, `du`, `rg`, recursive `grep`) whose
+   starting point is outside the project goes to the model tier (Review).
+   Not Block: the irreversible floor is not for things that destroy nothing.
+4. Keep the list of writable places (project, work directory, scratch,
+   `/dev`) in **one function shared** by the sandbox profile and the rule
+   tier. Two lists always drift, and the drift reaches the operator as a
+   reason that is not true.
+(gem-agent ADR-0070)
+
 ## Defensive output handling
 
 ### Silently correcting dynamic LLM output is a bad move — there are only three valid responses
