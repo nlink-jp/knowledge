@@ -501,3 +501,39 @@ injected dependency").
   check that nothing meant for stdout disappears.
 - Under util-series' "stdout is data, UI/diagnostics are stderr" rule, a text
   rendering of the same content as `--json` is data.
+
+### A child process is told whom it serves by parameters on its launch line, never by guessing
+
+**Symptom:** an MCP server spawned by a runtime (Claude Code / gem-agent)
+had to know which session it served. The first cut guessed the runtime
+from the child's environment (`CLAUDE_CODE_SESSION_ID` /
+`GEMAGENT_WORK_DIR`); a gem-agent started from a Claude Code shell then
+handed its MCP child the **outer Claude Code session** — environment is
+inherited across nested starts. A second cut picking the "nearest"
+runtime by parent pid only patched that case and invented the next.
+
+**How to apply:**
+- Give the child's CLI **explicit parameters** — `--agent <name>`,
+  `--session <id>`, `--project <dir>` — passed on the registration line
+  (mcp.json / hook config). The child's code knows no runtime's variable
+  names.
+- **Leave expansion to the runtime**: a runtime that expands `${VAR}` in
+  its config from its own process environment (gem-agent's mcp.json,
+  after its own `Setenv`) gets a literal. A runtime that **sets a value
+  for children only** (Claude Code sets `CLAUDE_CODE_SESSION_ID` for
+  children but expands `.mcp.json`'s `${…}` from its own environment —
+  measured: `${CLAUDE_PROJECT_DIR}` stayed literal and the nested case
+  yielded the outer session id) gets the **variable name**, e.g.
+  `--session-env <VAR>`, and the child reads its own environment.
+- A value that resolves to nothing (empty, an unexpanded `${…}` or
+  `$VAR`, whitespace) is never adopted: degrade to "unknown" and say so
+  in results and usage. Adopting an unexpanded `$VAR` makes every
+  instance started from that line one shared identity.
+- The runtime exports **the same set of facts** a child needs (session
+  id, project directory, work directory) and guarantees the identifier
+  is unique (gem-agent ADR-0071: timestamp ids were unique only per
+  project, so they became UUIDs).
+- Measure with a probe server that only dumps its argv and environment,
+  run under `-p`. Whether a value expands, and from whose environment,
+  cannot be known any other way.
+
