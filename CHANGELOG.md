@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-04 (2)
+
+- 1 entry from a CLI agent runtime whose one-shot startup was silent
+  for 5-7 s in a few runs out of a dozen:
+  - **llm-integration** (1): `cloud.google.com/go/logging`'s
+    `client.Logger` auto-detects the monitored resource by fetching
+    from the GCE metadata server unless `CommonResource` is set; on a
+    Mac the link-local fetch blocks on the kernel's ARP probe and its
+    2 s dial timeout is retried as transient, so the cost depends on
+    the neighbour cache. Declare the `global` resource the detection
+    falls back to, pin it with a hit-counting `GCE_METADATA_HOST`
+    fake, remove an unintended wait rather than announcing it, and
+    catch an intermittent startup mode with an env-gated per-step
+    trace over a dozen runs.
+
 ## 2026-09-04 (1)
 
 - 1 correction from re-measuring a Vertex endpoint claim after a model

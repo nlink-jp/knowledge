@@ -337,6 +337,49 @@ dies").
    operator-side permanent fix is
    `gcloud auth application-default set-quota-project <project>`.
 
+### Cloud Logging's Logger probes the metadata server unless CommonResource is set — on a Mac, an intermittent 5–7 s silent block
+
+**What happened:** A macOS-only CLI using Vertex plus Cloud Logging
+(audit log) started 4.5–7.2 s late in a few runs out of a dozen, with
+nothing on stderr meanwhile (gem-agent, 2026-09). The first suspects —
+ADC token acquisition and `genai.NewClient` — were instant every time
+and uninvolved. A per-step trace pinned it to
+`cloud.google.com/go/logging`'s `client.Logger(...)`.
+
+**Why:** Without a `logging.CommonResource` option, `Logger`
+**auto-detects** the monitored resource. Its first move is
+`metadata.Get("")` — a plain HTTP GET to
+`http://169.254.169.254/computeMetadata/v1/` through the
+compute/metadata client, whose dial timeout is 2 s and which treats a
+timeout as `Temporary()`, retrying up to five times with backoff. macOS
+gives that link-local address a cloned host route on the primary
+interface: while the kernel probes ARP for a neighbour that does not
+exist, each connect blocks up to 2 s; when it gives up, the route is
+marked REJECT ("host is down") for a few seconds and connects fail at
+once. A fresh negative entry costs 0 ms, an expired one two or three
+timeouts — hence intermittent, hence hard to reproduce. Every detection
+branch (App Engine / Cloud Functions / Cloud Run / GKE / GCE) needs the
+metadata server and cannot succeed on a Mac.
+
+**How to apply:**
+1. A tool that never runs Google-hosted should **declare** the
+   detection's own fallback value,
+   `{Type: "global", Labels: {"project_id": <project>}}`, via
+   `logging.CommonResource` — records unchanged, probe gone.
+2. Pin it with a test that points `GCE_METADATA_HOST` (honoured by the
+   metadata client) at a counting `httptest` server: building your
+   logger = 0 hits, `client.Logger("control")` without the option = at
+   least 1 hit. Detection is a `sync.Once`, so the control must be the
+   package's first undeclared Logger.
+3. Fix an unintended wait by removing it, not announcing it. A notice
+   (one stderr line after a grace) is for waits that are a contract,
+   such as reading stdin to EOF.
+4. When startup is "sometimes slow": insert an env-gated per-step trace
+   (elapsed and delta from the previous step) before each step, run the
+   same command at least 12 times to catch the slow mode, save every
+   output in full from the first run, remove the trace before
+   committing, and record the method in an ADR.
+
 ### Rejecting is honest; rejecting without telling the author is not
 
 **Symptom:** A CLI agent verified the diagrams in the model's output at

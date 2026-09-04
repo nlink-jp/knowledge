@@ -285,6 +285,42 @@ URL パスでプロジェクトを指定するため影響を受けない — �
    リフレッシュトークンを含む — 読まない）。恒久修正は
    `gcloud auth application-default set-quota-project <project>`。
 
+### Cloud Logging の Logger は CommonResource 無しだとメタデータサーバーを探索する — Mac では間欠的に 5〜7 秒の無言ブロック
+
+**事象:** Vertex + Cloud Logging（監査ログ）を使う macOS 専用 CLI の起動が、
+十数回に数回だけ 4.5〜7.2 秒遅く、その間 stderr には何も出なかった
+（gem-agent、2026-09）。第一容疑者の ADC トークン取得と `genai.NewClient` は
+毎回即座で無関係。ステップ別トレースで `cloud.google.com/go/logging` の
+`client.Logger(...)` に特定した。
+
+**なぜ:** `Logger` は `logging.CommonResource` オプションが無いと monitored
+resource を**自動検出**する。最初の一手が `metadata.Get("")` —
+`http://169.254.169.254/computeMetadata/v1/` への素の HTTP GET で、
+compute/metadata クライアントの dial timeout は 2 秒、タイムアウトは
+`Temporary()` 扱いで最大 5 回バックオフ再試行される。macOS はこのリンク
+ローカルアドレスに主インタフェースのクローンホスト経路を付け、存在しない
+隣接ノードの ARP 探索中は connect が 2 秒までブロックし、諦めると数秒間
+REJECT（"host is down"）で即失敗になる。否定エントリが新しいうちは 0 ms、
+期限切れ後はタイムアウト 2〜3 回分 — だから間欠的で、だから再現しにくい。
+検出のどの分岐も（App Engine / Cloud Functions / Cloud Run / GKE / GCE）
+メタデータサーバーを必要とし、Mac では成功しえない。
+
+**適用方法:**
+1. Google ホストで動かないツールは、検出のフォールバック値そのもの
+   `{Type: "global", Labels: {"project_id": <project>}}` を
+   `logging.CommonResource` で**宣言**する — レコードは不変、探索だけ消える。
+2. テストは `GCE_METADATA_HOST`（メタデータクライアントが尊重する）を
+   到達回数を数える `httptest` サーバーに向け、自前ロガーの構築 = 0 hit、
+   `client.Logger("control")`（オプション無し）= 1 hit 以上、で固定する。
+   検出は `sync.Once` なので、対照はパッケージ内で最初の未宣言 Logger に
+   置く。
+3. 意図的でない待機は告知ではなく除去で直す。告知（猶予後の stderr 1 行）は
+   待機が契約であるとき（stdin を EOF まで読む等）だけ。
+4. 起動が「ときどき遅い」ときの手順: 環境変数で有効化する per-step トレース
+   （経過秒と直前ステップからの差分）を各ステップ直前に挿し、同じコマンドを
+   12 回以上走らせて遅いモードを捕まえる。出力は初回から全文保存。トレースは
+   コミット前に除去し、手法は ADR に残す。
+
 ### 拒否は正直だが、書いた本人に告げない拒否は正直ではない
 
 **事象:** CLI エージェントがモデル出力中の図をランタイムで検証し、描けない
