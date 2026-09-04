@@ -227,6 +227,57 @@ kills the feature), the boundary can only sit at the moment of writing.
    never build a structure where a cloned repo can carry in memories of
    unknown authorship.
 
+### The persistence boundary is a class of files, not one tool — instruction and configuration files are memory too
+
+**What happened:** A CLI agent gated its memory tools on the argument
+above (the proposer cannot be the judge of a write that outlives the
+session), while its rule tier marked every other in-project write Safe.
+A whole-code review probed the file tools with `.git/hooks/pre-commit`,
+`.git/config`, `.mcp.json`, the tool's own project config, a skill file
+and `AGENTS.md` / `CLAUDE.md`: all Safe, so in auto mode they ran with
+no prompt and no model call. A hook under `.git/` runs *outside the
+sandbox* on the operator's next git command; an MCP entry spawns a
+server unsandboxed at the next launch; a policy line removes a gate; an
+instruction file becomes the next session's system prompt. Each is the
+same persistence the memory rule was written for, reached by a
+different tool.
+
+**How to apply:**
+1. Define the boundary by **what the write lands in**, not by the tool
+   name: version-control internals (block outright — no agent tool has
+   business there), instruction files, the runtime's own configuration,
+   skills/hooks directories. Enumerate them as a list in the rule tier.
+2. Give the verdict a flag the ladder honours *before* the model tier
+   ("operator only"), so the same party that proposed the edit is never
+   its evaluator — and apply it to every route to the file (file tools,
+   shell redirects), not only the obvious one.
+3. Accept the cost: in auto mode that is one prompt per instruction-file
+   edit. A workflow that edits `AGENTS.md` on every task is exactly the
+   workflow where an unseen edit would do the most.
+
+### A guard keyed on one layer's refusal flag is a hole at every other layer — key it on "the tool ran"
+
+**Symptom:** A CLI agent attaches an image or PDF to a tool result when
+`view_image` / `read_document` succeeds. Review round 2 found the
+attachment guard keyed on the `error:` prefix and re-keyed it on the
+approval gate's denial flag. Review round 4 found a pre-tool hook — a
+refusal layer added later, *before* the gate — whose result carried
+neither the prefix nor the flag: the pixels rode along with the
+refusal. Same bypass, one layer up, two rounds later.
+
+**How to apply:**
+1. A guard that means "the tool actually ran" must key on that fact —
+   a `ran` result the executor sets only when the tool's function was
+   reached and returned on its own — never on any refuser's signature
+   (text, prefix, per-layer flag). New refusal layers then need no
+   change.
+2. When you add a refusal layer (hook, floor, cancel path), grep every
+   consumer of the *old* layers' flags: each is a place the new layer
+   is invisible.
+3. Audit the audit: the same call was logged as `ok` because the
+   outcome classifier also read the flags. A refusal that is not a
+   refusal to the audit trail is two bugs.
+
 ### A permission justified by "only a human writes this input" becomes a hole the moment delegation lets a model write it
 
 **Symptom:** A CLI agent's `@`-reference grammar allowed out-of-project
