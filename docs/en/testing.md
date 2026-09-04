@@ -763,3 +763,19 @@ tier".
   verify, and state that decision and its reason in user-facing docs.
 - Where a tier-gated empty answer reaches users as a tool result, the
   user-facing docs must say "empty ≠ nonexistent".
+
+### golangci-lint truncates identical findings at three — list everything before a bulk fix
+
+**Symptom:** errcheck reported "8" unchecked `defer x.Close()` calls; there
+were 18. golangci-lint caps identical messages at `max-same-issues`
+(default 3) and per-linter findings at `max-issues-per-linter` (default 50).
+Each receiver name got three lines, so fixing what was shown and re-running
+surfaced the "next" three — a whack-a-mole loop.
+
+**How to apply:**
+- Before a bulk fix, run `golangci-lint run --max-same-issues 0
+  --max-issues-per-linter 0 ./...` to see the whole set, then fix it
+  mechanically (a regex from `defer x.Close()` to
+  `defer func() { _ = x.Close() }()`, for instance).
+- One finding of a shape is a reason to grep every file for that shape.
+  The displayed count is a floor, not the total.
