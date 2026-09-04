@@ -32,6 +32,25 @@
    準拠形へ誘導する。これは主系での実測済みの挙動であり、移植先でも同じ
    ループを保つ。
 
+**続き（同じ手法を Claude Code のコンテキストフックに適用、2026-09-04）:**
+`SessionStart` / `UserPromptSubmit` / `SessionEnd` を別ランタイムへ移植する
+前に、stdin を保存するだけの捕捉スクリプトを `claude -p --settings <一時
+ファイル>` で登録して実測した（グローバル設定に触れず、モデル呼び出しが
+認証で失敗してもフックは先に発火するので測れる）。文書との食い違いが 2 つ:
+- `UserPromptSubmit` のタイプ本文は **`prompt`** キーで届く。文書は
+  `user_input` と書いている。文書どおり実装すれば、フックは登録されて
+  いるのに本文を一度も受け取らない。
+- `SessionStart` のペイロードに `permission_mode` は無い（文書は挙げている）。
+
+文書どおりだったこと: exit 0 の素の stdout と
+`hookSpecificOutput.additionalContext` はどちらも文脈になる（トランスクリプト
+に `hook_success` / `hook_additional_context` attachment として記録）。
+`additionalContext` を持たない JSON は何も注入しない。`UserPromptSubmit` の
+exit 2 と `{"decision":"block"}` はモデル呼び出し前にターンを止め、元の
+プロンプトは消える。`SessionEnd` の exit 2 はブロックではなく「failed」の
+報告。定義のないイベントに `hookSpecificOutput` を返すと出力スキーマ検証で
+落ちる（stderr に期待スキーマが出る）。
+
 ### 自己承認は防御ではない — 提案した当事者に承認させない
 
 **事象:** エージェントの永続メモリ書込を「要レビュー」階層に置き、書込時の

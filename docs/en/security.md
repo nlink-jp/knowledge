@@ -37,6 +37,28 @@ raises the odds of the mistake it guards against**.
    compliant form, a loop already measured on the primary. Keep it
    intact in the port.
 
+**Follow-up (the same method applied to Claude Code's context hooks,
+2026-09-04):** before porting `SessionStart` / `UserPromptSubmit` /
+`SessionEnd` to another runtime, a capture script that only saves its
+stdin was registered via `claude -p --settings <temp file>` (the global
+settings stay untouched, and hooks fire before the model call, so the
+measurement works even when that call fails on authentication). Two
+discrepancies against the documentation:
+- the typed text of `UserPromptSubmit` arrives under **`prompt`**; the
+  docs say `user_input`. Implemented from the docs, the hook would be
+  registered yet never receive the text.
+- the `SessionStart` payload carries no `permission_mode` (the docs list it).
+
+What matched: on exit 0 both plain stdout and
+`hookSpecificOutput.additionalContext` become context (recorded in the
+transcript as `hook_success` / `hook_additional_context` attachments);
+a JSON object without `additionalContext` injects nothing; exit 2 or
+`{"decision":"block"}` from `UserPromptSubmit` stops the turn before any
+model call and the original prompt is erased; exit 2 from `SessionEnd`
+is reported as "failed", not a block; a `hookSpecificOutput` object on an
+event that defines none fails output-schema validation (the expected
+schema is printed on stderr).
+
 ### Self-approval is not a defence — never let the party that proposed an action approve it
 
 **Symptom:** An agent's persistent-memory writes were placed in a
