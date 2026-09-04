@@ -583,6 +583,44 @@ attribution costs zero while omission risk is non-zero.
 regardless of "derivative work" status: (1) reference project/author/license in a
 source-file comment; (2) add a Third-Party Notices section to LICENSE.
 
+### A session-scoped resource that many holders point at is restarted by swapping its insides, and its consumers are a list you walk
+
+**What happened:** A CLI agent made `/clear` a new session (new id,
+transcript, work directory) and exported the new facts to children.
+Three consumers kept the old ones: the sandbox profile built at
+startup (every shell write to the new work directory was denied), the
+side-call tools that had captured the logger *by value* (their usage
+records went to the closed file), and the MCP servers spawned with the
+old id in their arguments (their claims were attributed to the old
+session while the hooks reported the new one). Telemetry had the id
+baked into its resource and was declared "a known limit". Each was
+found one review later than the rotation itself.
+
+**Why it matters:** "Follow the variable" — the rule from an earlier
+live-reload bug — is not enough when a consumer holds a copy, a derived
+artefact (a compiled profile), or a child process. And a resource whose
+pointer is held in many places (the agent, deferred closers that bound
+the receiver at `defer` time, child sub-sinks) cannot be replaced by
+reassigning the variable at all.
+
+**How to apply:**
+1. When a session-scoped fact rotates, write down its **consumer
+   list** — every place that read it at startup, including derived
+   artefacts and spawned processes — and make the rotation a function
+   that walks the list. Pin it with a test that exercises each consumer
+   against both the old and the new value (the sandbox test writes to
+   both directories).
+2. For a resource held by pointer in many places, **restart in place**:
+   keep the pointer, swap the internals under a mutex (`Restart(id)`),
+   and let derived handles (`Sub`) read the root rather than copy its
+   fields. Deferred calls and long-lived holders then follow for free.
+3. Processes that carry the fact in their arguments or environment are
+   respawned, not told — the same path the operator's manual reload
+   uses.
+4. A limitation you write down as "known" is a consumer you have not
+   rotated yet; say so in the document, and expect the operator to ask
+   for it.
+
 ## GitHub operations
 
 ### Repositories are no longer watched automatically (auto-watch sunset 2025-05)
