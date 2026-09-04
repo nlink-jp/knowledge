@@ -278,6 +278,34 @@ refusal. Same bypass, one layer up, two rounds later.
    outcome classifier also read the flags. A refusal that is not a
    refusal to the audit trail is two bugs.
 
+### Path confinement that checks a resolved path and then opens the original is a TOCTOU — make the check and the open one operation
+
+**What happened:** A CLI agent's file tools confined paths to the
+project by lexical checks plus `EvalSymlinks` of the target, then
+returned the original path for `os.ReadFile` / `os.WriteFile` to
+re-resolve. A symlink pointing inside the project at check time and
+outside at open time escaped the roots — from the unsandboxed main
+process, where the file tools run. Found by an external reviewer after
+four internal review rounds had accepted "the real path is checked
+too". The same tools also read files whole before applying their
+output cap, so a sparse file could exhaust memory before the cap ran.
+
+**How to apply:**
+1. Hold each root as an `os.Root` (Go 1.24+) and open through it:
+   `root.Open` / `OpenFile` / `Stat` / `MkdirAll` resolve every
+   component inside the root and refuse a link that leads out, at the
+   moment of use. Keep the lexical check for the error message; never
+   let a resolved path be re-opened by name.
+2. Pin it with a test that swaps the link between the check and the
+   open: the open must fail and the outside file must be untouched.
+3. Size gates run before the read (`Stat` on the opened handle), and
+   reads stream through `io.LimitReader` / a bounded line reader —
+   nothing holds a file whole before a cap, and a line window on a
+   sparse file must not allocate the line.
+4. Grep the codebase for `os.Open(`, `os.ReadFile(`, `os.WriteFile(`
+   on any path that passed the confinement check: each is the same
+   hole again.
+
 ### A permission justified by "only a human writes this input" becomes a hole the moment delegation lets a model write it
 
 **Symptom:** A CLI agent's `@`-reference grammar allowed out-of-project
