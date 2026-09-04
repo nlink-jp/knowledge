@@ -345,6 +345,14 @@ E2E テストで確認した。LLM はプロンプトの最初の部分に最も
 **適用方法:** Webhook / API キーのプレースホルダは `<your-xxx>` 形式にする。実在しうる
 パターン（実フォーマットに桁数まで合わせた値）は使わない。
 
+**続き（テストコーパス、2026-09-04）:** 秘密検出器のテストに入れた偽の Slack
+トークン（`xoxb-…` 形）が、新規リポジトリの初回 push で GitHub push protection に
+止められた。偽値でも形が本物なら scanner は止める。検出器のテストで本物の形が要る
+なら**実行時に連結して組み立てる**（`"xox" + "b-…"`）。未 push なら
+`git filter-branch --tree-filter <fix> --tag-name-filter cat -- --all` で全履歴を
+直してから push（`refs/original` を削除）。push 済みの履歴は書き換えず unblock を
+使う。初回 push の前に `git log -p --all` を秘密の形で grep する。
+
 ### 共有される成果物のメタデータに絶対パスを埋め込まない
 
 **事象:** 画像生成ツールが PNG メタデータにモデル・LoRA・入力画像の**絶対パス**を全て

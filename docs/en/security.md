@@ -399,6 +399,16 @@ was rejected and history needed a rebase even after fixing.
 **How to apply:** Use `<your-xxx>`-style placeholders for webhooks/API keys.
 Never use values that mimic real formats digit-for-digit.
 
+**Follow-up (test corpora, 2026-09-04):** a fake Slack token (`xoxb-…`
+shape) in a secret detector's test corpus stopped a new repository's first
+push at GitHub push protection. A fake value with a real shape is still
+stopped. When a detector test needs the real shape, **assemble it at run
+time** (`"xox" + "b-…"`). Before the first push, fix every commit
+(`git filter-branch --tree-filter <fix> --tag-name-filter cat -- --all`,
+then delete `refs/original`); never rewrite pushed history — use the
+unblock instead. Grep `git log -p --all` for secret shapes before a first
+push.
+
 ### Never embed absolute paths in shareable artifacts' metadata
 
 **Symptom:** An image generator recorded **absolute paths** of models, LoRAs, and
