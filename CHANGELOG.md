@@ -13,7 +13,9 @@
   - **development-process** (amended "Status output is not
     documentation"): design references never reach the screen — an AST
     test over operator- and model-facing packages fails on any string
-    literal citing an ADR number.
+    literal citing an ADR number; and before a release, collect every
+    operator-facing string into one document and have a reader who did
+    not write the change go through it with the rubric.
 
 ## 2026-09-05 (2)
 

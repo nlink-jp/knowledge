@@ -784,6 +784,15 @@ render, forever.
    habit returns with every feature written from the ADR, so close it
    structurally: an AST test over the operator- and model-facing
    packages that fails on any string literal citing an ADR number.
+8. **Read the labels through before a release, collected.** Strings
+   scattered over forty files cannot be read as the operator reads them
+   — one screen at a time, nothing else at hand. Generate one document
+   (the ja/en catalog side by side with format verbs filled with sample
+   values, the notes/errors/flag help, the `--help` pages) and have a
+   reader who did not write the change go through it with the rubric:
+   a fact and the next command, no design reference, no reason, ja and
+   en say the same, the sample renders sensibly. A diff review cannot
+   do this; it sees the changed lines, never the screen.
 
 ### "Update the docs in the same commit" names no document — route by change kind, and check the whole-system documents mechanically
 
