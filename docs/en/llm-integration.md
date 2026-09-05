@@ -1331,3 +1331,55 @@ appeared to hold. An n=1 conclusion from a probe that was not representative.
   from a measured zero (trust it); `omitempty` folds the two cases into one.
   (gem-agent ADR-0066 / gem-usage-lens: the lens reads `tool_prompt` when the
   key is present and derives only when it is absent.)
+
+### Carry "whose words is this failure" as a type, count identical texts per tool, then say so in-band
+
+**What happened:** a remote MCP server transiently answered ten calls with
+correct arguments with the same "Required parameter is missing". The loop
+guard (keyed on identical canonical arguments) did not fire on reworded
+calls, and the model spent 56 rounds and 6.5M prompt tokens investigating
+its own runtime — reading configuration files, running `strings` on a
+binary, searching the web, then guessing. The model had rules, delivered
+in the function response, for a gate denial and for a lane refusal (both
+worked in that very session); a failed remote call had neither a rule nor
+a trigger. And `error: <text>` was the shape of a runtime transport
+failure and of a server-reported error alike, saying nothing about who
+was speaking or whether the arguments had arrived.
+
+**Why:** a capability without a trigger never fires and a prohibition
+breeds a third path — what is needed is a trigger delivered in-band at
+the moment it applies. Provenance cannot be inferred from text (a server
+can return a denial-shaped string), so it travels as a type. There are
+three provenances, not two: the server's `isError` result, the server's
+JSON-RPC error object (the server's words too, arriving on the error
+path), and a call the runtime could not complete. And "the same error
+text for different arguments" is the strongest evidence that the
+arguments are not the cause — and exactly the signal a loop guard is
+designed to ignore.
+
+**How to apply:**
+- Return a remote call's failure from the adapter to the executor as a
+  typed error with a `Kind` (result / rejected / incomplete) and detect
+  it with `errors.As`. Render the provenance: `MCP server "x" answered
+  <tool> with an error:` / `rejected the call to <tool>:` / `<runtime>
+  could not complete <tool> on MCP server "x":`. The executor adds the
+  `error:` prefix the audit reads.
+- Count consecutive byte-identical failure texts per tool (not per
+  server — a sibling tool succeeded in the middle) and per turn. Use the
+  loop guard's threshold so the ladder has one rung length. Reset on a
+  success or a different text; leave denials and interruptions alone.
+- At the threshold, attach a note to the tool result and emit it outside
+  the nonce tag. The exemption is a provenance field (`runtime_note`,
+  like denial), never content recognition; pin the field's assignment
+  to one function with an AST test.
+- The note states only what was measured — "the arguments went out as
+  you wrote them", "the same answer N times" — and the action (tell the
+  user, ask how to proceed). It does not say whose fault it is: a model
+  that misnames a parameter consistently gets the same text, and a
+  timeout is the runtime's own setting. Name the tool by its registry
+  name (no server-supplied string in the unwrapped position). Write no
+  prohibition.
+- Leave a transcript record (server, tool, kind, count, round) so the
+  effect can be measured after release, and one operator line per streak.
+  No runtime retry, no text classification, no hard stop, no prompt rule.
+  (gem-agent ADR-0075.)
