@@ -1078,3 +1078,59 @@ Only a rule keyed on the content itself — a digest pin — can.
   it with variants in a unit test plus a real-sandbox test that runs
   controls (an ordinary name must succeed) so a denial is the rule and
   not a broken harness.
+
+### Seatbelt matches the resolved real path — write list entries as real paths, re-emit name-based denies after every re-allow, and do not split a directory that mixes secrets and ordinary settings with a deny
+
+**What happened:** a local agent's read and write lanes deny the credential
+directories (`~/.ssh`, `~/.claude`, …) for `file-read*`. The same tool
+recommended `ln -s ~/.claude/skills ~/.config/<tool>/skills` as the way to
+share skills, so a linked skill was discovered and its body loaded (the
+runtime reads outside the cage) while its scripts failed in the lanes with
+`Operation not permitted` — for a whole release, unnoticed. A follow-up
+draft — deny the configuration home `~/.config` wholesale and re-allow
+skills and git — was then measured by an independent verifier, who found
+in one pass: (1) an allow or deny written on a link's path does nothing
+(confirmed with control runs); (2) `(deny file-read* (subpath D) (regex
+".env$"))` followed by `(allow file-read* (subpath D/skills))` makes
+`D/skills/x/.env` readable; (3) git documents `~/.config/git/credentials`
+as a plain-text token file, so re-allowing the directory whole reopens it;
+(4) the re-allow list grows with the machine's tools (pip, uv, podman,
+tshark, …). One deny bred four re-allow rules, two ordering rules, one
+operator-maintained list and two startup probes. The draft was withdrawn
+and the behaviour that started it — a model investigating the runtime
+when a server misbehaved — was fixed at its trigger.
+
+**Why:** Seatbelt's path filters apply to the vnode's canonical path; a
+link is resolved before the match, so only the real path can be written
+into a rule (the `/tmp` → `/private/tmp` trap again). Rules are
+last-match-wins, so a subpath re-allow overrides every earlier deny in
+that subtree — the name-based `.env` and `id_rsa` denies included. And,
+most fundamentally, the kernel sees the syscall, not the intent: whether
+a `file-read*` of `~/.config/x` is the model going after a token or git
+starting up exists only in the command string. Network and IPC could be
+denied by family because a read-only command has no legitimate use for
+them; a directory where secrets and ordinary settings live together
+turns a deny into an enumeration of the legitimate readers — the
+complement of the credential list, and larger than it.
+
+**How to apply:**
+- When a credential or persistent-file list is written into SBPL, emit
+  the `EvalSymlinks`-resolved real path beside every entry that exists.
+  A rule on a link's path alone protects nothing (treat it as
+  `ResolveWriteDir` treats the project).
+- After any re-allow (allow subpath), emit the name-based denies (`.env`,
+  key files, `credentials.json`) again. The file tools' verdict function
+  exempts the directory rule only, never the name rule.
+- Before re-allowing a directory whole, check it for documented secret
+  files (git's `credentials`); where one exists, allow the needed files
+  as literals.
+- Do not split a directory that mixes secrets and settings, whose
+  legitimate readers cannot be enumerated finitely, at the kernel. A
+  Block floor in the text rules (a command that names the path literally
+  asks the operator) is a cheap partial measure with no collateral, but
+  it is a floor, not a cage. When the trigger was behaviour, fix the
+  behaviour's trigger.
+- Test the layouts you recommend to users (symlink, copy) by running a
+  script through the lanes in that layout. A recommendation of a broken
+  layout is invisible to a documentation read. (gem-agent ADR-0076: the
+  configuration home stays readable; skills are copied.)
