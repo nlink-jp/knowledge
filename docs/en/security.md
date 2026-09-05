@@ -995,3 +995,13 @@ Only a rule keyed on the content itself — a digest pin — can.
   `trust --accept`. The residue that cannot be closed (a prepared directory
   moved in for *other* consumers) is **made visible** as a snapshot diff of
   persistent files, not claimed closed.
+- **Name checks fold case on macOS.** The default APFS volume is
+  case-insensitive: `agents.md` *is* `AGENTS.md`, and a file created as
+  `.git/hooks/PRE-COMMIT` is the hook git finds under `pre-commit`. A
+  protected-name rule that compares exact bytes protects nothing there —
+  an external reader found the file-tool side doing exactly that while
+  the kernel side (Seatbelt filters) already folded. Fold in the shared
+  rule, return the canonical spelling from any name→key mapping, and pin
+  it with variants in a unit test plus a real-sandbox test that runs
+  controls (an ordinary name must succeed) so a denial is the rule and
+  not a broken harness.

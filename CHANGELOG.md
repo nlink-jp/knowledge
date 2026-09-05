@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-05 (4)
+
+- 1 amendment from an external finding on a CLI agent runtime's
+  protected-file rules:
+  - **security** (amended "Pin an agent's trust to content"): name checks
+    fold case on macOS — the default APFS volume is case-insensitive, so a
+    protected-name rule comparing exact bytes protects nothing; fold in the
+    shared rule, canonicalize name→key mappings, and test with variants
+    plus a real-sandbox run that includes controls.
+
 ## 2026-09-05 (3)
 
 - 1 entry and 1 amendment from a CLI agent runtime whose whole-system
