@@ -861,3 +861,72 @@ persistence, and exclusion from the instruction channel are all
 - Bound the read (history is resent every round) and disclose any clip
   inside the attachment itself. Keep binary off this lane; point it at
   the explicit file-reference path instead.
+
+### Bound an agent's shell with the kernel's cage, not with text rules — a declaration selects a cage, a rule can only escalate
+
+**Symptom:** A CLI agent (2026-09) judged a shell command "safe" with
+regular expressions and a tokeniser. Nine external review passes
+followed; 20 of the 103 findings were "another spelling" (`/bin/rm`,
+`\rm`, a newline separator, `env sudo`, `--flag=path`, concatenated
+quotes, backslash-newline, sed's `-e'…'`, its `e` command…). Each fix
+surfaced the next spelling, and the operator asked for the root cause,
+not another patch.
+
+**Why it matters:** Command text is an unbounded domain; a design that
+re-derives the semantics of bash and the programs it launches from text
+never converges. The reviewers were not wrong — the design asked them
+to keep finding spellings. The kernel (macOS Seatbelt) sees the real
+path at `open`, the real binary at `exec`, the socket at `connect` and
+the Mach service by name: the decision can move from an unbounded
+domain to a bounded one, the list of SBPL operations.
+
+**How to apply:**
+- Give the shell tool **lanes** (read / write / operator) the model
+  declares with an `access` argument. Read may write only a private
+  scratch directory and the device sinks, and denies `network*`,
+  `mach-lookup`, `appleevent-send`, `ipc-posix*`, `iokit-open`,
+  `user-preference-write`, `lsopen` and `signal` (except self and
+  children) as capability families, plus credential reads. Write keeps
+  the old write scope minus the files later sessions trust (instruction
+  files, `.mcp.json`, `.git` itself and its hooks/config). Operator is
+  the operator's alone.
+- **The declaration is a request for a cage, not a gate input.** A false
+  `read` gains nothing; `write`/`operator` only add scrutiny — a
+  self-report is safe to use exactly when its false cost lands on the
+  declarer (consistent with "declare intent, never gate on it").
+- Keep text rules only as a **Block floor** (`sudo`, `rm -rf`,
+  `git push`, `curl | sh`…) that can raise a verdict, never lower one. A
+  missed spelling then costs a missed *prompt*, not a missed *cage* — in
+  the read lane. In the write lane the kernel bounds *where* a command
+  writes, not what leaves over the network; that judgment is the model
+  tier's (or nobody's under a `never` policy), and the docs must say so.
+- **A rule enforced twice is one list read twice** (scratch, persistent
+  files, credential paths — shared by the profile and the file tools).
+- Name the three layers: the sandbox bounds reach, the model tier judges
+  meaning inside the bound, the operator-only policy is what no model
+  approval lifts.
+- **Seatbelt facts worth knowing**: `defaults write` passes a
+  `file-write*` deny (it goes through cfprefsd → `user-preference-write`).
+  An Apple Events probe must send a real event (`get name` of an
+  application sends none). `ps` runs under no profile. Denying
+  `sysctl-write` breaks `uname` and node. Every system shell writes
+  here-document files under `/private/var/tmp`, ignoring `TMPDIR`. A
+  child started with Setpgid alone keeps the controlling terminal and
+  can `TIOCSTI` keystrokes into the parent's prompt through a read-only
+  `/dev/tty` — use Setsid and deny `file-ioctl`/`file-read*` on the tty
+  devices.
+- **Define "non-mutating" by what may change, and verify the claim at
+  startup on the machine itself.** A "must fail" probe is vacuous without
+  a control run that succeeds unsandboxed (`kill -0 1` and a connect to a
+  closed port fail for everyone). The control run is a real write, so
+  probe only files the process created exclusively (`O_EXCL`, random
+  names).
+- **"Judge by name, write by name" leaks through links both ways**: judge
+  on the real path, and write by create-then-rename so a write never
+  lands in an inode reached through another name.
+- Pin the structure with architecture tests (walk the AST: no raw `os.*`
+  in path-taking packages, no `io.ReadAll` outside the bounded-I/O
+  primitive, no classifier call outside the single decision function;
+  resolve import aliases, dot-imports and function values) — and put a
+  behaviour test beside them that runs the old corpus against the
+  kernel.
