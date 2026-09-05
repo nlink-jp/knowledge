@@ -920,7 +920,16 @@ domain to a bounded one, the list of SBPL operations.
   a control run that succeeds unsandboxed (`kill -0 1` and a connect to a
   closed port fail for everyone). The control run is a real write, so
   probe only files the process created exclusively (`O_EXCL`, random
-  names).
+  names). **Verify confinement itself, not only the unasked lane.** "The
+  sandbox binary exists and the profile compiled" is configuration; a
+  stubbed check or a foreign binary that ignores its profile passes it
+  and every command then runs at the gated-but-model-approvable tier with
+  no kernel behind it — weaker than the explicit no-sandbox mode. Probe
+  the write lane too (a denied write under a protected name, a denied
+  write outside the project, an allowed ordinary write) and degrade to
+  "unconfined: every command asks the human" when any probe fails. That
+  is the last valve for builds nobody verified — unofficial ports
+  included.
 - **"Judge by name, write by name" leaks through links both ways**: judge
   on the real path, and write by create-then-rename so a write never
   lands in an inode reached through another name.

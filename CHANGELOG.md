@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-05 (5)
+
+- 1 amendment after reports of an unofficial port of a CLI agent runtime
+  (rebuilt for WSL without the sandbox):
+  - **security** (amended "Bound an agent's shell with the kernel's cage"):
+    verify confinement itself, not only the unasked lane — a stubbed
+    sandbox check passes as confined and runs everything at the
+    model-approvable tier; probe the write lane at startup and degrade to
+    "every command asks the human" when a probe fails.
+
 ## 2026-09-05 (4)
 
 - 1 amendment from an external finding on a CLI agent runtime's
