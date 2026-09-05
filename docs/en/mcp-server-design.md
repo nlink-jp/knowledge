@@ -344,6 +344,78 @@ protect — and an unused feature is maintenance cost on its own.
 - Before adding a feature to a relay, check whether the upstream already
   provides it. If it does, not implementing is the right answer.
 
+## Contracts with upstream APIs
+
+### Retry safety comes from a resource you named, not from a token whose meaning you assumed
+
+**Symptom:** An MCP server for BigQuery was designed on the assumption that
+`jobs.query` with a `requestId` makes one retry idempotent. An independent
+review re-read the Discovery document: `requestId` deduplicates **mutating
+queries only** (read-only queries are "nullipotent" with respect to data —
+not with respect to cost). Lose the response after the request has landed,
+and a SELECT runs twice and bills twice.
+
+**Why:** Idempotency-token semantics differ per API, and the phrase "reads
+may ignore this token" is easy to misread as "re-running a read is free". A
+design that delegates safety to an interpretation of the upstream looks
+correct until someone re-reads the document.
+
+**How to apply:**
+- Create anything you must not run twice as a **resource the client names**
+  (for BigQuery, `jobs.insert` with your own `jobId`). The second attempt
+  answers `409 duplicate` and you continue with the resource that exists.
+  Choose the name before the first attempt and resend the same one.
+- Read the full description of any upstream idempotency token (`requestId`
+  and friends) and quote the covered operations and guarantee into the
+  design record. "Optional for reads" is not "reads are free to repeat".
+- An API that calls itself read-only still has side effects — billing,
+  audit trails, rate quotas. Decide retry policy by side effects, not by
+  the label.
+
+### When the paging response carries no statistics, read the resource itself
+
+**Symptom:** The same server took bytes billed and slot time from the
+`jobs.getQueryResults` (results page) response. That response type has no
+`totalBytesBilled`, `totalSlotMs` or `statementType`; once the first answer
+came back `jobComplete=false`, the values were gone for good. The unit tests
+passed because their script completed on the first response.
+
+**Why:** It is tempting to hang the statistics on the single "run, then
+page" flow, but the API returns the resource (the job) and its result pages
+as different types. The page type is built light, to carry rows, and some
+fields exist only on the resource. A scripted test mirrors the designer's
+understanding and cannot detect a field that the type never had.
+
+**How to apply:**
+- Verify every field you read **mechanically against the type definition**
+  (Discovery / OpenAPI); never from "it should be there".
+- Read completion statistics once from the resource (`jobs.get`); use the
+  results pages for paging only.
+- Fake-server tests must include the script "first response incomplete,
+  completion only after polling". Scripts that answer as the designer
+  expects cannot reveal a missing field.
+
+### An empty string is not "unset" — omit optional fields
+
+**Symptom:** The job's `jobReference.location` was sent straight from the
+config (`""` when unset); BigQuery refused it with `Invalid value for
+location:  is not a valid value`. The fake server accepted `""`, so every
+unit and integration test passed, and the live test against a real project
+was the first to fail.
+
+**Why:** Marshalling a Go struct as-is turns an unset string into a field
+that is **present** with the value `""`. To the upstream, absent and empty
+differ, and inference (here: the location from the datasets) only runs
+when the field is absent.
+
+**How to apply:**
+- Put `omitempty` on every field the upstream documents as optional, and
+  test that the **key is absent** (not that the value is empty).
+- A fake server must not be lenient; since making it refuse everything the
+  real one refuses is hard, **always ship an opt-in live test** and run it
+  once before release. Fake-only tests are a copy of the designer's
+  understanding.
+
 ## Server implementation structure
 
 ### Port a proven skeleton for new Go MCP servers
