@@ -306,6 +306,70 @@ output cap, so a sparse file could exhaust memory before the cap ran.
    on any path that passed the confinement check: each is the same
    hole again.
 
+### Clean up from what was created, not from what was planned — only an exclusive create's success enters the ledger, and only the ledger deletes
+
+**Symptom:** An external review of a macOS ZIP tool (2026-09) reproduced
+a failed extraction deleting files it had not created. The cleanup removed
+the list of *planned* top-level paths unconditionally; when another
+process placed a same-named file between the name check and the `O_EXCL`
+create, the create failed and the catch block deleted the very file that
+had made it fail. A dangling symlink at the planned name met the same
+fate. The compression side had the same shape: the URL of a spill file
+was recorded only *after* its first write completed, so a write failing
+part-way left it behind, and release was called on an enumerated subset
+of the failure branches. And the "16 MiB per-entry spill threshold" was
+documented as the memory bound while nothing bounded the sum of finished
+results — 64 inputs held 50 MB, ten thousand would have held their whole
+compressed size.
+
+**Why:** Three of the four are the class "ownership inferred from a plan,
+not recorded at creation" (the fourth is "a per-unit bound claimed for the
+aggregate"). A planned list knows what the code *intended* to create; it
+does not know whether the syscall succeeded, or for which path. A release
+call per failure branch is missed by the next exit path that gets added.
+
+**How to apply:**
+1. Record ownership the instant the creating syscall succeeds, and let the
+   failure path delete the ledger and nothing else — make the planned
+   names unreachable from it. Create directories exclusively too, with
+   `mkdir(2)`: `createDirectory(withIntermediateDirectories: true)` calls
+   an existing folder a success, so it pours into a folder someone just
+   made and then deletes it.
+2. Make the check and the create agree on what "exists" means.
+   `fileExists(atPath:)` follows symlinks and calls a dangling one absent
+   — uniqueness checks use `lstat`. Uniquify top-level names against each
+   other on the same folded key files use (NFC + case): case-variant
+   folders hit EEXIST on a case-insensitive volume (a regression the
+   implementation review caught).
+3. Claim everything *before the first write*, in one pass. A lazy
+   first-use claim widens the check-to-create window to the whole run
+   (minutes). Files cannot be claimed without being written — leave them
+   to their `O_EXCL` on arrival and let a collision fail safely.
+4. Use one scratch arena per operation, created by the layer that owns
+   the output file and removed by one `defer`. Per-entry scratch files
+   demand a release per exit path, and once an aggregate budget spills
+   more results they show the user thousands of files. When the arena
+   cannot be created, name the cause (`strerror`), not the hidden random
+   file.
+5. Apply bounds to the aggregate, not the unit. A per-unit threshold and an
+   aggregate budget are separate knobs; if the document claims
+   `cores × threshold`, the code enforces it with a ledger. Pass knobs per
+   call instead of statics that tests mutate.
+6. Pin the class with tests that name it: behaviour tests (a competing
+   writer interposed in the progress callback for a deterministic race, an
+   injected scratch file that fails on cue) plus source-reading structural
+   tests (no `removeItem` outside the ledger, one derivation of the offset,
+   no `static var`). Without an AST, a string scan that drops comment lines
+   still stops the class from recurring.
+7. Adjacent lessons from the same review: never derive one fact from two
+   sources (the range check used the central directory, the read used the
+   local header, and an overlap hidden in an extra field passed); size a
+   read window to the headers ahead, not to a constant (a fixed 256 KiB
+   window read 2.5 GiB to open 10 000 large entries, and the autoreleased
+   NSData all stayed resident); pin `LC_ALL=C` for external tools in tests
+   (`unzip -t` under a UTF-8 locale substitutes `?` inside multibyte
+   sequences and a strict decode yields "").
+
 ### A permission justified by "only a human writes this input" becomes a hole the moment delegation lets a model write it
 
 **Symptom:** A CLI agent's `@`-reference grammar allowed out-of-project

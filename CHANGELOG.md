@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-05 (6)
+
+- 1 new entry from the review response of a macOS ZIP tool (ADR-0005
+  there):
+  - **security**: clean up from what was created, not from what was
+    planned — an ownership ledger fed only by exclusive creates (files
+    `O_EXCL`, directories `mkdir(2)`), `lstat`-based uniqueness, claims
+    before the first write, one scratch arena per operation owned by the
+    output's owner, aggregate memory budgets over per-unit thresholds, and
+    source-reading tests that pin the class.
+
 ## 2026-09-05 (5)
 
 - 1 amendment after reports of an unofficial port of a CLI agent runtime
