@@ -779,3 +779,28 @@ surfaced the "next" three — a whack-a-mole loop.
   `defer func() { _ = x.Close() }()`, for instance).
 - One finding of a shape is a reason to grep every file for that shape.
   The displayed count is a floor, not the total.
+
+### An E2E script aimed at a fixture must refuse to run in your own repository even with an empty argument
+
+**Symptom:** An E2E script was generated through an unquoted heredoc
+(`<<EOF`), so the `$1`/`$P` in its body expanded to empty strings at
+generation time. The script ran `cd ""` (a no-op) and then
+`printf ... > AGENTS.md`, replacing the repository's 700-line `AGENTS.md`
+with the two-line fixture. The feature commit carried it; a review found it.
+
+**Why:** "It points at the fixture" is the script's assumption, not a fact
+the script checks. Arguments go empty through several paths (heredoc
+expansion, a mistyped call), and `cd` with an empty argument does nothing
+and does not fail.
+
+**How to apply:**
+- Start scripts with `set -u` and **validate the target directory against
+  a pattern** before acting (`case "$P" in */scratchpad/e2e-*) ;; *) exit 1;;
+  esac`). `cd "$P" || exit 1` alone does not stop an empty argument.
+- Generate scripts through a quoted heredoc (`<<'EOF'`) or a Python raw
+  string, and `cat` the result once to see the `$` still there.
+- **Pin the required sections of agent-facing briefing files (`AGENTS.md`
+  and kin) in `make check`.** A check that fails the moment a section
+  disappears beats noticing in review.
+- Look at `git diff --stat` before committing. Hundreds of deleted lines in
+  a documentation file is a signal an intended change almost never sends.

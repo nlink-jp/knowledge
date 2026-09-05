@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-05 (2)
+
+- 2 entries from a CLI agent runtime that moved project trust from the
+  directory name to the content it consumes, and from the E2E run that
+  overwrote the repository's own briefing file on the way:
+  - **security** (1): pin an agent's trust to content — digest through the
+    same root the loader reads (link targets included), mark an empty set
+    as recorded, trust-on-first-use only interactively, re-pin only the one
+    approved write and only when the pin was current as it began (a
+    before/after hook pair), shell commands report instead of re-pinning,
+    decide trust before any project read, one grant object every loader
+    takes (fixed by an AST test), pin edits under the policy lock.
+  - **testing** (1): an E2E script aimed at a fixture must validate its
+    target directory against a pattern (`set -u`, a `case` guard) — an
+    unquoted heredoc expanded its argument to "" and `cd ""` ran the script
+    in the repository; pin the required sections of agent briefing files
+    in `make check`.
+
 ## 2026-09-05
 
 - 1 entry from a usage-aggregation CLI whose session listing lost its

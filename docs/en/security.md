@@ -930,3 +930,68 @@ domain to a bounded one, the list of SBPL operations.
   resolve import aliases, dot-imports and function values) — and put a
   behaviour test beside them that runs the old corpus against the
   kernel.
+
+### Pin an agent's trust to content, not to a directory name — digest with the loader's eyes, and re-pin only the one write the operator saw
+
+**Symptom:** A local coding agent asks "trust this directory?" once and
+from then on loads whatever `AGENTS.md`, `.mcp.json` (which spawns child
+processes), the project skills and the project config *contain*. A
+`git pull`, a dependency update, a parent-directory rename that swaps a
+file, or a retargeted link of the same name all pass through the granted
+trust unasked. Guarding the write side with path rules (Seatbelt) cannot
+bound "what a trusted reader will find under a name later" — a name
+resolves through ancestors, links and time. The mainstream agents (Claude
+Code, Codex CLI, Gemini CLI, Copilot CLI, Cursor) all persist per-directory
+trust and none keys it on content.
+
+**Why:** The name was trusted; the content is consumed. A rule keyed on a
+name bounds where writes may land, not the identity of what is consumed.
+Only a rule keyed on the content itself — a digest pin — can.
+
+**How to apply:**
+- Keep a SHA-256 pin of every consumed file beside the trust record and
+  **compare before reading**. Unchanged loads. Changed or new asks once at
+  an interactive start (name, kind of change, size); `N` leaves the file
+  out of the session and leaves the pin alone (it asks again next time).
+  Non-interactive runs and mid-session re-checks (`/clear`, reloads) have
+  nobody to ask — leave the file out and say so. A removed file keeps its
+  pin (content that comes back is "changed", never "new").
+- **Digest the way the loader reads.** If the loader reads through an
+  `os.Root` at the directory, the pin reads through the same root, and a
+  link's target string goes into the hash. Otherwise a file exists for the
+  loader and is absent to the pin (a review found exactly that). Key skills
+  by the **directory entry**, not the self-declared frontmatter name —
+  self-description is not a specification.
+- **An empty set is still "recorded"** (a `pinned_at` marker). A project
+  with no agent-facing files that falls back to trust-on-first-use every
+  start lets a later planted file through unasked. Include the pins in the
+  "keep this entry" condition of every other mutation (resetting a tool
+  policy to default once deleted the entry, pins included).
+- **Trust on first use is interactive only.** A non-interactive first run
+  loads as before, says nothing is pinned yet, and records nothing — never
+  record trust nobody confirmed.
+- **Re-pin only the one write the operator saw.** An approved
+  `write_file`/`edit_file` re-pins that one name, and only if the pin was
+  **current when the write began** (give the agent a before/after hook pair
+  and compare in the before hook). That closes the hole where approving a
+  one-line edit after `! git pull` trusts the whole pulled file. Shell
+  commands (operator lane, `!`) show their text, not their effect, so they
+  re-pin nothing; note the pins that now differ and let the next start ask.
+  A name this session excluded is not re-pinned by a write into it.
+- **Decide trust and check pins before reading anything of the project** —
+  the project config included. Read the instruction files and skills
+  before any process the project names (an MCP server) starts, so the gap
+  between digest and read is a few calls. An excluded config may tighten,
+  never loosen (the same treatment an untrusted project gets).
+- **Build one grant object and make every loader of project content take
+  it** (`trusted` + `excluded` names). Never reintroduce a bare
+  `trusted bool` parameter — pin with an AST test that the loader
+  functions are called only from functions that take the grant.
+- Edit pins under the policy file's lock against the set the file holds at
+  that moment; saving a whole set from a snapshot taken outside the lock
+  reverts a concurrent session's re-pin.
+- Cost: an `AGENTS.md` edit in an external editor costs one `y` at the next
+  start; a `-p` pipeline runs without the changed file until
+  `trust --accept`. The residue that cannot be closed (a prepared directory
+  moved in for *other* consumers) is **made visible** as a snapshot diff of
+  persistent files, not claimed closed.
