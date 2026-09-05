@@ -621,6 +621,52 @@ reassigning the variable at all.
    rotated yet; say so in the document, and expect the operator to ask
    for it.
 
+### Fixes go after the root cause — reviewers observe, contributors decide
+
+**Symptom:** A CLI agent (2026-09) went through nine external review
+passes after a release. Every pass "fixed all findings" (103 in total),
+and the next pass surfaced another instance of the same kind. Classified
+by root cause after the ninth pass, 48 findings (13 of the 16 re-finds)
+came down to three causes — deriving shell semantics from command text,
+a confinement API that returned a lexical path its callers reopened, and
+caps that did not report being reached — and each closed with one
+structural change. The operator's verdict: "too focused on local cases;
+fix the root cause."
+
+**Why it matters:** CONVENTIONS' "smallest change that addresses the root
+cause" degrades in practice into "the smallest change that silences the
+report" — only the first half gets read. A reviewer observes symptoms and
+holds no design, so their findings are local by nature, and that is the
+right behaviour for a reviewer. The failure is on the receiving side:
+merging a finding as the fix makes the design follow the reviewer's next
+spelling. Yet local observations also surface real holes (keystroke
+injection into the terminal, a wholesale `.git` swap) — not merging is
+not the same as ignoring.
+
+**How to apply:**
+1. **Classify before fixing.** Sort every finding into a root-cause class
+   and count instances and re-finds. Three of a kind, or one re-find after
+   a fix, stops instance fixing: write down the class's cause.
+2. Name causes as domains: is a decision taken over an unbounded domain
+   (text, spellings, program names)? are names and handles (paths and
+   descriptors) mixed? does a cap return the fact that it was reached? is
+   one decision implemented in several places?
+3. Close the class structurally and **pin it with a test that names the
+   class** (an architecture test plus a behaviour test); per-instance
+   regression tests are the supplement.
+4. A stopgap patch is allowed only with its root cause and closing plan
+   written into an ADR or an issue. If that cannot be written, the
+   problem is the design, not the patch.
+5. **Take a reviewer's finding as a fact, never as a fix.** The contributor
+   decides the remedy from the design. A finding not adopted is recorded
+   with its reason (the ADR's "recorded, not changed" section, the review
+   response) — dropping one silently is as much an abdication as merging
+   one.
+6. "All findings fixed" is not the result; a closed class is.
+
+CONVENTIONS.md §Build small, fix small — "Root cause before patch" and
+"Reviewers observe; contributors decide" — is the canonical rule.
+
 ## GitHub operations
 
 ### Repositories are no longer watched automatically (auto-watch sunset 2025-05)
