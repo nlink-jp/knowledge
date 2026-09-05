@@ -778,3 +778,48 @@ render, forever.
 6. Exits deserve a **receipt, not a lecture**: the last lines in the
    scrollback should answer "how do I get back" (resume command) and
    "what did this cost" — two lines, only when something happened.
+7. **Design references never reach the screen.** `(ADR-0074)` in a
+   banner note, or a clause explaining why a rule exists, is the
+   implementer talking to themselves; the operator gains nothing. The
+   habit returns with every feature written from the ADR, so close it
+   structurally: an AST test over the operator- and model-facing
+   packages that fails on any string literal citing an ADR number.
+
+### "Update the docs in the same commit" names no document — route by change kind, and check the whole-system documents mechanically
+
+**Symptom:** Under a convention that every behaviour change updates the
+docs in the same commit, every commit did update docs — and the
+architecture reference still missed five internal packages across three
+ADRs, the configuration reference missed a subcommand, and the
+specification's security-design section described a model two ADRs old.
+The documents updated were the ones the feature's name led to (the
+approval reference for approval behaviour, the tool reference for the
+tool); the ones describing the whole were never reached. Most of the
+structural changes had landed as `fix:` commits from review rounds, which
+updated the ADR and the agent briefing file only.
+
+**Why:** The rule says *when* but not *which*. A whole-system document
+(architecture, spec) does not contain the new feature's name, so a grep
+does not find it, and no check compared code to documents — every
+existing check was a symmetry check (en/ja mirror, ADR index). A rule
+with no routing and no detector is satisfied by updating whatever is
+nearest.
+
+**How to apply:**
+- Keep a **change kind → documents** table in the agent-facing briefing
+  file (`AGENTS.md`): new package → architecture map; new callback →
+  the UI-contract paragraph; new subcommand / flag / key → the
+  configuration table, the example config, the README usage block;
+  approval / trust / sandbox behaviour → the approval reference, the
+  architecture's approval section, the spec's gating table and security
+  design; new record or state file → the sessions reference and an
+  *Amended by* note on the layout ADR; a change to what an earlier ADR
+  states → an *Amended by* line under that ADR.
+- **A `fix:` that changes structure takes the same rows as a `feat:`.**
+- Make the routable rows **mechanical** in the docs check: every
+  `internal/` directory named in the architecture reference; every
+  exported func field of the agent's options struct named there; every
+  cobra `Use:` in the configuration table. The check found two more
+  omissions from older ADRs on its first run.
+- Symmetry checks (en ↔ ja, ADR ↔ index) are necessary and cannot see
+  this class; do not read their green as "docs are current".

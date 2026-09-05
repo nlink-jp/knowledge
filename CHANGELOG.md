@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-05 (3)
+
+- 1 entry and 1 amendment from a CLI agent runtime whose whole-system
+  documents drifted under a "docs in the same commit" rule, and whose
+  banner notes cited ADR numbers again on real-device use:
+  - **development-process** (1): the rule names no document — keep a
+    change-kind → documents routing table in the agent briefing file,
+    treat a structural `fix:` like a `feat:`, and make the routable rows
+    mechanical (every internal package, options callback and subcommand
+    must be documented); symmetry checks cannot see this class.
+  - **development-process** (amended "Status output is not
+    documentation"): design references never reach the screen — an AST
+    test over operator- and model-facing packages fails on any string
+    literal citing an ADR number.
+
 ## 2026-09-05 (2)
 
 - 2 entries from a CLI agent runtime that moved project trust from the
