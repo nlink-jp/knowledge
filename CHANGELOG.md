@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-05
+
+- 1 entry from a usage-aggregation CLI whose session listing lost its
+  time order when the producer switched session ids from timestamps to
+  UUIDs (parsing was unaffected, so every test stayed green):
+  - **config-and-io** (1): an id-ordered listing is chronological only
+    while ids are timestamps — carry first / last record time on the
+    aggregated row and sort by it; write the keys always (no
+    `omitempty`) so absence means only an older producer; refuse a time
+    sort on a dense series whose filler rows have no time rather than
+    adding a comparator fallback.
+
 ## 2026-09-04 (2)
 
 - 1 entry from a CLI agent runtime whose one-shot startup was silent

@@ -59,6 +59,38 @@ write-only dead weight.
 - Machine-generated JSON read with plain Unmarshal (non-strict) ignores old keys,
   which disappear on next save = no migration needed.
 
+### An id-ordered listing is chronological only while ids are timestamps — carry time in its own column
+
+**Symptom:** A tool aggregating session transcripts listed sessions in id-string
+order. While ids were `YYYYMMDD-HHMMSS` that looked chronological; from the
+producer version that switched ids to UUID v4, new sessions sorted after every
+old id in hex order and a row no longer said when it ran. The parser never
+depended on the file name, so ingest kept working and only the display broke —
+which is why every test stayed green and nobody noticed.
+
+**Why:** "sorting by id gives time order" is an implicit dependency on the
+content of the id, written nowhere. The producer defined compatibility as
+"existing files still load and resume" (true), and the consumer's ordering is
+outside that contract. An id-format change is the kind a producer's ADR calls
+"compatible, ships as a minor" — the consumer has to go and check its own
+follow-through.
+
+**How to apply:**
+- A listing meant to be read in time order **carries time separately from the
+  id** (first / last record time on each aggregated row, `--sort time` as the
+  default). Treat the id as opaque.
+- When the producer publishes an ADR about "session" or "id", check the
+  consumer's **display, ordering and key width** on real data. A green parser
+  test says nothing about the table.
+- Write the added time keys **always (`""` when empty, no `omitempty`)** so
+  that key absence means only "an older CLI" — a GUI that starts reading them
+  later can tell the cases apart (the same reason as `tool_prompt` in
+  llm-integration).
+- Do not apply a time sort to a dense series with filler rows (`--dense`): a
+  row with no record has no time, sinks to the end, and breaks a series that
+  was already correct by key. Refusing the combination is safer than adding a
+  fallback to the comparator (transitivity survives).
+
 ### Long-format storage makes re-importing idempotent
 
 **Symptom:** history from an external service has to be imported after the fact to
