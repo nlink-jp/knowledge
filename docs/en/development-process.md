@@ -832,3 +832,35 @@ nearest.
   omissions from older ADRs on its first run.
 - Symmetry checks (en ↔ ja, ADR ↔ index) are necessary and cannot see
   this class; do not read their green as "docs are current".
+
+
+### Archived state lives only on GitHub — a local scan will grab dead repos
+
+**Symptom:** Counting from local Makefiles gave "63 repositories ship a Linux
+build", and 21 of them were selected as the work list. **Three were archived on
+GitHub**, and therefore read-only. One of them turned out to hold a real defect
+(a shutdown path that does not wait for in-flight export goroutines, so audit
+telemetry is silently dropped) that could not be fixed, because the repository
+rejects pushes. The same survey found the org's only two Apache-2.0 projects
+were also archived repositories.
+
+**Why:** Whether a repository is alive is a remote attribute, and the working
+tree carries no trace of it. Resolving it through a `gh` call fails offline and
+fails silently whenever someone forgets to make the call; recording it as an
+"(archived)" marker in a catalog is a text rule, and text rules drift.
+
+**How to apply:**
+- **Separate archived projects into their own umbrella, keeping the originating
+  series as a directory level** (`archive-series/<series>/<project>`). Then `ls`
+  answers both "is this alive?" and "what was it?" — no network call, no marker
+  to maintain.
+- Add a check that **fails** when an archived repository is registered in an
+  active umbrella. Naming the misfiling, rather than skipping the repo as a
+  special case, makes the structure maintain itself.
+- Once a work list for a sweep exists, verify archived state before starting.
+  Local files cannot answer the question.
+- A defect found in an archived repository is **knowledge, not a task**. It cannot
+  be fixed; generalise it into the knowledge base or let it rest.
+- When moving catalog rows, **move them verbatim rather than rewriting them**. The
+  successor's name and the reason for archiving are exactly what gets read after
+  archiving, and they are the first things a summary drops.

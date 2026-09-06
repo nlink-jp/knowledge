@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-06 (1)
+
+- 2 new entries from building a container-based Linux test harness for the
+  Go repositories that cross-compile a linux/* binary, and from the archived
+  repositories that the harness's work list swept up:
+  - **testing**: a cross-platform test harness detects its own defects first
+    — a locally cached amd64 image runs the whole suite under qemu behind a
+    single warning line (surfacing as `signal 11`, which reads as a real
+    crash), container root bypasses DAC so a test expecting a 0500 write to
+    fail sees it succeed, and `GOTOOLCHAIN=local` turns a newer go.mod into
+    "fails on Linux". Run both platforms and diff them; repeat a difference
+    and measure its flake rate before calling it platform-specific.
+  - **development-process**: archived state lives only on GitHub, so a work
+    list built from local files grabs read-only repositories — one of them
+    held a real defect that could not be fixed. Separate archived projects
+    into their own umbrella keeping the originating series as a directory
+    level, and make an archived repo inside an active umbrella a failing
+    check rather than a skipped one.
+
 ## 2026-09-05 (6)
 
 - 1 new entry from the review response of a macOS ZIP tool (ADR-0005

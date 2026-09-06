@@ -804,3 +804,42 @@ and does not fail.
   disappears beats noticing in review.
 - Look at `git diff --stat` before committing. Hundreds of deleted lines in
   a documentation file is a signal an intended change almost never sends.
+
+
+## A cross-platform test harness detects its own defects first
+
+**Symptom:** A harness was built to run Linux tests in a container from a
+macOS/arm64 development host, and pointed at the 21 repositories carrying GOOS
+branches. Five came back "passes on macOS, fails on Linux" — and three of those
+were caused by the harness's own defaults.
+
+- A locally cached amd64 image was picked silently, so **every repository ran
+  under qemu**. The only notice was one line, `image platform (linux/amd64) does
+  not match`, and the symptom was `qemu: uncaught target signal 11 (Segmentation
+  fault)` — which reads exactly like a real crash.
+- The container ran as root, which **bypasses DAC**. A test that chmods a path to
+  0500 and expects the write to fail saw it succeed, and failed.
+- The official golang image pins `GOTOOLCHAIN=local`, so a repository whose
+  go.mod asks for a newer Go appeared as "fails on Linux".
+
+**Why:** All three are defaults that silently do something else, and **a defect in
+the harness wears exactly the same face as a defect in the code under test**. The
+moment a difference appears it reads as "found a platform-specific bug", and the
+hunt for a bug that does not exist begins.
+
+**How to apply:**
+- Pass `--platform linux/<arch>` explicitly. A wrong-architecture image announces
+  itself with a single warning line.
+- Under rootless podman, run as the invoking user with `--userns=keep-id`.
+  **Permission-dependent tests are meaningless as root.**
+- Pass `GOTOOLCHAIN=auto`; do not let the image's Go version judge go.mod.
+- **Run both platforms and diff them.** One side alone makes a harness defect look
+  like a defect in the target. Harness defects surface as many repositories
+  failing at once, so the breadth of the difference is the first thing to read.
+- When a difference appears, repeat it and measure the flake rate. Do not call it
+  platform-specific from one run: in this case the two survivors were 3-of-5 and
+  3-of-3, a race and a deterministic defect respectively.
+- Keep build and module caches in named volumes, not on the bind mount — virtiofs
+  is slow there and unix sockets do not traverse it.
+- qemu writes core dumps into the bind-mounted source tree (100MB+ each). Check
+  the working tree is still clean after a run.
