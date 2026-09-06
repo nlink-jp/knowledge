@@ -665,7 +665,7 @@ src.save('build/windows/icon.ico', format='ICO',
 **事象:** `wails build` を呼ぶだけの単一ターゲットだと、リリース時に手動でクロスビルド +
 rename する運用になり、「Intel 版だけバンドル名が違う」といった手作業起因の不整合を産んだ。
 
-**適用方法:** scaffold 段階で `build-darwin-arm64` / `build-darwin-amd64` /
+**適用方法:** scaffold 段階で `build-darwin-arm64` /
 `build-windows-amd64` / `build-all` / `package: build-all` を用意する。各 per-arch ビルドは
 先頭で `rm -rf build/bin` して stale .app の誤 package を防ぐ。package は notarize + staple
 の後、stage ディレクトリで canonical 名に rename してから arch-suffix zip 化。

@@ -756,7 +756,7 @@ src.save('build/windows/icon.ico', format='ICO',
 renames at release time, producing hand-work inconsistencies ("only the Intel
 bundle had a different name inside the zip").
 
-**How to apply:** Scaffold `build-darwin-arm64` / `build-darwin-amd64` /
+**How to apply:** Scaffold `build-darwin-arm64` /
 `build-windows-amd64` / `build-all` / `package: build-all`. Each per-arch build
 starts with `rm -rf build/bin` to avoid re-signing stale apps into packages.
 Package notarizes + staples, then renames to canonical names in a staging dir
