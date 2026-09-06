@@ -895,3 +895,32 @@ migration, which is the worst possible moment.
 - Confirm every target is clean and pushed before starting.
 - Verify four things afterwards: `.git` is a file, HEAD is unchanged,
   `git submodule status` reports no `+`/`-`, and a real `fetch` works.
+
+
+### `git add -u` in an umbrella silently sweeps up submodule pointers
+
+**Symptom:** A sweep removing a stale build instruction from every series'
+CLAUDE.md and README staged each umbrella with `git add -u`. The tool
+repositories had just been pushed, so **every submodule pointer that had moved
+landed in the same commit**. Five umbrellas ended up with a commit whose
+message says "documentation fix" and which also carries one to four unrelated
+tool bumps. They were already pushed and buried in history, so splitting them
+was not worth it.
+
+**Why:** A submodule pointer is a gitlink (mode `160000`) — a **tracked file** —
+and `-u` takes every tracked modification without distinction. It looks like a
+directory in the working tree, yet `git status --short` prints a single
+`M <tool>` line that is **indistinguishable from a documentation edit**. In an
+umbrella this diff appears the moment a tool is pushed, so a bulk edit walks
+into it almost every time.
+
+**How to apply:**
+- In an umbrella, never `git add -u` or `git add -A`; **name the paths**.
+- Read `git diff --cached --stat` before committing. A gitlink wears the face of
+  a one-line file change, so look for tool names that do not belong.
+- Keep pointer bumps in their own commit. The `chore: bump <tool> to vX.Y.Z`
+  convention exists so the umbrella's history answers "when did this tool
+  arrive?" — mixing erases that index.
+- **Splitting is only practical before the push.** Once buried it takes a rebase
+  and a force-push, which commit hygiene alone does not justify. Record it and
+  do better next time.

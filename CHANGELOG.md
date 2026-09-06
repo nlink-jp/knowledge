@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-06 (3)
+
+- 1 new entry from a bulk documentation edit that quietly folded submodule
+  bumps into five umbrella commits:
+  - **development-process**: `git add -u` in an umbrella silently sweeps up
+    submodule pointers — a gitlink is a tracked file, and `git status --short`
+    shows it as one `M <tool>` line indistinguishable from a documentation
+    edit. Name the paths, read `git diff --cached --stat` before committing,
+    and keep pointer bumps in their own commit; splitting is only practical
+    before the push.
+
 ## 2026-09-06 (2)
 
 - 2 new entries from separating third-party licence notices across the
