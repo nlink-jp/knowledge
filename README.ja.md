@@ -25,7 +25,7 @@ English version: [README.md](README.md)
 
 | ドキュメント | 内容 |
 |---|---|
-| [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数 |
+| [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数・ライセンス表記 |
 | [macos-gui](docs/ja/macos-gui.md) | SwiftUI/AppKit の罠、メニューバーアプリ、Wails |
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
 | [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計 |
@@ -37,7 +37,7 @@ English version: [README.md](README.md)
 | [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
-| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離 |
+| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損 |
 
 英語版は [docs/en/](docs/en/)（日本語が原文）。
 

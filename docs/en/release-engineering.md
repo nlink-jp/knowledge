@@ -409,3 +409,41 @@ measurement had disproved.
 - **This is mechanically detectable**: "has at least one release AND the README
   matches `not yet released|pre-release`" is a grep plus a `gh release list`, and
   belongs in whatever org-wide check you already run.
+
+
+## Appending to LICENSE breaks its classification, and splitting the notice out must ship with the artifact
+
+**Symptom:** Five repositories showed up as "Other" licensed on GitHub. All five
+were MIT; a third-party attribution appended to the end of LICENSE was all it
+took to defeat the template match. Splitting those attributions into
+`NOTICE.md` then exposed a second defect in two of them — **the attributions
+for code they actually bundle (Chart.js; highlight.js + Mermaid.js) had never
+been included in a release archive at all**, and the repository consulted as
+the precedent for the split had the same hole. In a third, the notice was
+pasted in from another project and declared a provenance that did not apply.
+
+**Why:** GitHub's classification depends only on LICENSE matching a template,
+and one appended line drops it to "Other". Whether attribution is actually
+satisfied, though, depends not on the file being *in the repository* but on it
+being **in the distribution**: MIT and BSD make including the notice a
+condition of distributing. The two pull in opposite directions — **moving the
+notice out of LICENSE to fix the classification also removes it from the
+artifact.**
+
+**How to apply:**
+- Keep LICENSE as the bare template and put third-party attribution in a
+  separate file (`NOTICE.md`). **Do not even add a pointer from LICENSE to it** —
+  that pointer is itself an append, and breaks the match. Point from the README.
+- Make the split and the packaging change **the same commit**. Split them in
+  time and any release in between ships without the attribution.
+- Do not settle for reading the packaging. Staging is one long shell loop: a
+  failing `cp` does not stop the `tar`/`zip` that follows, so the archive is
+  built, silently, without the file. Build one and list its contents.
+- Signed `.app` GUI archives are a different case: the archive is the bundle
+  alone and nothing can be placed beside it without disturbing the signature.
+  Bundled third-party code has to carry its notice inside the app's Resources.
+- **A precedent repository is not evidence of correctness** — the one consulted
+  here had the same hole. Take the format from precedent; judge correctness
+  against the condition (does it reach the distribution?).
+- Attribution text spreads by copy-paste. Check the body does not still name
+  another project.

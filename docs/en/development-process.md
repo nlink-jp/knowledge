@@ -864,3 +864,34 @@ fails silently whenever someone forgets to make the call; recording it as an
 - When moving catalog rows, **move them verbatim rather than rewriting them**. The
   successor's name and the reason for archiving are exactly what gets read after
   archiving, and they are the first things a summary drops.
+
+
+### An embedded `.git` inside a submodule only bites when you remove it
+
+**Symptom:** Removing an archived submodule from its umbrella stopped with
+`fatal: could not migrate git directory ...: Directory not empty`. A sweep found
+**nine submodules whose `.git` was a directory rather than a file** — a
+standalone clone sitting at the submodule's path. Two of them also had a
+five-month-old leftover in the umbrella's `.git/modules/<name>`, so the
+destination was occupied.
+
+**Why:** A healthy submodule's `.git` is a one-line **file**,
+`gitdir: ../.git/modules/<name>`, with the repository itself living in the
+umbrella. Clone directly into the submodule's path and git records the gitlink
+and accepts it, so **everyday commit / push / status all work normally. It is
+broken and says nothing.** The only operations that surface it are `deinit` and
+`rm`, which first try to absorb the embedded git dir into the umbrella and abort
+when the destination is not empty — so it is discovered midway through a bulk
+migration, which is the worst possible moment.
+
+**How to apply:**
+- Detection is one question: is `<submodule>/.git` a directory? **Sweep every
+  submodule before any bulk operation.**
+- Repair with `git submodule absorbgitdirs`. It changes no tracked file, so
+  **there is no commit**, and HEAD and branch are untouched.
+- Where the destination holds a leftover, move it aside first. **Comparing the
+  leftover's HEAD and mtime against the working copy** settles which is live in
+  seconds. Move it, do not recursively delete it; a person removes it afterwards.
+- Confirm every target is clean and pushed before starting.
+- Verify four things afterwards: `.git` is a file, HEAD is unchanged,
+  `git submodule status` reports no `+`/`-`, and a real `fetch` works.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-06 (2)
+
+- 2 new entries from separating third-party licence notices across the
+  organization, and from the broken submodules a bulk migration ran into:
+  - **release-engineering**: appending to LICENSE breaks GitHub's licence
+    classification, and splitting the notice out must ship with the artifact —
+    the attribution's home is the distribution, not the repository, so the fix
+    for the classification silently removes it from releases unless the
+    packaging changes in the same commit. Two repositories had never shipped
+    the notice for code they bundle, including the one consulted as the
+    precedent for the split.
+  - **development-process**: an embedded `.git` inside a submodule only bites
+    when you remove it — everyday commit/push/status work normally, and
+    `deinit`/`rm` aborts midway through a bulk migration. Detect it by asking
+    whether `<submodule>/.git` is a directory; repair with
+    `git submodule absorbgitdirs`, which produces no commit.
+
 ## 2026-09-06 (1)
 
 - 2 new entries from building a container-based Linux test harness for the
