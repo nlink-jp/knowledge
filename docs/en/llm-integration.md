@@ -1383,3 +1383,42 @@ designed to ignore.
   effect can be measured after release, and one operator line per streak.
   No runtime retry, no text classification, no hard stop, no prompt rule.
   (gem-agent ADR-0075.)
+
+
+### A tool the model must not use is made absent by name — not refused, absent; declarations were nine tenths of the prompt
+
+**Symptom:** A CLI agent (2026-09) needed to take the write half of a
+read/write MCP server away from the model. The candidates: (a) an "always
+deny" value in the approval gate, (b) not declaring the tool at all. The MCP
+specification has no capability (read/write) field on its Tool type, and its
+annotations are optional and explicitly not to be trusted. A home-made
+capability vocabulary would not settle cases like "creating an issue is
+forbidden but commenting is wanted" — in the end the function name decides.
+Measurement showed the connected servers' tool declarations were **92%** of
+the prompt (about 67k tokens), with the top three servers at 60%. Resolution:
+one config key listing server names and `server/function` entries; an excluded
+server is never started, an excluded function is never declared, and one
+predicate serves both the declaration and the dispatch. No patterns, no named
+profiles, no deny value.
+
+**Why:** A tool that is "there but refused" leaves the model thinking "it ought
+to work" and invites the invention of a third route (the same failure as
+over-generalised prohibitions). A tool that is absent is not reasoned about.
+Classifying by capability, with no structure for it in MCP, means either
+trusting self-description or inventing a vocabulary, and both break on concrete
+cases. Names certainly exist and certainly match. As a by-product, dropping
+unused tools shrinks the prompt visibly — the weight of the declarations was
+unknown until measured.
+
+**How to apply:**
+- Implement "the model must not use it" as **remove it from the declaration**.
+  Keep refusal at the gate for the case "the model calls, a human stops it".
+- Match on **exact names** only. No wildcards, no capability vocabulary, no
+  reliance on annotations.
+- Use the same predicate for declaration and dispatch (a call to an undeclared
+  name is an unknown tool; log it and nothing more).
+- Exclusion is absence, not refusal: no notice that something was excluded, no
+  drift report. A rename is undetectable — document that this is a
+  prompt-shaping mechanism, not confinement.
+- **Measure the share of the prompt that declarations take** before building
+  it. Without the number, "to shrink the prompt" is not a claim.

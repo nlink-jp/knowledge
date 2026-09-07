@@ -843,3 +843,48 @@ hunt for a bug that does not exist begins.
   is slow there and unix sockets do not traverse it.
 - qemu writes core dumps into the bind-mounted source tree (100MB+ each). Check
   the working tree is still clean after a run.
+
+
+### An independent pass finds its real defects right after a fix — the place of the fix is the place of the next defect
+
+**Symptom:** One release of a CLI agent (2026-09; 68 files, three ADRs) went
+through five full independent verification passes and one narrowed one before
+the tag. **Every pass surfaced a real defect that the previous fix had
+introduced**: fixing "exclusions are not saved" produced "turning a server back
+on discards hand-written exclusions" (caused by the list the fix introduced);
+fixing that produced "the settings panel shows stale values"; the one line added
+there was wrong in two of the four states it described. In parallel, fourteen
+assertions in the ADRs were false — a command that does not exist, a persistence
+model that was never implemented, work listed under Consequences that was not
+done, a generated document said to show the banner that did not.
+
+**Why:** A fix does not repair verified ground; it **creates a new surface**,
+and nobody has looked at that surface yet. The author cannot doubt their own
+assertions — having read the document is no defence. Touching the tree while a
+review runs forces the reviewer to re-verify a moving target, and the findings
+come back as a mix of "already fixed" and "still there", which degrades the next
+pass. Meanwhile severity fell monotonically (feature broken → data loss → stale
+display → wording in one state). That trend is the evidence of convergence, and
+it decides between "one more full pass" and "narrow it and finish".
+
+**How to apply:**
+- Ask the review brief explicitly: **what did the previous fix bring in?** Have
+  the fix commit read as the change it is, not as a change assumed correct.
+- **Mechanically check every assertion** in ADRs, READMEs and the CHANGELOG
+  before committing: grep every named `/command`, subcommand, `[section].key`,
+  type name and `$ENV` against the source (138 claims in that release). This
+  only proves the names exist — charge the reviewer with "X shows Y" as a
+  question of meaning, not of names.
+- When you replace a name to make the check pass, ask whether **the replacement
+  carries the same fact**. Swapping a command that does not exist for one that
+  exists but does not carry the fact passes the check and makes the sentence
+  false.
+- **Do not touch the tree while a review runs.** Wait for the findings, fix them
+  together, and send the next pass.
+- Judge convergence by **the trend of severity**. When the worst finding has
+  fallen to "wording in one state", run one short pass narrowed to the last
+  commit; if it comes back empty, tag.
+- Keep operator wording **mode-neutral**. A word that is false in one of the
+  interactive TUI, the non-interactive REPL and one-shot mode ("asks",
+  "footer", "`/auto`") is replaced by one true in all of them ("gated"). Every
+  recurring wording defect had this shape.

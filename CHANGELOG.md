@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-08
+
+- 3 new entries from a CLI agent release that added name-based MCP tool
+  exclusion, cut the startup banner to what nothing else will say, and ran six
+  independent verification passes before tagging:
+  - **testing**: an independent pass finds its real defects right after a fix —
+    each fix creates a new, unverified surface, so the brief asks what the
+    previous fix brought in; assertions in ADRs/READMEs are grepped against the
+    source before commit (names only — meaning is the reviewer's charge); the
+    tree is not touched while a pass runs; convergence is judged by the trend
+    of severity, and the last pass is narrowed to the last commit.
+  - **development-process**: a report is not a control — "print it at startup"
+    as the remedy for a hazard is an indulgence; a startup line needs to be a
+    change, name the next action, and rarely appear; close the banner by a type
+    of facts and cut "write it and it appears" wiring.
+  - **llm-integration**: a tool the model must not use is made absent by name,
+    not refused — MCP has no capability field and its annotations are untrusted;
+    declarations measured at 92% of the prompt; one exact-name predicate serves
+    declaration and dispatch, with no patterns, profiles, or deny value.
+
 ## 2026-09-06 (3)
 
 - 1 new entry from a bulk documentation edit that quietly folded submodule

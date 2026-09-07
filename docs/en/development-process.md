@@ -924,3 +924,45 @@ into it almost every time.
 - **Splitting is only practical before the push.** Once buried it takes a rebase
   and a force-push, which commit hygiene alone does not justify. Record it and
   do better next time.
+
+
+### A report is not a control — when the remedy for a hazard is "print it at startup", suspect an indulgence
+
+**Symptom:** In a CLI agent (2026-09), the first draft of an MCP tool-exclusion
+mechanism wanted to print a one-line drift report per server at every start.
+The operator's verdict: "an indulgence — print it and anything is permitted.
+So what?" Counting the existing banner turned up 28 candidate rows, and they
+were nobody's design: **anything written to stderr during startup became a
+banner row** (stderr was tee'd into the startup notes). The repository's own
+AGENTS.md already recorded that "four releases shipped explanatory banners —
+nobody looked at the whole of it in one place". The resolution was an ADR with
+a one-sentence rule: **a line earns a place at startup only if nothing else
+will say it**. 28 rows became 3. The drift report was dropped with its
+mechanism; the existing approval gate already covered the hazard.
+
+**Why:** A status line shown every time is read no time (the same skip-training
+as "Status output is not documentation" in this document). On top of that,
+**offering a report as the remedy for a hazard** covers the fact that no control
+was designed. A control stops, takes effect, can be measured; a report does
+none of these. And where wiring exists that raises a wall without anyone
+deciding to, the next feature adds its row through the same path — the draft
+was doing exactly that.
+
+**How to apply:**
+1. When you propose "display it" as the remedy for a hazard, ask yourself
+   **control or indulgence?** If it is not a control, redo the design: if an
+   existing gate covers the hazard the report is unnecessary, and if none does
+   the report is insufficient.
+2. A startup line is allowed only if it meets all three: **a change, not a
+   state; the next action is named; it rarely appears**. State is answered where
+   it is asked (a settings panel, a listing command). Check first whether an
+   on-demand view already exists.
+3. **Make the banner a package closed by a type of facts**: limit what the
+   banner may know to the fields of a struct, so a feature that wants a row has
+   to add a field and answer why nothing else says it. Cut "write it and it
+   appears" wiring such as the stderr tee. Render the assembled banner at the
+   top of the operator-text read-through — a list of fragments cannot show the
+   first screen.
+4. Beware the over-correction — silence while the operator is **waiting** on
+   work reads as a hang. What is forbidden is unconditional status display, not
+   notification of work in progress.
