@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-09-09
+
+- 9 new entries from a two-report review of an agent runtime (a whole-project
+  review and a review of its auto-approve mode), their fixes, and the design
+  decisions that followed:
+  - **security**: a constraint derived from conversation may only ever
+    tighten — one that can loosen is a permission, and the proposer cannot
+    be its own judge; state a judge the operator's *intent*, never the
+    control, or the model reports "not permitted" about something nothing
+    prevents and the user reads a falsehood; the only history safe to feed a
+    judge is what the operator typed, and provenance — not message role —
+    is what selects it
+  - **mcp-server-design**: a synchronous write to a child's stdin is
+    unbounded, so a deadline created after it supervises nothing and a lock
+    held across it turns one wedged peer into a total stall; discarding the
+    ok of a type assertion on a required argument turns absence into a
+    destructive zero value, and two parse paths for one tool means only one
+    of them carries the check
+  - **config-and-io**: replace-by-rename drops the file mode, and leaving the
+    mode to the call site is how one of two call sites gets it wrong
+  - **shell-scripting**: `|| true` at the end of an `&&` chain forgives the
+    whole chain, not the last command
+  - **testing**: a gate that only ever runs by hand, on valid input, needs a
+    self-test with synthetic bad artifacts in the routine check
+  - **development-process**: an index check that matches by identifier walks
+    past a rename — a number is not a link
+
 ## 2026-09-08 (3)
 
 - 1 new entry from an operator report about a TUI's scrollback and the

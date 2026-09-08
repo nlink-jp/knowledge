@@ -132,6 +132,23 @@ will work.
 - An implementation that reports a discovery failure as merely "not logged in"
   hides the cause. Say **which stage failed**.
 
+### A synchronous write to a child's stdin is unbounded — outside the deadline, one wedged peer stalls everything
+
+**Symptom:** A stdio client wrote the request, then started a deadline and waited for the
+response. When the peer stops reading its stdin the pipe fills and `Write` never returns. The
+deadline is created **after** the write, so nothing supervises that wait — and the write lock is
+held across it, so every other call to that server parks behind it. The timeout branch that
+kills the child is unreachable from all of them, so it never recovers.
+
+**Why:** There was a test for "the server receives a request and does not answer". That never
+exercises the write at all: it begins after the request has landed.
+
+**How to apply:** Create the deadline **before** the write, covering both halves. On expiry kill
+the child — closing the read end returns the parked `Write` with EPIPE and releases the lock.
+Put the fix in the **send function**, not the caller: every sender has the same hole, and a
+reply written from the read loop has no call to inherit a deadline from. Test with a server that
+stops reading stdin, and with a second caller waiting on the lock.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON
@@ -343,6 +360,24 @@ protect — and an unused feature is maintenance cost on its own.
   upstream's schedule, so write "absent as of <date>".
 - Before adding a feature to a relay, check whether the upstream already
   provides it. If it does, not implementing is the right answer.
+
+### Discarding a type assertion on a required argument turns absence into a destructive default
+
+**Symptom:** A string-replacement tool's batch form read `m["new_string"].(string)` and threw
+away the ok. A missing key, `null`, or a number all produced `""`, which the later checks did
+not reject — so `{"old_string": "something important"}` executed as a **deletion** of that text.
+The single-pair form had the required check; the two forms disagreed.
+
+**Why:** The `required` list in the schema handed to the model does not protect the execution
+side. And a zero value is not necessarily a safe default: empty string means delete, false means
+"require uniqueness", 0 can mean "unbounded". Where one tool has two parse paths, only one of
+them tends to carry the check.
+
+**How to apply:** Check presence and type together for required arguments (in Go, both
+`v, ok := m[k]` and `s, ok := v.(string)`). Where a zero value is destructive, distinguish
+missing, wrong-typed, and deliberately empty. Then reduce it to **one parse path** — treat the
+single form as the batch of one and run it through the same function. Keeping two
+implementations in agreement by inspection fails.
 
 ## Contracts with upstream APIs
 

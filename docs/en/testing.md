@@ -888,3 +888,20 @@ it decides between "one more full pass" and "narrow it and finish".
   interactive TUI, the non-interactive REPL and one-shot mode ("asks",
   "footer", "`/auto`") is replaced by one true in all of them ("gated"). Every
   recurring wording defect had this shape.
+
+## A gate that only ever runs by hand needs a test of its own
+
+**Symptom:** A release-verification target shipped in a state where it absorbed both an unpack
+failure and a binary that would not run, and still printed OK. The comment directly above that
+target recorded an earlier incident — a notarization probe failing open, letting an un-notarized
+zip ship green. The same shape was repeated on the next line.
+
+**Why:** The gate runs once, by hand, at release time, and is normally given **valid** input.
+There is structurally no occasion on which it meets a bad artifact, so it can break and stay
+green. Writing the incident down does not exercise the gate.
+
+**How to apply:** Write a self-test for the gate and put it in the routine check (`make check` or
+equivalent). Feed it synthetic bad input — a corrupt artifact, a binary that will not run, a
+binary from another version, a missing marker — and assert a **non-zero exit**. Include one valid
+case too, so a gate that rejects everything is not mistaken for a working one. Run the self-test
+against the unfixed gate first and confirm it reports the misses, before trusting it.

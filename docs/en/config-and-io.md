@@ -258,6 +258,24 @@ face value misreads 0 as a full disk. The statfs-backed
 - Extract the decision into a pure function and unit-test it
   (`(0, 3TB) → 3TB`, `(0, 0) → 0`, `(nil, nil) → nil`).
 
+### Replace-by-rename drops the file mode — leaving it to the call site is how one call site gets it wrong
+
+**Symptom:** A helper that replaced a file safely (write a temp file, rename it into place) took
+the new file's permissions as a parameter. It had two callers: one passed the stat'd mode of the
+existing file and was right, the other passed a literal `0644`. Through the second, every
+overwrite dropped the execute bit off scripts and widened `0600` files to `0644`.
+
+**Why:** Rename installs a new inode, so the mode is lost unless it is carried across
+deliberately. Making that the caller's job turns it into a convention — "pass the right mode
+every time" — and conventions break.
+
+**How to apply:** Have the replacing function itself lstat the name it is replacing and inherit
+that mode. Demote the parameter to "the mode for a file that does not exist yet", or remove it.
+Apply a preserved mode with `chmod` on the open descriptor, since `OpenFile`'s mode is masked by
+umask. But **respect umask for a file that did not exist** — forcing the default past it widens
+files under a restrictive umask, which is the same defect pointed the other way. Inherit only
+the mode of the name being replaced, never a symlink target's.
+
 ## OAuth
 
 ### Treat refresh-less tokens as non-expiring — never fabricate an expiry

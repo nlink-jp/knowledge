@@ -125,3 +125,22 @@ composed, they manufacture a green result out of zero checks.
 - The operator-side twin habit: prefix agent shell calls with
   `cd /absolute/path &&`. But discipline slips somewhere eventually,
   which is why the script-side mechanism is the real wall.
+
+## `|| true` at the end of an `&&` chain forgives the whole chain, not the last command
+
+**Symptom:** A release check was written like this:
+
+```sh
+unzip -q "$zip" -d "$tmp" && "$tmp/$bin" --version && spctl -a "$tmp/$bin" | head -2 || true
+```
+
+The `|| true` was written for the informational `spctl` probe. But a zip that did not unpack, or
+a binary that did not run, still ended with the check printing OK.
+
+**Why:** `A && B && C || true` parses as `(A && B && C) || true`. `||` takes the whole preceding
+list as its left operand, not the command immediately before it — so a `|| true` written to
+excuse one command swallows every mandatory gate in front of it.
+
+**How to apply:** Put a command whose failure is acceptable in its **own statement**. Gate each
+mandatory step separately with its own message: `|| { echo …; exit 1; }`. A pipeline ending in
+`head` has the same shape — the exit status is `head`'s — and is not a reason to add `|| true`.

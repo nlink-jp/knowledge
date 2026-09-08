@@ -667,6 +667,18 @@ not the same as ignoring.
 CONVENTIONS.md §Build small, fix small — "Root cause before patch" and
 "Reviewers observe; contributors decide" — is the canonical rule.
 
+### An index check that matches by identifier walks past a rename — a number is not a link
+
+**Symptom:** A check matched ADR files to index entries by their four-digit number. Renaming an
+ADR left both language indexes pointing at paths that no longer existed, while the check went on
+reporting "index complete and ordered".
+
+**Why:** The number survives the rename. The check verified that an entry exists; it never
+verified that the entry leads anywhere.
+
+**How to apply:** Resolve the index's relative links against the file system. Identifier
+agreement and link resolution are different properties, and the first does not imply the second.
+
 ## GitHub operations
 
 ### Repositories are no longer watched automatically (auto-watch sunset 2025-05)

@@ -509,6 +509,57 @@ different "architecture".
    the model cannot lift the deterministic floor, knowing the mechanism
    weakens nothing. The problem is what is done with the extract.
 
+### A constraint derived from conversation may only ever tighten — one that can loosen is a permission
+
+**Symptom:** An agent told "review only, do not change anything" has an approval layer that
+knows nothing about the prohibition. The obvious repair is to have a model read the prose and
+derive a constraint object from it — but the moment that derivation errs in the loosening
+direction, the derived constraint is a derived **permission**.
+
+**Why:** A derivation errs in both directions. Erring toward tightening costs a needless
+prompt; erring toward loosening creates a permission nobody granted. And the party proposing
+it is the same model the constraint is meant to bind — the proposer cannot be its own judge.
+
+**How to apply:** Confine the derived object's authority to raising a tier toward the safe
+side: it may never lower a tier, satisfy a floor, or answer a gate. Keep a person in the
+loosening path. Where you can, make the derivation a **question to the operator** rather than
+a rule — a question cannot loosen anything and cannot silently tighten anything either. If
+automatic tightening is allowed (switching rather than asking), automatic loosening still is
+not.
+
+### State the operator's intent to a judge, not the control — otherwise the model tells the user something false
+
+**Symptom:** A risk evaluator was told, in one arm, "this session is read-only; writes are
+denied by the sandbox", and in the other, "the operator has asked for this session to run
+read-only". Verdicts were identical on all six measured cases, but the reasons differed: the
+first made the model say a call was "**not permitted**". The call went to an external server
+that no sandbox reaches — nothing prevented it, and the operator could still approve it.
+
+**Why:** "A control exists" reads two ways to a model: as grounds to refuse, and as a licence
+to approve because the cage will catch it. And the reason string is shown to the user, so
+reporting an unenforced fact as "not permitted" is misinformation.
+
+**How to apply:** State **intent** ("the operator does not want this"), never the enforcement
+mechanism. Intent plugs into the question the judge already answers — does this contradict what
+was asked — and produces reasons that are true whatever is or is not enforcing.
+
+### The only "history" safe to feed a judge is what the operator typed — provenance splits it three ways
+
+**Symptom:** Continuity of intent (a prohibition from an earlier turn still binding) and
+following a change of mind ("go ahead and fix it") both look like they need history, while
+injection defence demands history be excluded — so the three look mutually exclusive.
+
+**Why:** "History" is not one thing. (1) What the operator typed — an attacker cannot type into
+their terminal. (2) What the model said — steerable by a poisoned tool result, and it restores
+the proposer's self-justification. (3) Tool results, attachments and shell output — attacker
+writable outright. Both the standing restriction and its revision live only in (1); (2) and (3)
+are needed for neither.
+
+**How to apply:** Carry only (1), and select it by **provenance rather than message role** —
+shell output from a `!` escape can arrive as a user-role message. Better still, make continuity
+**session state** rather than carried text: state survives turns on its own, so no context
+window widens and the injection surface does not grow at all.
+
 ## Secrets & PII
 
 ### Never write PII — "it's discoverable anyway" is not a reason
