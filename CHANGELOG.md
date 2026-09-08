@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-08 (3)
+
+- 1 new entry from an operator report about a TUI's scrollback and the
+  pre-release review of its fix:
+  - **development-process**: a change that funnels call sites into one
+    helper is enumerated by behaviour, not by grep — grep returns only
+    the places that already have the code, and the place that needs
+    fixing is the one that does not; the miss lands on the early return
+    beside the success path in the same block. Funnelling is not proof
+    of coverage: lower a universal claim until it is true.
+
 ## 2026-09-08 (2)
 
 - 1 new entry from a post-release field report against the CLI agent's

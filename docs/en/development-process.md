@@ -1011,3 +1011,46 @@ primitive.
   respawn (1–3 s) is still blocking, making it asynchronous (with an
   "applying" state) is the next decision, not something to fold into the
   granularity fix.
+
+### A change that funnels call sites into one helper is enumerated by behaviour, not by grep
+
+**Symptom:** An operator reported that in a CLI's TUI, a submitted line
+left no trace in the scrollback. Turns, shell escapes and skill expansions
+all printed `"\n" + "> " + input`; only the slash-command branch printed
+its answer bare, and since the input box clears on submit, the output
+began flush against the previous one and named nothing. The fix funnelled
+everything through one helper — five existing sites included. The
+pre-release review then found a **seventh branch**: the sibling early
+return directly above the skill-expansion success path
+(`errMsg != "" { return ... }`) still had the original defect.
+
+**Why:** The tool used to enumerate the sites was **grep, over the string
+literal being replaced**. Grep returns only the places that already have
+the code. **The place that needs fixing is the one that does not.** The
+miss is structural: it lands on the error return next to the success path
+inside the same `if` block, because the eye follows the success path and
+an early return looks like "something else". And the documentation written
+after the funnelling claimed universally that "every submitted line is
+echoed", which is false for a line that never runs (a refusal while a turn
+is in flight, an empty command) and for a case whose answer is a panel
+rather than scrollback. Funnelling is not proof of coverage, but having
+funnelled invites the universal claim.
+
+**How to apply:**
+- Define the target set **by behaviour and count it** ("the branches of
+  submit that produce an answer"), then walk the function's branches
+  against that definition. Grep over the literal is a helper, not the
+  enumeration. Say the count out loud before editing.
+- **Read every early return paired with its success path.** An
+  `if err != nil` / `if errMsg != ""` inside the same conditional block is
+  a peer exit and needs the same treatment.
+- Before writing a universal claim after a funnelling change, **spend a
+  minute looking for a counter-example**. If you find one, lower the
+  predicate until it is true ("every submitted line" → "a line that runs",
+  plus the exception, named).
+- Close it with a table test over the branches. A regression test for one
+  path will never look at the branch that was missed.
+
+Related: "Changing a boundary invariant means dispositioning every
+consumer" — that one is the shape where grepping an identifier works;
+this is the shape where it cannot.
