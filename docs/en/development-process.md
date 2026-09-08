@@ -966,3 +966,48 @@ was doing exactly that.
 4. Beware the over-correction — silence while the operator is **waiting** on
    work reads as a hang. What is forbidden is unconditional status display, not
    notification of work in progress.
+
+
+### Reuse a "reload" path only when the granularity of the change matches the granularity of the reload
+
+**Symptom:** In a CLI agent (2026-09), turning one MCP server or one of its
+functions on or off in the settings panel called the existing whole-set
+reconnect (the `/reload` path). Every server's process was killed,
+respawned and asked for `tools/list`, synchronously inside the TUI's event
+loop, so on a machine with 25 servers an arrow key took seconds and the
+keys typed meanwhile queued up and landed at once. Found by an operator
+after release. The fix reconnects one server (a running one is re-listed
+only; off stops it, on starts it, the rest are not touched). The
+pre-release review of that fix found one more: the server's tools were
+removed by **name prefix**, so toggling `foo` silently took the live tools
+of a neighbour named `foo__bar`, and a name truncated at the 64-character
+cap was missed and then failed every re-registration. The prefix match had
+been documented as "an edge we can live with" — for transcript
+attribution; the moment it drove removal, it was an edge nobody could
+live with.
+
+**Why:** An existing reload path buys correctness by redoing everything.
+For an operation aimed at the whole (an explicit reload) that price is
+right; reused for an operation that changes one unit, the price scales
+with the number of units and blocks the UI's event loop. And an edge
+recorded as "bounded, acceptable" for one use **needs re-review the moment
+the same primitive gets a stronger caller (removal, refusal)** — a
+documented allowance comes with its use, it is not a property of the
+primitive.
+
+**How to apply:**
+- Before calling an existing reload path from an interactive control,
+  **compare the granularity of the change (one row) with that of the
+  path (everything)**. If they differ, build a one-unit path and keep the
+  whole-set path for the explicit command.
+- Pin what the one-unit path does *not* touch with tests: the neighbour is
+  neither closed nor re-listed and keeps its tools under the same names
+  (count spawns, lists and closes).
+- Re-review every prefix or approximate match documented as "a bounded
+  edge" in the commit that changes its caller. A one-unit removal records
+  the set of names that unit registered (finite, known) and removes
+  exactly those.
+- Measure the synchronous remainder before deciding on it: if one unit's
+  respawn (1–3 s) is still blocking, making it asynchronous (with an
+  "applying" state) is the next decision, not something to fold into the
+  granularity fix.

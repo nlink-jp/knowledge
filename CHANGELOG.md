@@ -1,6 +1,19 @@
 # Changelog
 
-## 2026-09-08
+## 2026-09-08 (2)
+
+- 1 new entry from a post-release field report against the CLI agent's
+  settings panel and the pre-release review of its fix:
+  - **development-process**: reuse a "reload" path only when the
+    granularity of the change matches the granularity of the reload — a
+    one-row toggle that called the whole-set reconnect respawned 25
+    processes inside the UI's event loop; and an edge documented as
+    "bounded, acceptable" for transcript attribution (name-prefix
+    matching) became a live-tool loss the moment the same primitive
+    drove removal — re-review such allowances in the commit that changes
+    their caller.
+
+## 2026-09-08 (1)
 
 - 3 new entries from a CLI agent release that added name-based MCP tool
   exclusion, cut the startup banner to what nothing else will say, and ran six
