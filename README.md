@@ -28,10 +28,10 @@ Documents are consumed by reading `main` — there are no releases.
 | [macos-gui](docs/en/macos-gui.md) | SwiftUI/AppKit traps, menu-bar apps, Wails |
 | [web-ui](docs/en/web-ui.md) | CSS/layout traps in WebView frontends and self-contained HTML reports |
 | [mcp-server-design](docs/en/mcp-server-design.md) | MCP protocol limits, OAuth discovery limits, stdio hygiene, structured errors, LLM-facing tool design |
-| [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines, agent tool exclusion |
+| [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines, agent tool exclusion, choosing a judge model by generation not thinking level |
 | [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety |
 | [build-and-packaging](docs/en/build-and-packaging.md) | CGO cross-builds, .gitignore traps, CI-less release rationale |
-| [testing](docs/en/testing.md) | Real-data E2E, delivery verification, mockability, failure injection, MCP test harnesses, cross-platform verification, error-message quality, evidence quality when diagnosing, log timestamp semantics, convergence of independent verification passes |
+| [testing](docs/en/testing.md) | Real-data E2E, delivery verification, mockability, failure injection, MCP test harnesses, cross-platform verification, error-message quality, evidence quality when diagnosing, log timestamp semantics, convergence of independent verification passes, model-comparison bench design |
 | [containers-and-infra](docs/en/containers-and-infra.md) | Podman on macOS, DuckDB bind mounts, matplotlib fonts, log rotation, SSH liveness checks, why case-sensitive volumes break things |
 | [config-and-io](docs/en/config-and-io.md) | Canonical identifiers, strict config decode, storage-dir reconcile, volume free space, OAuth, terminal IO |
 | [shell-scripting](docs/en/shell-scripting.md) | BSD/GNU sed differences, zsh expansion quirks, Bash trap scope, substitution pitfalls |

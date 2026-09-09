@@ -905,3 +905,31 @@ equivalent). Feed it synthetic bad input — a corrupt artifact, a binary that w
 binary from another version, a missing marker — and assert a **non-zero exit**. Include one valid
 case too, so a gate that rejects everything is not mistaken for a working one. Run the self-test
 against the unfixed gate first and confirm it reports the misses, before trusting it.
+
+### A model-comparison bench interleaves configurations per case, time-boxes every call, and prints progress live
+
+**Symptom:** Three thinking configurations of the same model, run in
+parallel, throttled each other: medians above 30 s against a measured 4 s
+in production, useless for comparison. Run sequentially instead, one call
+stalled for 515 s, ate the 25-minute budget, and three of four
+configurations ended with zero data. Output sat in `t.Log`'s buffer, so
+nothing was visible for 25 minutes (2026-09, choosing an agent runtime's
+risk-evaluation model).
+
+**Why:** API conditions — congestion, retries, stalls — change by the
+minute. Running each configuration as a block mixes time-of-day into the
+between-configuration difference. A single overall deadline lets one stall
+take everything after it down. Buffered output cannot distinguish "not
+finished" from "broken".
+
+**How to apply:**
+- **Cases outside, configurations inside**: interleave, so a swing in API
+  conditions hits every configuration alike.
+- **`context.WithTimeout` per call** (say 90 s); a stall is one ERR line
+  and the loop moves on. The overall deadline sits above that.
+- **`fmt.Printf` each decision as it lands**, timestamped; keep `t.Log` for
+  the end summary. `go test -v` shows logs only when the test ends.
+- Do not run the same model in parallel with itself; parallelise across
+  models only.
+- Report both per-decision (several rounds folded into one verdict) and
+  per-call numbers, and count retries.

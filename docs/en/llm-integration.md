@@ -1448,3 +1448,37 @@ unknown until measured.
   prompt-shaping mechanism, not confinement.
 - **Measure the share of the prompt that declarations take** before building
   it. Without the number, "to shrink the prompt" is not a claim.
+
+### A short judgment call's latency is set by the model generation, not the thinking level — pick the judge by interleaved measurement in the same time window
+
+**Symptom:** An agent's risk evaluation (about 1k input tokens, a 30-token
+JSON verdict) went from two seconds to five-to-ten, some days twenty, after
+the main model moved to a newer flash generation (2026-09, an agent
+runtime). Lowering the main model's thinking from `high` to `low` changed
+nothing: 7.6–8.9 s per call whether the model spent 59 or 524 thought
+tokens. The time was the endpoint's, not the reasoning's. Interleaved in
+the same window, the previous flash generation at `low` took 3.7 s and the
+no-thinking lite model 2.0 s.
+
+**Why:** On a short call the generated token count is nearly fixed, so
+cutting thinking saves a few hundred tokens — sub-second. The difference is
+per-generation endpoint behaviour (first-token latency, congestion,
+retries). And verdict quality steps with generation and size: the lite
+model was fastest and approved "an MCP write outside the project" as "safe
+local work" on every run (fail-open). For a judgment call, not approving
+where there is no floor beneath comes before speed.
+
+**How to apply:**
+- Before "it is slow, lower the thinking", **measure per-call latency
+  against thought tokens**. No correlation means the dial is irrelevant and
+  the fix is the model (generation).
+- Give side-call judges **their own model slot in config** (e.g.
+  `[model].risk` and `[model].risk_thinking`) that does not inherit the
+  main model's thinking. An operator running the main loop at `high` should
+  not keep paying `high` for a JSON verdict.
+- Bench candidates **on the production prompt over the cases that actually
+  reach the judge** (drop what the rule tier stops), and **count false
+  approvals separately from false escalations**. One false approval from a
+  cheap model outweighs ten false escalations from a slow one.
+- Put the recommendation in the example config, not in the default: the
+  previous generation has a retirement date coming.
