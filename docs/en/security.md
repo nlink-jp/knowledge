@@ -1194,3 +1194,105 @@ complement of the credential list, and larger than it.
 **Why:** A namespace that previously contained only session IDs and work paths now contained credentials. Adding a key to ordinary TOML also made it readable by same-user shell commands. Mode 0600 alone does not protect that path.
 
 **How to apply:** Remove prefix-wide exemptions and let secret filtering take precedence. Do not inherit connection credentials into children that do not need them. Supporting keys in files requires protecting the actual custom path, resolved symlinks and file-tool access as well. This port narrowed support to environment-only keys and strictly rejected the TOML field. Pair a test that removes secrets while keeping ordinary session variables with a test that rejects keys in a custom config.
+
+## A restriction's message must be justified by each conjunct of its guard
+
+**What happened:** A session-wide read-only ceiling printed one of two
+sentences depending on whether its guarantee was kernel-backed. The guard
+was written as `Confined() && ReadLane()` — sandbox on, *and* the read
+lane verified. But `ReadLane` is false in three unrelated situations, only
+one of which is an absent sandbox: the operator opting into extra gating
+for read-lane commands, a failed startup probe, and the sandbox genuinely
+being off. So the two configurations that are *stricter* than the default
+were told "the sandbox is off, so a read-lane command is bounded by
+nothing" — printed directly beneath the banner line saying the sandbox was
+enabled. Both were in fact caged and additionally prompted.
+
+**Why:** A conjunction reads as "all the good things are true", which is
+the right shape for deciding whether to *allow* something and the wrong
+shape for deciding what to *say*. Each conjunct that can independently
+turn the message pessimistic has to independently justify that message.
+`ReadLane=false` means "this lane is not trusted to run unasked", which
+strengthens the restriction rather than removing it.
+
+**How to apply:**
+- Write the guard as the single fact the sentence is about
+  (`Confined()`), not as the set of facts you happened to have.
+- For every boolean in the guard, ask what its false value *means* — not
+  what it is usually accompanied by. A flag whose false value adds a
+  prompt is not the same kind of fact as one whose false value removes a
+  cage.
+- Test the message against the *strictest* configuration, not only the
+  default and the off case. The bug is invisible from both ends.
+- Watch for a test that reaches the wrong state and calls it the right
+  one. Here a fixture with no lane runner reported `Confined()==true` and
+  `ReadLane()==false`, which looked like the unconfined case and was not;
+  the test pinned the confusion instead of catching it. Assert the state
+  your fixture is actually in before asserting what it produces.
+
+(gem-agent, 2026-09: the session lane ceiling's startup and `/readonly`
+lines.)
+
+## An answer whose only effect is invisible when given is not an answer to offer
+
+**What happened:** An approval dialog offered "allow for this session"
+and "always allow, write it to the policy file" for a call that a session
+mode had made must-prompt. While the mode was on, both were refused an
+answer — the next call asked again — so pressing one bought the operator
+nothing they could observe. It silently registered a session allowlist
+entry (and, for the policy answer, a **global cross-session file**) that
+began applying the instant the mode was lifted.
+
+**Why:** The "may this run" decision and the "does a standing grant
+apply" decision were made in different places, and only the first knew
+about the mode. Suppressing a grant's *use* without suppressing its
+*creation* defers the grant instead of refusing it, and defers it past
+the condition that justified refusing it.
+
+**How to apply:**
+- When a mode makes a call must-prompt, remove the standing answers from
+  the prompt as well — labels, selection wrap, letter shortcuts and key
+  help together, from one count, so the four cannot disagree.
+- A question with a different answer set deserves its own method rather
+  than a flag threaded through the existing one. Where the interface has
+  many small test implementations, make it an *optional* interface (Go:
+  a type assertion with a fallback) and pin the implementations the
+  binary actually wires with compile-time assertions — a test that
+  enumerates them by name passes a fifth implementation by omission.
+- State the reason on the prompt, and make it survive whatever else
+  writes that field. Here an auto-approval tier overwrote the reason
+  wholesale on escalation, so exactly the path with the least operator
+  context lost the sentence explaining the missing answers.
+
+(gem-agent ADR-0080 §5, 2026-09: MCP calls under the read-only ceiling.)
+
+## A change log needs its baseline written before the first change, and reset when the log rotates
+
+**What happened:** A runtime recorded every mode change with who made it,
+then added a one-time record of what the modes started as. It was written
+at the first turn. Slash commands and key bindings can move a mode at the
+prompt, before any turn — so the change was logged first, and the
+baseline then recorded the already-changed value as the starting state. A
+session started writable and restricted by its operator became
+indistinguishable from one launched restricted. Separately, the
+once-per-session guard was not cleared when the command that starts a new
+transcript rotated the log, so the second transcript collected changes
+with no baseline at all.
+
+**Why:** "Once per session" was implemented as "the first time the turn
+loop runs", which is neither the first change nor the lifetime of the
+file the record lives in. A baseline is a property of the log, so it has
+to be tied to the log's lifetime and to the first thing that could make
+it stale — not to whichever code path happened to be convenient.
+
+**How to apply:**
+- Emit the baseline from the setter path as well as the session start; a
+  once-guard makes the extra call free.
+- Reset the guard wherever the log handle is replaced. Enumerate what a
+  restart clears by asking what belongs to the *file*, not to the
+  process.
+- If the baseline names a field, that field's changes must be recorded
+  too, or it is a baseline for nothing. Here a third setting was in the
+  baseline and had no change record from any of its three surfaces.
+
+(gem-agent, 2026-09: the `mode_start` / `mode_change` transcript pair.)
