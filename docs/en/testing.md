@@ -933,3 +933,37 @@ finished" from "broken".
   models only.
 - Report both per-decision (several rounds folded into one verdict) and
   per-call numbers, and count retries.
+
+### Measure an inline TUI's row arithmetic in tmux and script — the renderer paints only the latest View per tick
+
+**Symptom:** With Bubble Tea's inline renderer, closing a panel left one
+line of earlier output standing at the top of the screen. Two fixes
+reasoned from the code (pad the frame to height-1; choose the layout per
+View from the rows remaining) passed the unit tests and did nothing on a
+real terminal. A pseudo-terminal of known size (`tmux new-session -d -x
+100 -y 30`, driven with `send-keys`, read with `capture-pane -p`) plus a
+raw byte recording under `script` settled it: (1) a frame of N rows
+drawn from row printed+1 scrolls the terminal by printed+N−height rows,
+so a frame of height-1 leaves one row; (2) the renderer buffers the View
+of every Update and paints only the latest one on its tick — the
+full-height frame healed the counter, the next View re-derived the
+layout from the healed counter and flipped to the shorter frame, and
+the shorter frame is what reached the terminal (2026-09, an agent's
+TUI).
+
+**Why:** The model's row accounting assumes the View it returned is the
+one drawn, but a later Update can replace it before the tick. State
+re-derived on every View diverges when an update is self-referential,
+like a self-heal. Unit tests see only View's return value and cannot
+detect the difference.
+
+**How to apply:**
+- Fixes that touch row positions or scroll amounts are **counted on a
+  real terminal**: tmux (fixed size, `capture-pane`) and `script` (raw
+  bytes: count the `<CSI nA>` cursor-ups and the `\r\n`s). Eyeballing a
+  screenshot comes last.
+- A layout choice (full screen vs. fit in the rows remaining) is **made
+  once when the panel opens and held until it closes**, never re-derived
+  from the counter inside View.
+- A trace of "lines the model returned" is not evidence of what was
+  painted; confirm painting from the raw bytes.
