@@ -920,6 +920,32 @@ instructions found there becomes an **injection path into every later turn**.
 - Tell the operator how many messages were summarised. **A model that has
   forgotten something must not look like one that never knew it.**
 
+### Distinguish summary verification labels from source field values
+
+**Symptom:** A local LLM summarized a short conversation while retaining a
+source file's `status: done` as `Final Status: done`, but also added its own
+`Status: Verified (Completed)` heading. Asked for the verified status on the
+next turn, it returned the latter instead of the file's value. Keeping a fact
+in a summary and selecting the right fact during continuation are different.
+
+**Why:** The source field and runtime verification judgement shared the word
+status, creating a namespace collision through paraphrasing. Substring-based
+success checks can even accept the opposite meaning, such as `not done`.
+
+**How to apply:**
+- Preserve literal source keys and values in summaries, separately from
+  verification state and completed actions.
+- Identify the source in continuation questions: for example, the value of
+  the status field inside the file.
+- In synthetic evaluation, compare the actual file edit, summary values and
+  subsequent answer separately. Include a random marker and negative tests
+  rejecting semantically different values.
+- If both plain JSON and Markdown-fenced JSON are accepted, document the
+  accepted envelopes and record the distinction. Envelope parsing is not
+  permission to repair field values.
+- Passing a corrected short example is not evidence of general long-context
+  compaction quality.
+
 ### Subagent output contracts must state what NOT to output
 
 **Symptom:** Instructed only with a schema and "what to report", multiple

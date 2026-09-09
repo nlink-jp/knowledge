@@ -1185,3 +1185,12 @@ complement of the credential list, and larger than it.
   script through the lanes in that layout. A recommendation of a broken
   layout is invisible to a documentation read. (gem-agent ADR-0076: the
   configuration home stays readable; skills are copied.)
+
+
+### Re-evaluate namespace exemptions when a port adds credentials to a formerly harmless prefix
+
+**Symptom:** An agent port from a cloud SDK to an OpenAI-compatible API added a namespaced API-key environment variable. Its inherited read lane allowed every variable with that prefix before applying secret detection, allowing an unprompted child shell to expose the key to the model and transcript. Independent review caught it before a real key was used.
+
+**Why:** A namespace that previously contained only session IDs and work paths now contained credentials. Adding a key to ordinary TOML also made it readable by same-user shell commands. Mode 0600 alone does not protect that path.
+
+**How to apply:** Remove prefix-wide exemptions and let secret filtering take precedence. Do not inherit connection credentials into children that do not need them. Supporting keys in files requires protecting the actual custom path, resolved symlinks and file-tool access as well. This port narrowed support to environment-only keys and strictly rejected the TOML field. Pair a test that removes secrets while keeping ordinary session variables with a test that rejects keys in a custom config.

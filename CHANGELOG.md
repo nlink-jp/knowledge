@@ -2,6 +2,14 @@
 
 ## 2026-09-09
 
+- **security**: re-evaluate namespace-wide environment exemptions when a port
+  introduces API credentials; protect child environments and reject unsupported
+  credential storage paths with regression tests.
+
+- **llm-integration**: distinguish literal source field values from summary
+  verification labels; verify actual edits and post-summary answers separately,
+  with exact semantic checks and explicit JSON envelope handling.
+
 - 9 new entries from a two-report review of an agent runtime (a whole-project
   review and a review of its auto-approve mode), their fixes, and the design
   decisions that followed:
