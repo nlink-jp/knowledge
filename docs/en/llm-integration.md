@@ -794,6 +794,35 @@ local models (measured 70% → 100% after local-specific optimization).
 4. State domain-specific decisive rules explicitly (e.g. suspicious link +
    password request = phishing regardless of authentication).
 
+### A local inference server's prefix cache is lost on one byte of the system prompt — session facts go in the conversation
+
+**Symptom:** On a local inference server (a 26B-class model, 23 MCP servers
+= 243 tool schemas = about 60k tokens) a new session took 118 s to its
+first token. Re-sending the identical prefix took 2 s. The difference was
+the cache hit, and one line of the system prompt — the session work
+directory and the date — changed every session (2026-09).
+
+**Why:** An OpenAI-compatible server renders the tool schemas after the
+system text. One changed byte anywhere in the system text, first line or
+last, re-processes everything after it, schemas included. Prompt processing
+measured about 580 tok/s, so 60k tokens is two minutes. A second system
+message is folded into the system turn and costs the same (118 s); a
+user-role message keeps the prefix (2 s).
+
+**How to apply:**
+- Keep the system prompt byte-identical across sessions and pin it with a
+  test (build it twice from the same configuration and compare).
+- Pass the per-session facts (isolation tag name, work directory, start
+  date, the catalog of connected MCP servers) as a user-role message that
+  opens the conversation. The model was measured reading it.
+- Shrink the tool block itself: register MCP tools without advertising
+  them, and advertise a server on demand through a catalog plus
+  `mcp_load(server)` (measured 34,947 → 4,578 tokens). Calls go through the
+  native schema after the load — an `mcp_call(server, tool, json)` proxy
+  renders no schema and loses argument discipline.
+- "Characters ÷ 4" overestimates tokens (317k characters measured 60k
+  tokens); measure with `stream_options.include_usage`.
+
 ## Agents & subagents
 
 ### An agent's enumeration tools break at scale unless they are ignore-aware — measure the denominator first

@@ -457,6 +457,37 @@ record whose substance is the successor's design.
   (published release notes and changelogs link to it); living references are
   re-pointed to the new location directly.
 
+### Ported code carries the source's ADR numbers bare — qualify them with the source's name and close the class with an existence test
+
+**Symptom:** A repository started as a separate product line by porting
+packages from an existing runtime (2026-09) had about 850 `ADR-NNNN`
+citations in comments that were still the source's numbers. The repository
+had ADRs 0001–0005 of its own, and `ADR-0004` meant "MCP tools advertised
+on demand" here and "the auto-approve ladder" in the source. A maintainer
+opening the local ADR-0004 from an auto-approve comment read a different
+design. A shipped template even pointed users at ADR-0008 / ADR-0077, which
+did not exist.
+
+**Why:** A port copies the comments with the code. The source's design
+references are worth keeping (the "why" lives only in the source's
+records), but a bare number does not say which repository's record it is.
+Every new local ADR widens the collision range, so the problem only grows
+if left alone.
+
+**How to apply:**
+- Copy the source's references qualified with the source's name, as in
+  `gem-agent ADR-NNNN`. A bare `ADR-NNNN` is reserved for the repository's
+  own records.
+- The range that collides with local numbers (0001–0005 here) cannot be
+  rewritten mechanically — read and classify each site. Everything else is
+  one regular expression.
+- Close the class with an AST test: a bare `ADR-NNNN` in a comment or
+  string literal fails unless `docs/en/adr/NNNN-*.md` exists. That test
+  caught the one site where a line break had split `gem-agent` from
+  `ADR-0065`.
+- Shipped artifacts (config templates, user-facing docs) name config keys,
+  never ADR numbers.
+
 ### Bundle small independent UX polish into one wide-scope ADR
 
 **Symptom:** Five small improvements from live feedback (each <100 lines,
