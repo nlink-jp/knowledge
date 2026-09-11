@@ -1336,3 +1336,41 @@ descriptions the model reads.
 - Ship as an opt-in with the default unchanged. Put the trigger ("no
   tool for it in your list → find_tools; you know the server →
   mcp_load") in the system prompt and name no competing path.
+
+### Point toolchain caches inside the sandbox at the session scratch — a shared cache is a poisoning route from an unattended lane
+
+**Symptom:** In an agent whose Seatbelt read lane may write only its
+private scratch, `go vet` / `go test` failed with "operation not
+permitted": Go's build cache lives under `~/Library/Caches/go-build`,
+which no lane may write. The prompt said "build and test tools write
+their caches, so use the write lane", so every vet and test — mere
+inspection — paid an approval or two model-tier rounds. In one-shot
+runs the write lane was denied unattended, the denial said "ask the
+user", and the model ended in prose (2026-09; found by a local-LLM
+agent's bench, reproduced on the Vertex sibling on the same machine).
+
+**Why:** The lane design is right; the runtime simply gave the cache
+nowhere to go. Allowing `~/Library/Caches` is not an option for the
+read lane: an unasked command that writes a content-addressed shared
+cache plants an object a later build outside the sandbox will trust.
+
+**How to apply:**
+- Run every lane's shell with `GOCACHE=<session scratch>/go-build`.
+  The scratch is the one place the read lane may write and the
+  write/operator lanes may write too; the cache stays warm for the
+  session and never touches the operator's. Keep the list in one
+  function; add another toolchain only after measuring the same
+  failure (the module cache `~/go/pkg/mod` remains a gap).
+- Make the prompt and the tool description true: the read lane runs
+  inspection plus compile/vet/test; a build that writes a binary into
+  the project needs the write lane. Drop standing rules of the "a
+  denial is a decision — ask" kind and put the route in the denial
+  result itself.
+- An unattended (one-shot) denial says: this run is unattended, nothing
+  needing approval can run, continue with the tools that need none
+  (project file tools, the read lane) or finish and state what remains.
+  "Ask the user" addresses someone absent and provokes prose.
+- The pointer alternative ("N files — call list_files") was measured
+  and rejected: the model follows the pointer every time and the round
+  is spent anyway. Do not name a route the tool can walk itself; put
+  the result in.
