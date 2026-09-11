@@ -29,7 +29,7 @@ Documents are consumed by reading `main` — there are no releases.
 | [web-ui](docs/en/web-ui.md) | CSS/layout traps in WebView frontends and self-contained HTML reports |
 | [mcp-server-design](docs/en/mcp-server-design.md) | MCP protocol limits, OAuth discovery limits, stdio hygiene, structured errors, LLM-facing tool design |
 | [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines, agent tool exclusion, choosing a judge model by generation not thinking level, a local server's prefix cache vs the system prompt |
-| [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety |
+| [security](docs/en/security.md) | Prompt-injection defense, secrets/PII hygiene, internet-facing checklist, destructive-op safety, quarantining unwrappable tool descriptions |
 | [build-and-packaging](docs/en/build-and-packaging.md) | CGO cross-builds, .gitignore traps, CI-less release rationale |
 | [testing](docs/en/testing.md) | Real-data E2E, delivery verification, mockability, failure injection, MCP test harnesses, cross-platform verification, error-message quality, evidence quality when diagnosing, log timestamp semantics, convergence of independent verification passes, model-comparison bench design, measuring inline TUI rows in tmux |
 | [containers-and-infra](docs/en/containers-and-infra.md) | Podman on macOS, DuckDB bind mounts, matplotlib fonts, log rotation, SSH liveness checks, why case-sensitive volumes break things |
