@@ -30,7 +30,11 @@ tool call runs to upstream completion.
 - The reliable client-side way to "stop waiting" is **killing the child process
   and closing stdin to unblock the Scan** (kill-and-respawn). Sending
   `notifications/cancelled` before the kill is fine, but never expect the send
-  alone to stop anything. A context-aware wrapper is `goroutine +
+  alone to stop anything. A send followed at once by SIGKILL gives even a
+  cooperating server no time to act, and the spec defines no acknowledgement
+  to wait for — sending it usefully means a grace period before the kill,
+  which is a return delay on every timeout (2026-09: the agent runtime chose
+  not to send it). A context-aware wrapper is `goroutine +
   select(ctx.Done, result)` with Stop()-kill on cancel.
 - After killing, the client owns re-spawning **that server only**, asynchronously
   (restarting all servers drags in unrelated ones).
