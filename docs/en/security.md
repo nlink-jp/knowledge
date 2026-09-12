@@ -1060,6 +1060,20 @@ domain to a bounded one, the list of SBPL operations.
   ask the operator) but not on the content-pin list: a pin guards what
   is consumed, and a change to a file the runtime never loads alters
   nothing it loads.
+- **Co-resident runtimes also reconcile their credential lists.** The
+  same two runtimes: one had the org's own MCP OAuth bridge's
+  configuration home (`config.json` with pre-registered client secrets
+  and static API-key headers, `state/<server>/tokens.json` with the
+  tokens) on its credential list from its first release, the other did
+  not, and the other's read lane read that file unasked (2026-09). A
+  list that starts from "well-known credential stores" misses the org's
+  own tools, because nobody's notion of well-known includes them. When
+  an org tool writes secrets under `~/.config`, put that directory on
+  both runtimes' lists in the same change, and diff the sibling's list
+  whenever an entry is added to one. Refusing to deny the configuration
+  home wholesale (the Seatbelt section below) presupposes that this
+  finite list is the mechanism; adding an entry is that decision working
+  as intended, not reopened.
 - Name the three layers: the sandbox bounds reach, the model tier judges
   meaning inside the bound, the operator-only policy is what no model
   approval lifts.
