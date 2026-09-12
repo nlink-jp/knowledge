@@ -1051,6 +1051,15 @@ domain to a bounded one, the list of SBPL operations.
   tier's (or nobody's under a `never` policy), and the docs must say so.
 - **A rule enforced twice is one list read twice** (scratch, persistent
   files, credential paths — shared by the profile and the file tools).
+- **Co-resident runtimes protect each other's persistent files.** Two
+  agent runtimes that share projects (2026-09: gem-agent and lagent)
+  each carry a project config the other never reads; a file only one
+  runtime protects is a file the other's model may rewrite — Safe under
+  auto-approval, writable in its write lane. Put the sibling's config on
+  the persistent-file list (the write lane denies it, the file tools
+  ask the operator) but not on the content-pin list: a pin guards what
+  is consumed, and a change to a file the runtime never loads alters
+  nothing it loads.
 - Name the three layers: the sandbox bounds reach, the model tier judges
   meaning inside the bound, the operator-only policy is what no model
   approval lifts.
