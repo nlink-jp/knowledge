@@ -1355,10 +1355,14 @@ read lane: an unasked command that writes a content-addressed shared
 cache plants an object a later build outside the sandbox will trust.
 
 **How to apply:**
-- Run every lane's shell with `GOCACHE=<session scratch>/go-build`.
-  The scratch is the one place the read lane may write and the
+- Run every lane's shell with `GOCACHE=<session scratch>/…`. The
+  scratch is the one place the read lane may write and the
   write/operator lanes may write too; the cache stays warm for the
-  session and never touches the operator's. Keep the list in one
+  session and never touches the operator's. **Give the unasked lane
+  and the approved lanes separate directories** (`go-build` /
+  `go-build-approved`): Go trusts a cache entry on read, so one shared
+  directory lets an unasked command plant an object an approved build
+  consumes. Keep the list in one
   function; add another toolchain only after measuring the same
   failure (the module cache `~/go/pkg/mod` remains a gap).
 - Make the prompt and the tool description true: the read lane runs
