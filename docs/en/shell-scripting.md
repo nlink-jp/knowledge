@@ -144,3 +144,31 @@ excuse one command swallows every mandatory gate in front of it.
 **How to apply:** Put a command whose failure is acceptable in its **own statement**. Gate each
 mandatory step separately with its own message: `|| { echo …; exit 1; }`. A pipeline ending in
 `head` has the same shape — the exit status is `head`'s — and is not a reason to add `|| true`.
+
+## `cmd | grep -q` under `set -o pipefail` fails on a match
+
+**Symptom:** A release-verification script checked the signature of a downloaded binary:
+
+```sh
+set -o pipefail
+codesign -dvv "$bin" 2>&1 | grep -q '^Authority=Developer ID Application' || { echo "FAIL: not Developer ID signed"; rc=1; }
+```
+
+The line before it — the same command without `-q` — had just printed
+`Authority=Developer ID Application: …`. The gate still reported FAIL, twice, on an asset that
+was correctly signed.
+
+**Why:** `grep -q` exits at the first match. If the producer still has output to write, its next
+write hits a closed pipe and it dies with SIGPIPE (status 141). Under `pipefail` the pipeline's
+status is the rightmost non-zero one, so a *successful* match becomes a failure whenever the
+producer's output is longer than the matched line. Without `-q`, grep reads to the end and the
+producer finishes normally, which is why the neighbouring line looked fine. The behaviour is
+racy: a short output may fit in the pipe buffer and pass.
+
+**How to apply:** Capture the producer's output once into a variable and grep that —
+`info=$(codesign -dvv "$bin" 2>&1); printf '%s\n' "$info" | grep -q …` — or use a form that
+reads everything (`grep -c … >/dev/null`). Never put `pipefail`, a chatty producer and an
+early-exiting consumer (`grep -q`, `head`, `read`) on one pipeline whose status is a gate. When
+a gate reports a failure that the same evidence, printed a line earlier, contradicts, suspect
+the plumbing before the asset — then fix the check and re-run it for a machine verdict instead
+of reasoning the FAIL away.
