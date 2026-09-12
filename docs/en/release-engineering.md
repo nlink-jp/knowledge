@@ -447,3 +447,46 @@ artifact.**
   against the condition (does it reach the distribution?).
 - Attribution text spreads by copy-paste. Check the body does not still name
   another project.
+
+## A second agent's build during a release: freeze, then prove the published asset's origin — never rebuild to compare
+
+**Symptom:** While one session was releasing gem-agent (2026-09-13), another
+agent ran `make build` in the same working copy (and in a sibling repository),
+wrote an ad-hoc-signed `dist/<name>`, and then reported that its output might
+have reached the published archive. `dist/` is a shared output directory; two
+writers were in it within minutes of each other.
+
+**Why it matters:** Structurally the mix-up is unlikely — `make build` writes
+`dist/<name>`, `make package` builds and zips `dist/<name>-darwin-arm64` and
+never reads the other file, and the release's opening `make clean` removes
+whatever was there — but "unlikely" is not evidence, and the first impulse
+(rebuild and compare) destroys the evidence that exists. The question has to
+be settled from the published asset and from records nobody edits.
+
+**How to apply:**
+- **Freeze first.** No `make clean`, no rebuild, no re-sign until the audit is
+  done; every step below is read-only.
+- **Origin, from the published asset itself.** `gh release download` the zip
+  to a file, `ditto -x -k` it, then `go version -m <binary>`: `vcs.revision`
+  must be the release commit and `vcs.modified=false`. A binary built at
+  another commit or from a dirty tree cannot forge these. Here the stray build
+  carried `v0.77.1-2-g93b02e6`, a commit older than the release commit — that
+  alone placed it before the release's `make clean`.
+- **Identity, from Apple.** `xcrun notarytool history --output-format json`
+  gives the submission id; `xcrun notarytool log <id>` carries the `sha256` of
+  what Apple actually examined. It must equal the published asset's
+  `shasum -a 256` (saved to a file, never piped), the local zip's and the tap
+  formula's. Four equal hashes close the question; `cmp` of the zip's binary
+  against `dist/<name>-darwin-arm64` is the fifth.
+- **Timeline, from what nobody edits.** `git reflog --date=iso` (commit and
+  amend times), `ls -lT dist/` (binary → zip → `.notarized` marker order), the
+  asset's `createdAt` from `gh release view --json assets`, and the stray
+  artifact's mtime. Put them in one table: the stray build either precedes
+  `make clean` (deleted, never packaged) or follows the upload (irrelevant),
+  and a build inside the seconds between binary and zip still writes a
+  different file name.
+- **Operationally, a release owns its working copy.** Another agent that needs
+  a build of that repository works in its own clone or waits; a shared `dist/`
+  is where two writers meet. The release steps are the guard (`make clean &&
+  make package`, `verify-release`'s marker-freshness gate); `go version -m`
+  and the notary log are the audit that proves it afterwards.
