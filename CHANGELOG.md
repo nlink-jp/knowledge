@@ -2,6 +2,10 @@
 
 ## 2026-09-12
 
+- **containers-and-infra**: a retention period is not a retention
+  depth — ingestion lag eats into the new end, and an expiration set before a
+  backfill finishes silently deletes the oldest days as they land.
+
 - **llm-integration**: in a tag-delimited stream with no escaping, honour only
   JSON-bodied tags and pair openers one at a time; check a metered API key
   with a request that cannot succeed, and map errors by the body's code
