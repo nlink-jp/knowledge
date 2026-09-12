@@ -11,7 +11,7 @@
   document id, hold it in memory for the turn, and derive the default page size
   from the consumer's byte cap and the language's byte ratio.
 
-- **containers-and-infra**: a retention period is not a retention
+- **config-and-io**: a retention period is not a retention
   depth — ingestion lag eats into the new end, and an expiration set before a
   backfill finishes silently deletes the oldest days as they land.
 

@@ -95,49 +95,6 @@ real run. `(no old logs will be kept)` means `rotate` is not in effect. The
 systemd daily run uses `ExecStart=/usr/sbin/logrotate /etc/logrotate.conf`, so the
 automated path is correct and only manual invocations hit this.
 
-## A retention period is not a retention depth — ingestion lag eats into what you keep
-
-**Symptom:** Intending to keep 400 days, a partition expiration of 400 days was configured; only
-399 days were actually queryable. On top of that, of the 450 days of history the source backfilled,
-the oldest 50 days vanished as they landed. **Neither produced an error or a warning.**
-
-**Why:** The retention window is bounded at both ends. The old end is "today − expiration", which
-the lifecycle setting deletes. The new end is "today − ingestion lag", which the source has not
-published yet. Expiration only moves the old end, so:
-
-```
-days actually retained = expiration − ingestion lag + 1
-```
-
-For data that arrives 1-3 days late, such as daily rollups, you are always short by the lag. And
-when a bulk historical load (backfill) lands in a destination that already has an expiration, the
-**oldest partitions expire as fast as they arrive**. Both the load and the deletion are behaving
-correctly, so nothing surfaces as an anomaly.
-
-**How to apply:**
-
-- When the retention depth is a requirement, set the expiration to **"days you want + ingestion
-  lag"**. If the lag varies, budget for the worst case.
-- **If the oldest surviving day equals "today − expiration" exactly, you are deleting it yourself,
-  not hitting the source's limit.** A source-side limit leaves the oldest day on a date unrelated to
-  your setting, and it does not advance as days pass. Your own expiration makes it advance by one
-  day, every day. That is how you tell them apart.
-- **Do not set an expiration until the backfill has finished** (or set it above the maximum the
-  source can deliver, then wait). A load can take days, and its intermediate state looks sparse and
-  broken. Raising the expiration afterwards does not resurrect what was deleted.
-- **A default expiration only applies to objects created after it is set.** The one clean moment is
-  right after creating the container and before any content exists. Miss it and you must enumerate
-  the existing objects and set each one — anything you miss grows without limit.
-- **Do not govern a container holding data with different lags by a single default.** When
-  per-event data (lag in minutes) and daily rollups (lag in days) share a container, only the
-  latter comes up short.
-- An expiration promises "delete anything older than this", not "keep this much". It rolls: one day
-  drops off the tail every day, and depth never accumulates. Where long-term retention is an
-  obligation, provision a separate tier that is never deleted, alongside the expiring hot tier. The
-  hot tier's expiration is a setting about query speed and cost, not about preserving evidence.
-
-Origin: retention design for an audit-log export into a data warehouse (2026-09).
-
 ## An SSH liveness check locks out the checker itself on OpenSSH 9.8+
 
 **Symptom:** While investigating a server whose SSH went unreachable every few

@@ -33,8 +33,8 @@ English version: [README.md](README.md)
 | [security](docs/ja/security.md) | プロンプトインジェクション対策、秘密情報/PII、公開サービス、破壊的操作の安全設計、ラップできないツール説明文の隔離、sandbox 内のツールチェインキャッシュ、dialer 内で閉じる SSRF |
 | [build-and-packaging](docs/ja/build-and-packaging.md) | CGO クロスビルド、.gitignore の罠、CI 不使用の判断理由 |
 | [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、クロスプラットフォーム検証、エラー文言の質、診断時の証拠の質、ログの時刻表現、独立検証パスの収束判定、モデル比較ベンチの設計、inline TUI の行計算は tmux で実測 |
-| [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント、ログローテート、データ保持期限、SSH 死活監視、case-sensitive ボリュームの禁忌 |
-| [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
+| [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント、ログローテート、SSH 死活監視、case-sensitive ボリュームの禁忌 |
+| [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、データ保持期限、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
 | [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用 |
