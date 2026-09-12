@@ -823,6 +823,41 @@ user-role message keeps the prefix (2 s).
 - "Characters ÷ 4" overestimates tokens (317k characters measured 60k
   tokens); measure with `stream_options.include_usage`.
 
+### Set a retry bound by replaying the captured request — a mis-sampled token is not a one-off
+
+**Symptom:** A local model returned an empty completion (no text, no
+tool call, four output tokens, one broken tool-call opener
+`<tool_call|>` in the reasoning channel) and a one-shot run ended
+there. Read as a one-off mis-sample, it got an ADR with one retry; the
+same day a run hit two empties in a row. The captured request replayed
+against the server four times came back empty twice — about a coin
+flip at the point it strikes, so one retry loses a quarter of the
+cases. Even with the bound raised to two, the final-answer point after
+a successful verification produced three in a row in 1/8 runs (2026-09,
+a local-LLM agent).
+
+**Why:** "The re-send succeeded in the other runs" was not a
+reproducibility measurement: each run had a different prefix (a
+session nonce). A sampling fault is neither deterministic nor one-off;
+it has a per-point probability, and a bound not derived from that
+probability retries and still loses.
+
+**How to apply:**
+- Keep an opt-in trace (one environment variable) that writes the raw
+  request and response to files, and replay the request at the moment
+  of the fault with `curl` N times to measure the rate. That rate is
+  the retry bound's evidence.
+- Bound on the premise that a re-send is cheap (an identical request
+  hits the prefix cache in seconds); never unbounded (it hides a
+  server that stopped answering).
+- Record every attempt in the transcript (a `retried` flag) and count
+  in the bench, with the denominator, whether the retry fired and
+  whether it recovered. Unit tests pin the wiring only.
+- If the rate differs by point, some points need more than a retry.
+  Record the remedy for that point (a nudge kept out of the history, a
+  seed change, isolating the server-side template) as the next
+  measurement instead of raising the bound again.
+
 ## Agents & subagents
 
 ### An agent's enumeration tools break at scale unless they are ignore-aware — measure the denominator first
