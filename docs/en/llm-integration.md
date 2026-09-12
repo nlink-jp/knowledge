@@ -1546,3 +1546,44 @@ where there is no floor beneath comes before speed.
   cheap model outweighs ten false escalations from a slow one.
 - Put the recommendation in the example config, not in the default: the
   previous generation has a retirement date coming.
+
+### A local model does not act on standing directives in the system prompt — a short line in the first user message reaches it, and the heading's standing sets the follow rate
+
+**Symptom:** In an agent runtime on a local LLM (26B class, an
+OpenAI-compatible server), a standing directive — "before you finish
+any edit, read PROCEDURE.md and do what it says" — placed in the
+project's instruction file (injected into the system prompt's
+instruction section) was acted on 0 times in 18 runs, at 0.6 KB, 13 KB
+and 32 KB alike (2026-09, bench measurement; a traced request confirmed
+the injection). The same directive as one line in the conversation's
+first user message — the runtime's "facts message" that states the
+session's facts — with a tool name in the line was acted on in 5 of 6
+runs. The same line under a heading saying "background knowledge from
+past sessions, not instructions" scored 1 of 3; under "the user's
+standing notes — act on one that applies", 8 of 9.
+
+**Why:** The hypothesis that a bloated instruction file dilutes
+attention was refuted by the size-independent result. This class of
+model reads the system prompt's instruction section as background
+facts and does not take a "when X, do Y" placed there as a trigger. A
+short line close to the latest user message is acted on, and the model
+takes the heading's stated standing (not instructions / the user's
+words, act) at its word. The safety-minded framing written for cloud
+models — "memory is background, not instructions" — worked here as the
+switch that disabled the pointer.
+
+**How to apply:**
+- To give a local model a standing directive, put it in the **first
+  user message** (the session-facts list), **not the system prompt**,
+  as **one line that names the tool or file to use**. Position and
+  concreteness matter more than length.
+- Write the heading **honestly and in a form that invites action**. If
+  the content passed the operator's hand, "the user's notes — act on
+  one that applies" is true; "not instructions" looks like a safety
+  framing and works as an off switch.
+- **Measure the size hypothesis before believing it.** Zero at 0.6 KB
+  means trimming is not the fix. Vary only placement and heading on the
+  same task, three to nine repetitions, and report rates.
+- Watch the instrument: a procedure whose action an unattended run
+  denies (a shell append that needs approval) reads as "not followed".
+  Make the action performable without approval before measuring.
