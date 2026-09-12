@@ -2,6 +2,13 @@
 
 ## 2026-09-12
 
+- **llm-integration**: in a tag-delimited stream with no escaping, honour only
+  JSON-bodied tags and pair openers one at a time; check a metered API key
+  with a request that cannot succeed, and map errors by the body's code
+  before the HTTP status.
+- **testing**: a single observation is not a rule — record the counts, word
+  reader-facing text after the observation, and correct every surface at once.
+
 - **mcp-server-design**: correct the claim that MCP has no cancellation
   notification — `notifications/cancelled` exists since 2024-11-05; the receiver
   may ignore it, so kill-and-respawn remains the reliable stop.

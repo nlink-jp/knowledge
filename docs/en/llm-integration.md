@@ -222,6 +222,34 @@ was deliberately **not** created.
 - Keep **paths per-tool** (`~/.config/<tool-name>/config.toml`) — preserving each
   tool's ability to point at an independent GCP project (staging vs production).
 
+### Check a metered API key with a request that cannot succeed, and read the body's code, not the status
+
+**Symptom:** A search API had no "is this key valid" endpoint, and a real
+search would be billed. The documentation said only successful responses are
+billed.
+
+**Why:** An invalid request (a required parameter missing) always fails, and
+a failure is not billed — and the *content* of the refusal reveals the key's
+standing. Measured, though, a bad key came back as **422**, not 401: the same
+status as a malformed request. The only distinction was the body's
+`error.code` (`SUBSCRIPTION_TOKEN_INVALID` vs `VALIDATION`), and a missing
+header arrived as `VALIDATION` naming the header. Mapping by status would
+have reported "your key is wrong" as "your arguments are wrong".
+
+**How to apply:**
+- Check a key with a request that is certain to fail **after** the key has
+  been checked (a missing required parameter). That the failure is unbilled
+  is a documentation claim; confirm it on the dashboard the first time.
+- Map errors by the **upstream body code first** and the HTTP status second.
+  One 422 carrying "bad key", "missing header" and "bad argument" is not
+  unusual.
+- A key issued per plan is not necessarily enforced per endpoint (measured:
+  the other plan's key was accepted with 200, merely billed and throttled
+  under its own plan). Keep the separation in the tool; do not fall back.
+- "There is no standard way to check a key" is a fact the API decides —
+  verify it with one curl before designing around it. The design here broke
+  the moment a placeholder key was reported `valid`.
+
 ### If a specialised model exists, stop asking a general LLM to author the structure
 
 **Symptom:** A transcription tool asked a general LLM to reply with a JSON document of
@@ -630,6 +658,38 @@ normalizing whitespace — reading the same content, changing nothing,
 and not preventable by teaching. Before adding any other
 transformation, ask whether 1–3 covers it; if you must add it,
 **freeze** it and route later additions to the prompt.
+
+### In a tag-delimited stream with no escaping, treat only JSON-bodied tags as machinery
+
+**Symptom:** A search API's streamed answer carried control tags inside the
+text — `<citation>{…}</citation>`, `<usage>{…}</usage>`,
+`<progress>{…}</progress>`, `<answer>…</answer>` — with no escaping
+convention. An independent review pointed out that asking about the HTML
+`<progress>` element would get the answer's own `<progress>` mistaken for a
+control tag, cut from the text and emitted as a bogus progress report, and
+that a citation snippet containing a closing tag would truncate the JSON and
+drop the citation silently.
+
+**Why:** Brackets alone cannot tell prose from machinery. Worse, a naive
+implementation pairs "the first opener with the first closer", so a literal
+opener in prose pairs with the *real* closer and **swallows the real tag**
+(`a <progress> element … <progress>{json}</progress>` loses the real one).
+
+**How to apply:**
+- Honour a **JSON-carrying tag** (citation / usage / progress) only when its
+  body parses as a JSON object; leave anything else as text.
+- Pair by advancing **one opener at a time**: when the body is not JSON,
+  resume the search at the next opener, never past the closer. Skipping past
+  the closer is what swallows the real tag.
+- **Text-carrying tags** (answer / blindspots / thinking …) cannot be told
+  apart in principle. If you strip them, record the limit and pin it with a
+  test ("a question about `<thinking>` loses that span").
+- Require the stream terminator (`[DONE]` or equivalent). Never return a
+  truncated body as a complete answer.
+- Write down the shapes you measured. Research mode's `<answer>` body turned
+  out to be `{"answer": "…"}` JSON, not prose — a parser that assumed prose
+  would have displayed the JSON verbatim. A `tags_seen` count (per tag name)
+  in the result is the first thing that notices when the shape changes.
 
 ### Validate semantic consistency, not just schema
 

@@ -967,3 +967,32 @@ detect the difference.
   from the counter inside View.
 - A trace of "lines the model returned" is not evidence of what was
   painted; confirm painting from the raw bytes.
+
+## Do not write a single observation as a rule — write it with its counts
+
+**Symptom:** A search API's answers came back without citations twice when
+the reply language was `ja`, and README, the manual and a note attached to
+results all asserted "citations are emitted only for `language=en`". The
+third `ja` run returned 24 citations. Five runs read en → 29, 29 / ja → 0, 0,
+24.
+
+**Why:** Two agreeing observations look like a rule, and isolating the cause
+(country vs language) one variable at a time only added confidence. But the
+system was non-deterministic (an LLM sits behind the API) and two samples
+were far too few. The assertion spread at once to every reader-facing surface
+— manual, README, result note — and the correction had to reach all of them.
+
+**How to apply:**
+- For non-deterministic systems (LLMs, search, the content of external
+  responses), **record the count and the breakdown verbatim** ("5 runs: en
+  29, 29 / ja 0, 0, 24"). "Only when" and "always" wait for ten or more
+  agreeing runs on the same input.
+- Reader-facing wording follows the observation ("unreliable for non-English
+  replies"). A note attached to a result does the same, and adds the sentence
+  that keeps an empty value from being read as "does not exist".
+- Isolating experiments (one variable at a time) narrow the candidate causes;
+  they **do not prove a rule**. Repetition under identical conditions comes
+  after the isolation, not instead of it.
+- When correcting an assertion, grep every surface that carried it (README,
+  manual, result note, ADR, CHANGELOG) and fix them in one pass; fixing one
+  surface creates drift.
