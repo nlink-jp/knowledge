@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-13
+
+- **security**: a protected-path list is enforced per operation, not per tool
+  family — count the read tools among a credential list's enforcers, mirror
+  the lanes (an operator-only Review for a single-file read, skip-and-report
+  for enumeration), and pin every enforcer with a test.
+
 ## 2026-09-12
 
 - **security**: close SSRF inside the HTTP dialer as a finite address domain

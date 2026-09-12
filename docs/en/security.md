@@ -1252,6 +1252,19 @@ complement of the credential list, and larger than it.
 
 **How to apply:** Remove prefix-wide exemptions and let secret filtering take precedence. Do not inherit connection credentials into children that do not need them. Supporting keys in files requires protecting the actual custom path, resolved symlinks and file-tool access as well. This port narrowed support to environment-only keys and strictly rejected the TOML field. Pair a test that removes secrets while keeping ordinary session variables with a test that rejects keys in a custom config.
 
+### A protected-path list is enforced per operation, not per tool family — the write tools' Block is not the read tools' protection
+
+**Symptom:** A local agent's credential-path list (`.env` and its variants, private keys, `credentials.json`, the token stores under home) was enforced at three points: the read and write lanes' Seatbelt profiles, the write tools' rule tier (Block) and the shell Block floor. The read tools (read_file / search_files / view_image / file_info) checked the root boundary and nothing else, so `read_file .env` inside the project was "read-only tool: Safe", ran unasked, and sent the content to the model and the transcript; search returned the matching lines of `.env`. An external review surfaced it with the sentence "do not read write_file's protection as read_file's" (2026-09, a local-LLM agent; the co-resident runtime shared the hole).
+
+**Why:** The list's enforcers were counted by tool family — "the file tools" — and a rule the write tools had read as one the file tools had. Protection is needed per operation that opens the path, and the read tools perform the same operation the shell's read lane performs (file-read), outside the kernel's cage. In the lanes only the operator lane may read credentials; the tools had no counterpart to that.
+
+**How to apply:**
+- When a protected-path list exists (credentials, persistent files, scratch), the ADR **enumerates the enforcers that read it, by operation** (read / write / exec / enumerate), never by a family such as "the file tools". An operation not in the enumeration is unprotected.
+- Pin every enforcer with a test and map each list addition to the test that catches it; run a new assertion against the old code once.
+- Make the read tools' verdict a mirror of the lanes: the list the read and write lanes deny is, for a single-file read tool, a Review only the operator answers (the operator lane's verdict — no standing grant, `never` row or one-shot answers it). The enumeration tools (search / list) do not ask: they skip and report the count, the names and the route (read_file on one asks the operator) — a silent empty search is a false negative, a listing that hides without saying so a false "not here".
+- Keep the verdict at the single decision point (decide → risk), not in the tool bodies, with one list of the tools whose paths are resolved to real paths first: a link-named alias is the hole already closed on the write side, and the read side has the same one.
+- Operator-typed routes (`@` attachments) are separate: the operator is the gate.
+
 ## A restriction's message must be justified by each conjunct of its guard
 
 **What happened:** A session-wide read-only ceiling printed one of two
