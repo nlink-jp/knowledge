@@ -538,3 +538,33 @@ doubt their own action.
   the account's own configuration or state always answer live.
 - For firing conditions like enabled/disabled, state the **consequence**, not
   just the value (enabled: false → "this rule will not fire").
+
+### Page a fetched document by character offset, hold it in memory for the turn, and return a document id so the caller knows when the basis moved
+
+**Symptom:** A server returning page text had to bound its response for a
+local-model runtime that parks any MCP text block over 20,000 bytes. The
+default response size had to be chosen in runes while the cap was in bytes,
+and a page turn after the TTL could silently land on a changed page
+(web-fetch, 2026-09).
+
+**Why:** As the two entries above say, bounding is the caller's job and
+spilling the client's. What remains is making the paging honest: every
+character reachable, the same offset meaning the same text, and the cut
+reported. A rune knob is what a model can reason about; a byte cap is what
+the runtime enforces — the default is derived from the byte cap and the
+worst-case bytes per rune of the primary language (CJK ≈ 3), then measured
+against the runtime.
+
+**How to apply:**
+- `max_chars` + `offset` in runes; always return `total_chars` and
+  `returned_chars`; emit `truncated` and `next_offset` only when a cut
+  happened. An offset at or past the end is an empty page, not an error.
+- Return a `doc_id` (hash of the decoded body). The same id across turns is
+  the same basis; a different id means start again at 0. Cache the decoded
+  document in memory for the TTL so page turns do not refetch; never cache
+  errors; never write to disk.
+- Derive the default from the consumer's inline cap and the language's byte
+  ratio, then measure (6,000 runes for a 20,000-byte cap and Japanese) and
+  record the measured JSON size in the project's gotchas.
+- Tool text carries trigger and contract only (when to call, what `truncated`
+  means); no defensive prose — that layer belongs to the runtime.

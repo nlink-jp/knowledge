@@ -1385,3 +1385,45 @@ cache plants an object a later build outside the sandbox will trust.
   and rejected: the model follows the pointer every time and the round
   is spent anyway. Do not name a route the tool can walk itself; put
   the result in.
+
+### Close SSRF inside the dialer as a finite address domain — resolve, judge and connect as one operation, carry no credentials, bound where a loosening setting may come from
+
+**Symptom:** Two agent runtimes had declined a local web-fetch tool because it
+would reach localhost, the LAN and cloud metadata from the operator's machine.
+An earlier fetcher had resolved the host, judged the answer, then let `net/http`
+resolve again to connect — a rebinding window — with a hostname-pattern check
+on top (a URL fetch tool, 2026-09).
+
+**Why:** The address, not the URL text, decides which machine a request
+reaches. Hostnames resolve to anything; numeric spellings (`2130706433`,
+`0x7f.0.0.1`) are normalised by the resolver, not the parser; a public name may
+answer with a private address; IPv6 embeds IPv4 in five different ways. Any
+check that runs before the connection rather than as part of it can be raced.
+And Go's HTTP client adds credentials on its own: a redirect `Location` with
+`user:pass@` makes it send `Authorization: Basic`, and proxy environment
+variables reroute every connection.
+
+**How to apply:**
+- Replace `Transport.DialContext`: resolve the host, judge **every** returned
+  address against one finite table (loopback, RFC 1918, link-local including
+  169.254/16, site-local, ULA, unspecified / broadcast / multicast, shared
+  100.64/10, reserved 0/8, 192.0.0/24, 198.18/15, 240/4), unwrap embedded IPv4
+  (mapped ::ffff:0:0/96, compatible ::/96, NAT64 64:ff9b::/96 and
+  64:ff9b:1::/48, 6to4 2002::/16 bits 16–47, Teredo 2001::/32 with the low 32
+  bits inverted) and judge the inner address, then connect to the vetted
+  **`ip:port` literal**. Never dial by name. One denied address denies the whole
+  answer; zero addresses is a resolution failure.
+- Every redirect hop passes the same dialer; in `CheckRedirect` additionally
+  refuse a `Location` with userinfo or a non-http(s) scheme, and cap the hops.
+- No cookie jar, no Authorization, no caller-supplied headers, userinfo
+  rejected in the input and in redirects, `Transport.Proxy = nil`.
+- Honour the setting that loosens the table only in a configuration file found
+  on the default search path; a file named by a flag or an environment variable
+  that sets it fails at startup — a runtime's project configuration can name
+  any file. The environment that locates the default path (HOME, XDG) stays the
+  runtime's trust boundary; record it as the residual.
+- Pin the table row by row in tests. Test through an injected resolver and
+  connect function (fixture names → public addresses, connect → the test
+  listener) so the table stays live in tests; never put "allow loopback for
+  tests" in production code.
+- Ports are not judged: they do not change the machine.

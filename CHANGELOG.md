@@ -2,6 +2,15 @@
 
 ## 2026-09-12
 
+- **security**: close SSRF inside the HTTP dialer as a finite address domain
+  — resolve, judge every address (embedded IPv4 unwrapped), connect to the
+  vetted literal as one operation; refuse redirect targets with userinfo; carry
+  no credentials; honour the loosening setting only from the default config
+  path.
+- **mcp-server-design**: page a fetched document by character offset with a
+  document id, hold it in memory for the turn, and derive the default page size
+  from the consumer's byte cap and the language's byte ratio.
+
 - **containers-and-infra**: a retention period is not a retention
   depth — ingestion lag eats into the new end, and an expiration set before a
   backfill finishes silently deletes the oldest days as they land.
