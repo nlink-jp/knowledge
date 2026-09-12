@@ -1362,7 +1362,14 @@ cache plants an object a later build outside the sandbox will trust.
   and the approved lanes separate directories** (`go-build` /
   `go-build-approved`): Go trusts a cache entry on read, so one shared
   directory lets an unasked command plant an object an approved build
-  consumes. Keep the list in one
+  consumes. Keep the variable-to-directory table in the operator's
+  config, not in code (Go's row shipped): the runtime has no reason to
+  know a machine's toolchains, and each addition would cost a release.
+  What the runtime owns is the rule for every row — scratch placement,
+  the per-lane split, what a row may not name (loader variables
+  `DYLD_*`/`LD_*`, `TMPDIR`/`PATH`/`HOME`, a value that is a path rather
+  than one name) — and the project-level config must not be able to add
+  a row. Keep the list in one
   function; add another toolchain only after measuring the same
   failure (the module cache `~/go/pkg/mod` remains a gap).
 - Make the prompt and the tool description true: the read lane runs
