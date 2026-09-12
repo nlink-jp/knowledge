@@ -8,26 +8,37 @@ from designing tools called by LLM agents in general. Each entry follows
 
 ## Protocol & transport
 
-### The MCP protocol has no tool-call cancellation
+### MCP's cancellation notification may be ignored by the receiver — killing the child process is still the only reliable stop
 
 **Symptom:** User report: "aborting the chat doesn't work while an MCP call is in
-flight." Investigated how to interrupt an in-flight tool call.
+flight." Investigated how to interrupt an in-flight tool call. The original
+record asserted that "the MCP 2024-11-05 spec has no client→server cancel
+notification" — **that was wrong** (corrected 2026-09). The spec has defined
+`notifications/cancelled` (`requestId`, `reason`) since its first published
+version, 2024-11-05.
 
-**Why:** The MCP 2024-11-05 spec has no client→server cancel notification. Once
-dispatched, a tool call runs to upstream completion. Ad-hoc protocol extensions
-only help cooperating servers and don't unblock a blocked stdio read.
+**Why:** The error came from not consulting the primary source (the schema or the
+relevant chapter) and inferring the protocol's absence from a code comment in the
+in-house stdio client ("the only way to unblock a blocked Scan is Stop()"). An
+implementation's circumstances are not evidence about the specification. The
+conclusion nevertheless stands: per the spec, a receiver **MAY ignore** the
+notification when the request "cannot be cancelled", and the in-house stdio
+skeleton, like most third-party servers, discards it. Design as if a dispatched
+tool call runs to upstream completion.
 
 **How to apply:**
-- The only client-side way to "stop waiting" is **killing the child process and
-  closing stdin to unblock the Scan** (kill-and-respawn). A context-aware wrapper
-  is `goroutine + select(ctx.Done, result)` with Stop()-kill on cancel.
+- The reliable client-side way to "stop waiting" is **killing the child process
+  and closing stdin to unblock the Scan** (kill-and-respawn). Sending
+  `notifications/cancelled` before the kill is fine, but never expect the send
+  alone to stop anything. A context-aware wrapper is `goroutine +
+  select(ctx.Done, result)` with Stop()-kill on cancel.
 - After killing, the client owns re-spawning **that server only**, asynchronously
   (restarting all servers drags in unrelated ones).
-- Upstream side effects (external HTTP / DB) don't stop on kill — the server
-  completes and the client discards the result. Protocol-level unavoidable;
-  document it to set expectations.
-- If protocol-level cancel arrives later, the kill approach becomes unnecessary —
-  keep the wrapper easy to swap.
+- Upstream side effects (external HTTP / DB / billing) don't stop on kill — the
+  server completes and the client discards the result. For long-running,
+  metered tools keep the call's own caps small and document the expectation.
+- If a server ignores the notification, say so in its comments as "received and
+  ignored", not "absent from the spec".
 
 ### Proxies must never leave a client request unanswered
 

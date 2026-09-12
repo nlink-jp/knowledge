@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-12
+
+- **mcp-server-design**: correct the claim that MCP has no cancellation
+  notification — `notifications/cancelled` exists since 2024-11-05; the receiver
+  may ignore it, so kill-and-respawn remains the reliable stop.
+- **development-process**: "the spec has no X" is unverified without a
+  primary-source citation; an implementation's comment is not evidence about
+  the spec.
+
 ## 2026-09-09
 
 - **security**: re-evaluate namespace-wide environment exemptions when a port

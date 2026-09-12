@@ -1097,3 +1097,29 @@ funnelled invites the universal claim.
 Related: "Changing a boundary invariant means dispositioning every
 consumer" — that one is the shape where grepping an identifier works;
 this is the shape where it cannot.
+
+### "The spec has no X" is unverified without a primary-source citation — an implementation's comment is not evidence about the spec
+
+**Symptom:** The assertion "the MCP protocol has no cancellation notification" sat
+in an ADR and in this knowledge base for four months, until an independent review
+on another project found it false. The spec had defined that notification since
+its first published version.
+
+**Why:** The ADR cited no spec URL, schema or chapter — only a code comment in
+the in-house client ("the only way to unblock a blocked read is to kill"). An
+implementation constraint was mistaken for an absence in the specification;
+the memory of "having checked" survived while what was checked did not. A
+negative assertion is verified less often than a positive one — establishing
+that something is absent requires reading the primary source, and without a
+trace of that reading nobody re-verifies.
+
+**How to apply:**
+- When writing "X has no Y" in an ADR or a knowledge entry, always give **where
+  in the primary source** (spec version, schema path, chapter). If you cannot,
+  write "unverified".
+- Comments and behaviour of in-house code are evidence about in-house code, not
+  about an upstream specification or product. Keep the two in separate sentences.
+- Correct a wrong rationale even when the design decision built on it was
+  right. The same conclusion with a different "why" changes which conditions
+  matter next time.
+
