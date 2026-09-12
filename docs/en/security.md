@@ -640,6 +640,40 @@ exist cannot be triggered by a bug or a mistake.
   environment-variable override to debug builds. If the binary being launched
   holds a powerful credential, substitutability is a privilege-escalation path.
 
+### A diagnostic dump is a superset of what it captures — derive its modes from the most protected thing inside
+
+**Symptom:** an LLM agent runtime gained an environment variable that writes
+every model request body and the raw response stream to files (off by
+default; the one way to read an odd completion as the server sent it). The
+directory was created `0755` and the files with `os.Create`'s umask default,
+and neither the configuration reference nor the maintainer notes mentioned
+it. The content was a **strict superset** of the transcript, which the same
+code base already protects at `0600`: the system prompt with the instruction
+files, the full history with the nonce-wrapped tool results, and the
+reasoning deltas an ADR said were never stored anywhere. The operator points
+it at any directory, a shared temp directory included, so the whole
+conversation was readable by every user on the machine. It surfaced only
+while writing an external risk-review document.
+
+**Why:** a debug switch is treated as safe because it is off by default, so
+what it writes is never classified. Meanwhile the ADR's "never stored" keeps
+being cited as a protection. The one path that does store it stays
+undocumented, and the document and the implementation disagree through
+every review.
+
+**How to apply:**
+- Enumerate what the dump can hold and use the modes of the most protected
+  artifact among them, as they are (transcript `0600` → dump `0700`/`0600`).
+  Leave an existing directory's or file's mode alone; the modes apply to
+  what the runtime creates.
+- Pin the modes with a test that stats every directory level created and
+  every file.
+- The configuration reference's environment-variable table says what the
+  dump holds, its naming, its modes, that the "never stored" data is in it,
+  and that deleting it is the operator's job.
+- When an ADR says "never stored", grep every debug path and name the
+  exception in the same sentence.
+
 ## Detection-logic quality
 
 ### SPF/DMARC fail alone as a suspicion signal breeds false positives
