@@ -336,6 +336,33 @@ comment promised that failures are reported where the user acts; they never were
 - Verify on a real machine by **provoking the error and sampling the view's elements for
   several seconds**. A single screenshot cannot tell "shown for 100 ms" from "never shown".
 
+### A menu-bar app's popover can be verified from a script (AX tree + CGEvent)
+
+**Symptom:** treating "the popover's content cannot be checked programmatically" as a given
+puts regression detection on human eyes — and a defect like **a banner shown for 100 ms**
+is invisible to them too. (task-clock-gui, 2026-09)
+
+**Why:** what fails is `entire contents`, not the accessibility tree. Descending from
+`UI element 1 of window 1` **by hand** enumerates the SwiftUI content with role / value /
+position / size, and displayed text appears in `value` — so assertions about the screen can
+be machine-checked.
+
+**How to apply:**
+
+- Assert on text and state by walking the AX tree (`entire contents` can come back empty).
+  "Act, then sample the tree for several seconds" also measures **how long** something stays
+  on screen.
+- **Synthesize clicks with CGEvent.** System Events' `click at` drives AppKit buttons but
+  may not fire SwiftUI's `.onTapGesture`. Post mouseMoved → leftMouseDown → leftMouseUp
+  50-80 ms apart from a small helper binary.
+- **An AX position is the element's top-left.** A 10x11 icon button must be clicked at its
+  centre (+5,+5); the exact corner misses.
+- **Re-read the tree immediately before every click.** One extra banner shifts every row
+  below it, and reused coordinates hit **an unrelated control** (in our case it manually ran
+  a different task). With the panel closed, those coordinates land in whatever app is behind.
+- Since the clicks have real side effects, add **a disposable target to the config** for the
+  test and remove it afterwards — never rehearse on production tasks or switches.
+
 ### Never disable a control on a status that cannot tell "no" from "don't know"
 
 **Symptom:** a login-item switch (`SMAppService`) that **nobody can ever turn on**.

@@ -2,6 +2,10 @@
 
 ## 2026-09-13
 
+- **macos-gui**: a menu-bar popover IS scriptable — walk the AX tree by hand
+  for text and state, click with CGEvent (System Events' `click at` may not
+  fire SwiftUI tap gestures), aim at an element's centre, and re-read the tree
+  before every click, because one extra banner shifts every row below it.
 - **macos-gui**: in a polling UI, the poll's result and the action's answer
   must not share one field. An action that re-polls when it finishes erases
   its own error about 100 ms later, so a refused request reads exactly like a
