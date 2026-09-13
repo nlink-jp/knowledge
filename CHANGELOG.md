@@ -2,6 +2,13 @@
 
 ## 2026-09-13
 
+- **mcp-server-design**: if a tool returns a file, the output root is a per-call
+  argument — the only value that works is the caller's per-session directory, so
+  a startup flag becomes runtime-specific and an unset `${VAR}` in a shared
+  registration expands silently to empty. Reject unknown fields so a misspelled
+  root is not ignored, require an absolute path, validate on the call that
+  supplied it, and treat "can the caller open the path I returned?" as part of
+  the success case.
 - **security**: remove your own namespace from children rather than keeping it
   — the environment has no bounded domain on either side (a secret-name
   denylist misses `OPENAI_KEY`; a needs-allowlist is just as open-ended), so

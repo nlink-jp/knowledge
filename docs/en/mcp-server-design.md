@@ -307,6 +307,50 @@ path outside its roots.
   CHANGELOG with the migration (a smaller page plus a loop), because the
   argument disappearing from the schema is a breaking change.
 
+### If you return a file, the output root is a per-call argument, not a startup flag
+
+**Symptom:** A browser-automation MCP server wrote screenshots to a workspace
+chosen at startup (a temp directory by default) and returned the path. The two
+agent runtimes calling it confine their built-in file tools to two roots — the
+project and the session work directory — so the image viewer refused the path
+that had just come back. The capture succeeded and the result could not be
+opened. Small images rode along as an inline image block, so the failure only
+ever showed up intermittently, as "the large screenshots are the ones I cannot
+open" (2026-09).
+
+**Why:** The output root that works is a per-session value held by the caller, so
+writing it into the server's launch line makes it **runtime-specific**. With one
+MCP registration file shared by two runtimes, one runtime's variable is unset and
+Claude-Code-style `${VAR}` expansion turns it **silently into an empty string** —
+the flag is passed and the default is used anyway. More fundamentally, the
+information the choice needs — which paths can I read back? — belongs to the
+caller, not to whoever wrote the launch line. A file is intrinsic only for binary
+payloads (previous entry), and that is exactly where this bites.
+
+**How to apply:**
+- Give every file-producing tool a **per-call absolute path argument**
+  (`workspace_root` and kin), falling back to the startup setting only when the
+  call omits it. Keep the startup flag, but demote it to "the default for calls
+  that pass nothing".
+- **Reject unknown fields** (strict decoding). When a fleet spells the same
+  concept two ways (`workspace_root`, `workspaceRoot`), a silently ignored
+  misspelling writes to the default location and puts you back at "a path that
+  cannot be opened". Rejected by name, the caller fixes it on the spot. Either
+  spelling may follow the server's own schema style — but only one per server.
+- **Require an absolute path.** A tool argument is JSON: nothing expands `~` and
+  nothing resolves a relative path on the way in, so either one lands the file
+  beside the server's working directory without saying so.
+- **Validate the argument on the call that supplied it.** Where the write
+  happens in a later tool (start recording → stop), staying silent until the
+  stop means failing after the frames have already been discarded.
+- In the other direction — servers that *read* host files — the `allowed_paths`
+  equivalent must include the **agents' session state roots**. If project
+  directories are deliberately left out, write down the consequence: the agent
+  must stage the file into its work directory before passing it.
+- Treat "can the caller open the path I returned?" as **part of the success
+  case**. The agent's confinement (project plus session work directory) is a
+  given, not a detail the server is entitled to ignore.
+
 ### Don't expose internal IDs in tool results
 
 **Symptom:** Including `[Stored as object ID: %s]` in a tool result made the LLM
