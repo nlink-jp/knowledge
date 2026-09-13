@@ -2,10 +2,28 @@
 
 ## 2026-09-13
 
+- **security**: remove your own namespace from children rather than keeping it
+  — the environment has no bounded domain on either side (a secret-name
+  denylist misses `OPENAI_KEY`; a needs-allowlist is just as open-ended), so
+  delete the rule, leave the operator's environment alone, and invert the
+  prefix: a runtime's own variables reach no child while its exports do, closed
+  by a test over the whole namespace. Grep the org before calling a namespace
+  yours. **Supersedes** the earlier "re-evaluate namespace exemptions" entry.
+- **security**: counting a protected list's enforcers is the symptom — an entry
+  is cheap and a rule is the smell, so where a kernel is available move the
+  boundary there instead of growing the matcher. The enumeration tools then
+  hide nothing. **Amends** the per-operation entry below, whose
+  skip-and-report half is withdrawn.
+- **security**: `file-read*` and `file-read-data` are not the same Seatbelt
+  operation — the first covers metadata, and a Go `os.Root` listing stats every
+  entry, so one denied name silently emptied every walk.
+- **testing**: when you add a boundary, drive the shipped artifact through the
+  shipped boundary in the same commit — stubs and `chmod 000` pass while
+  production is broken.
 - **security**: a protected-path list is enforced per operation, not per tool
   family — count the read tools among a credential list's enforcers, mirror
-  the lanes (an operator-only Review for a single-file read, skip-and-report
-  for enumeration), and pin every enforcer with a test.
+  the lanes (an operator-only Review for a single-file read), and pin every
+  enforcer with a test.
 
 ## 2026-09-12
 

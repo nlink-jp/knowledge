@@ -30,9 +30,9 @@ English version: [README.md](README.md)
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
 | [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計、文書 id 付き offset ページング |
 | [llm-integration](docs/ja/llm-integration.md) | Gemini/genai SDK、出力検証、drift、トークン、dedup、パイプライン、エージェントのツール除外、判定モデルは thinking でなく世代で選ぶ、ローカルサーバの接頭辞キャッシュと system プロンプト、再送上限は再生計測で、ローカルモデルが常置指示に行動する場所（system ではなく最初の user メッセージ） |
-| [security](docs/ja/security.md) | プロンプトインジェクション対策、秘密情報/PII、公開サービス、破壊的操作の安全設計、ラップできないツール説明文の隔離、sandbox 内のツールチェインキャッシュ、dialer 内で閉じる SSRF |
+| [security](docs/ja/security.md) | プロンプトインジェクション対策、秘密情報/PII、公開サービス、破壊的操作の安全設計、ラップできないツール説明文の隔離、sandbox 内のツールチェインキャッシュ、有限領域があるならカーネルへ判定を移し無いなら規則を置かない、dialer 内で閉じる SSRF |
 | [build-and-packaging](docs/ja/build-and-packaging.md) | CGO クロスビルド、.gitignore の罠、CI 不使用の判断理由 |
-| [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、クロスプラットフォーム検証、エラー文言の質、診断時の証拠の質、ログの時刻表現、独立検証パスの収束判定、モデル比較ベンチの設計、inline TUI の行計算は tmux で実測 |
+| [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、クロスプラットフォーム検証、エラー文言の質、診断時の証拠の質、ログの時刻表現、独立検証パスの収束判定、新しい境界は本物を本物の檻で駆動して検証、モデル比較ベンチの設計、inline TUI の行計算は tmux で実測 |
 | [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント、ログローテート、SSH 死活監視、case-sensitive ボリュームの禁忌 |
 | [config-and-io](docs/ja/config-and-io.md) | canonical 識別子、strict 設定デコード、データ保持期限、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |

@@ -996,3 +996,17 @@ were far too few. The assertion spread at once to every reader-facing surface
 - When correcting an assertion, grep every surface that carried it (README,
   manual, result note, ADR, CHANGELOG) and fix them in one pass; fixing one
   surface creates drift.
+
+### When you add a boundary, write the test that drives the real product through the real boundary — stubs and permission stand-ins pass while production is broken
+
+**Symptom:** The file tools' reads were moved into a child process under a purpose-built profile that denies the credential list. Unit tests and the full gate were green and it shipped; independent review measured a Critical. **One `.env` in a project made `search_files` answer "no matches (0 files scanned)"** — a false negative with no error and no warning. Four High findings followed from the same pass: reads silently truncated at 85 KB, `file_info` collapsing a permission error into "not found", a cancelled walk losing its partial result, and the note the design promised being unreachable.
+
+**Why:** No test **drove the real thing**. Every test stubbed the child (injecting a function) and simulated the kernel's refusal with `chmod 000`. `chmod 000` denies `open` and leaves `lstat` working; Seatbelt's `file-read*` denies both. That single difference was the defect, and the stand-in pinned a path production never takes. The kernel-level test ran `/bin/bash`, never the Go child that actually runs, and the startup probe did the same — so it passed while every walk in the project was broken.
+
+**How to apply:**
+- When you add a boundary (a sandbox, a separate process, a different privilege), write in the same commit a test that drives **the shipped artifact through the shipped boundary**: build the binary, run it under the real profile, feed it a real request. Slow is fine (2–4 s here).
+- **Distrust permission stand-ins.** `chmod`, not-running-as-root and a severed network each deny a *different set of operations* than a kernel deny does. If you cannot state the difference between the stand-in and the real thing in one line, you cannot use the stand-in.
+- **Verify the startup probe with the operation the runtime actually performs.** A probe that uses a different process, profile or library stays green through a production break. Make it walk the same sequence, listings included.
+- Say in the stubbed tests that they are **not the production path**, and name the test that covers it.
+
+Related: "independent review turns up something real right after a fix". For the same reason a fix creates a new unverified surface, **a new boundary is at its least verified the moment it is added**.
