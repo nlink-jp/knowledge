@@ -1123,3 +1123,14 @@ trace of that reading nobody re-verifies.
   right. The same conclusion with a different "why" changes which conditions
   matter next time.
 
+### A mechanism two sibling products share is not fixed when only one of them is fixed
+
+**Symptom:** Two runtimes derived from one design (one the porting source of the other) both received a change that moved the credential-read boundary into the kernel. The two defects a later independent review found in it existed **identically in both**, so each fix had to be written twice. Worse, the porting target's tool descriptions went on declaring, a release later, a behaviour the source had already withdrawn. The ADRs said "porting source, not upstream" and listed the features deliberately not reproduced — but neither document said anything about **the code the two genuinely share**.
+
+**Why:** Documents about a porting relationship exist to decide what to carry over and what not to. Code that is already in both falls outside that question. The result is that someone working in one repository gets no signal that a sibling exists at all — the source's own AGENTS.md never mentioned the target — and a fix to a shared mechanism stops at one side. That it stopped is invisible until somebody hits the same defect again.
+
+**How to apply:**
+- Make "a defect or design change in a mechanism both products have is fixed in both, in the same piece of work" an explicit rule, and write it in **both** products' agent-facing documents (`AGENTS.md`). Writing it in one does not reach the person working in the other.
+- **Name the shared mechanisms.** "The common parts" means a different set to every reader.
+- Say what the rule is **not**: it is not a rule to port features, and it does not change what the porting ADRs decide.
+- If you deliberately change only one side, record the reason in the commit message and in the ADR. A divergence nobody wrote down reads as an oversight to the next person, and gets "fixed" the wrong way.

@@ -1647,3 +1647,15 @@ switch that disabled the pointer.
 - Watch the instrument: a procedure whose action an unattended run
   denies (a shell append that needs approval) reads as "not followed".
   Make the action performable without approval before measuring.
+
+### A tool description is a fact inside the prompt — change it in the same commit that changes the behaviour
+
+**Symptom:** A design change stopped the enumeration tools from withholding credential-named files and counting them; they now list such an entry like any other, because the kernel refuses the content and a name was never the secret. In the sibling runtime the descriptions were not updated, so `list_files` kept telling the model "Credential files … are left out and counted" and `list_tree` "are skipped and counted". For a whole release the model believed entries were being hidden from it while receiving listings that hid nothing.
+
+**Why:** The tool description was treated as documentation living in code — a kind of comment. It is not. It is **part of the prompt sent every turn**, and it is what the model plans against. A description that contradicts the behaviour is not a stale comment but a lie written into the prompt, and the model believes the prompt. It is also silent: the model simply plans on a false premise, no test fails, and no human reads it.
+
+**How to apply:**
+- Fix the description **in the same commit** that changes the behaviour. Give "tool descriptions" its own row in the docs-routing table, alongside README and the reference documents.
+- If a description states an **implementation promise**, ask whether you can have a test that fails when the promise breaks. If you cannot, drop the promise and describe the capability instead. "X is excluded" is a promise; "use this to find X" is a capability.
+- Before a release, grep **every tool description** for the words whose behaviour changed in it (here: "credential", "skipped", "counted"). The defect class where the behaviour side is fixed and the declaration side is left behind falls out of that one grep.
+- If a sibling product carries the same tool, review its description in the same commit.

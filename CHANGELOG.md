@@ -2,6 +2,24 @@
 
 ## 2026-09-13
 
+- **security**: before writing "layer X covers this instead", count whether X
+  can see the call in the shape it judges — a matcher that judges a path
+  argument cannot cover a walk that has none, and the degraded fallback the
+  ADR promised was never there. If the fallback cannot cover it, refuse the
+  operation while degraded rather than adding a mode branch, which puts the
+  safety on the path exercised least.
+- **testing**: a design document that says "applied at every N" needs, in the
+  same commit, a test that enumerates N. A test pinning a list of names does
+  not close a class of call sites; and when fixing, look for the line two below
+  that quietly undoes the fix.
+- **llm-integration**: a tool description is a fact inside the prompt, not a
+  comment — change it in the commit that changes the behaviour, keep
+  implementation promises out of it unless a test can fail on them, and grep
+  every description for the words whose behaviour just changed.
+- **development-process**: a mechanism two sibling products share is not fixed
+  when only one of them is fixed. Name the shared mechanisms in BOTH products'
+  agent-facing documents, say what the rule is not, and record any deliberate
+  divergence.
 - **mcp-server-design**: if a tool returns a file, the output root is a per-call
   argument — the only value that works is the caller's per-session directory, so
   a startup flag becomes runtime-specific and an unset `${VAR}` in a shared

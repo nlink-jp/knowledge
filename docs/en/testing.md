@@ -1011,3 +1011,17 @@ were far too few. The assertion spread at once to every reader-facing surface
 - Say in the stubbed tests that they are **not the production path**, and name the test that covers it.
 
 Related: "independent review turns up something real right after a fix". For the same reason a fix creates a new unverified surface, **a new boundary is at its least verified the moment it is added**.
+
+### If a design document says "applied at every N", write the test that enumerates N in the same commit
+
+**Symptom:** An agent runtime's ADR said one function is applied at **every spawn site**, so a child process cannot be added without inheriting the rule. The rule: the runtime's own configuration variables (an API key among them) reach no child. The build was green, and an AST test pinning the namespace partition passed. Four kinds of child did not apply the rule: the shell of a sandbox-disabled launch (where the API key did reach it), two kinds of startup verification probe, and the clipboard capture. It surfaced not months later but the same day, during unrelated work.
+
+**Why:** The existing test pinned a **list of names** — which variables are "mine" and which are "exported for children" — not the **coverage of call sites**. However rigorous the name partition is, it never looks at an `exec.Command` that forgot to call the function. "Every X" in a design document means the set of X its author knew at the time, not every X in the code. The two diverge from the moment the sentence is written.
+
+**How to apply:**
+- When a design document says "applied at every X" or "X always goes through Y", put a test that **enumerates X and checks Y** in the same commit. If you cannot write one, weaken the sentence to "as of today".
+- Write it against the AST so it closes the **class**: fail when a function that builds an `exec.Cmd` does not name the helper, fail when a path-handling package calls `os.Open` directly. If you use an allowlist of reviewed sites instead, make an **unused allowlist entry fail too**, so a site that disappeared does not linger as debris.
+- Put exceptions in the code with their reason. In the example above the legitimate exception was the bench harness, which **launches** the runtime — a parent, not a child it spawns. Choose exclusions by reason, not by directory name.
+- When fixing, look for a line that **undoes the fix** right after it. Two lines below the probe's new rule, the code rebuilt the environment from the parent's to set a temporary directory; left alone, the fix would have died in the commit that made it.
+
+Related: "drive the path that turns the boundary on". That one pins whether the boundary is installed at all; this one pins whether it is installed at **every** entrance.
