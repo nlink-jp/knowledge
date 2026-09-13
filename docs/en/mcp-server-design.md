@@ -328,25 +328,56 @@ caller, not to whoever wrote the launch line. A file is intrinsic only for binar
 payloads (previous entry), and that is exactly where this bites.
 
 **How to apply:**
-- Give every file-producing tool a **per-call absolute path argument**
-  (`workspace_root` and kin), falling back to the startup setting only when the
-  call omits it. Keep the startup flag, but demote it to "the default for calls
-  that pass nothing".
-- **Reject unknown fields** (strict decoding). When a fleet spells the same
-  concept two ways (`workspace_root`, `workspaceRoot`), a silently ignored
-  misspelling writes to the default location and puts you back at "a path that
-  cannot be opened". Rejected by name, the caller fixes it on the spot. Either
-  spelling may follow the server's own schema style — but only one per server.
-- **Require an absolute path.** A tool argument is JSON: nothing expands `~` and
-  nothing resolves a relative path on the way in, so either one lands the file
-  beside the server's working directory without saying so.
+- The argument has **one name across the fleet: `work_dir`**, and one meaning:
+  the absolute path of a directory **the caller can read back**. Not the
+  server's structure — the caller's directory (organization ADR-021).
+- **Resolve it argument → `_meta["jp.nlink/work_dir"]` → error.** No
+  server-owned default sits behind it, and no startup flag either. A default is
+  a directory the operator names on behalf of a caller whose confinement they
+  cannot see; when it is wrong the call still succeeds and returns a path
+  nothing can open — the failure this entry exists for. A runtime that knows
+  the value may inject it through `_meta`; the argument still wins.
+- **Measure the channels before designing on one.** Across four calling
+  runtimes, the per-call argument was the only channel all four could supply:
+  `roots/list` is answered by some with the project directory and never with
+  the session directory, one runtime declares no roots capability at all,
+  another strips the environment, and the server's cwd is the caller's
+  directory only for stdio servers spawned per session.
+- **Reject unknown fields** (strict decoding). A silently ignored misspelling
+  writes to the default location and puts you back at "a path that cannot be
+  opened". Rejected by name, the caller fixes it on the spot — and that is how
+  a retired spelling should answer too: `work_dir_required` naming the
+  replacement, not a shrug.
+- **Require an absolute path.** A tool argument is JSON: nothing expands `~`
+  and nothing resolves a relative path on the way in, so either one lands the
+  file beside the server's working directory without saying so.
+- **Require it to exist already, and do not create it.** A directory the server
+  creates is a directory the caller did not choose; a typo then succeeds.
 - **Validate the argument on the call that supplied it.** Where the write
   happens in a later tool (start recording → stop), staying silent until the
   stop means failing after the frames have already been discarded.
-- In the other direction — servers that *read* host files — the `allowed_paths`
-  equivalent must include the **agents' session state roots**. If project
-  directories are deliberately left out, write down the consequence: the agent
-  must stage the file into its work directory before passing it.
+- **A server whose product is *data* takes no work directory at all.** Rows,
+  matches, hits: return them in the response, capped by an explicit row limit,
+  with the omission counted (`truncated`, `omitted_rows`, the exact total).
+  File-ising an oversized result is the runtime's job (previous entry), so the
+  argument belongs only to servers whose product is genuinely a file.
+- **Replace operator allowlists with a fixed blacklist.** A prefix allowlist
+  cannot name "the project": past a hundred repositories the only prefixes that
+  cover all of them are their common parent directory and `~`, and `~` admits
+  the very files the list exists to keep out. What a server owes is a floor —
+  credential and agent-control directories (`~/.ssh`,
+  `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/Library/Keychains`, the agent
+  runtimes' own config directories, any `.env`). Coarse containment of the
+  process is the runtime's job, at a different timescale: the sandbox is chosen
+  at spawn, `work_dir` arrives per call.
+- **Check the blacklist on both spellings of the path and of every entry.**
+  Resolving symlinks before comparing is not enough, and neither is skipping
+  the resolution: on a machine where `~/.ssh` is itself a symlink into a synced
+  folder, resolving the candidate makes it stop matching the literal entry.
+  Compare the path as given *and* resolved against each entry as given *and*
+  resolved.
+- **Echo the resolved directory in the result.** The caller sent a spelling; the
+  server used a resolved one, and every path it returns is built from that.
 - Treat "can the caller open the path I returned?" as **part of the success
   case**. The agent's confinement (project plus session work directory) is a
   given, not a detail the server is entitled to ignore.

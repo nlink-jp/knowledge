@@ -2,6 +2,19 @@
 
 ## 2026-09-13
 
+- **mcp-server-design**: the per-call output-root entry is amended with the
+  settled contract — one name (`work_dir`), one meaning (a directory the
+  *caller* can read back), resolved argument → `_meta["jp.nlink/work_dir"]` →
+  error with no server-owned default behind it. Measure the channels first: of
+  four calling runtimes, only the per-call argument reaches all four (`roots`
+  is unanswered or answers the project directory, one strips the environment,
+  cwd holds only for per-session stdio servers). A server whose product is
+  *data* takes no work directory at all — it caps rows and counts the
+  omission. Operator allowlists are replaced by a fixed credential blacklist,
+  because a prefix list cannot name "the project"; and the blacklist must
+  compare the path as given *and* symlink-resolved against each entry as given
+  *and* resolved, since a home directory whose `~/.ssh` is itself a symlink
+  defeats either spelling alone.
 - **security**: a gate asks whether an operation is allowed, so an injection
   that accepts the operation and corrupts only a value passes every layer — the
   sandbox, the credential list and the human gate all engage on *which
