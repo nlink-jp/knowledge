@@ -2,6 +2,19 @@
 
 ## 2026-09-13
 
+- **security**: measuring injection resistance with loud attacks overstates it.
+  Loud payloads (discard-all-instructions, forged authority, forged closing tag)
+  scored 0 in 500 against a capable local model wrapped or not; task-consistent
+  payloads that dictate one output field scored 92–100% unwrapped. Wrapping cut
+  one of them to 0.3%, another to 14%, and a third not at all — so the
+  mechanism's effectiveness is a property of the attack-and-task pair, not of
+  the mechanism. Vary the target field, always run the benign twin, report a
+  table rather than a rate.
+- **llm-integration**: rates need n>=100 and a benign twin. The same experiment
+  at n=20 produced the opposite conclusion from n=100; an earlier record's
+  headline effect carried the same width and should not be quoted as an effect
+  size. Also: a classifier that tests for a substring cannot tell a defended
+  answer quoting the payload from an obedient one.
 - **macos-gui**: a menu-bar popover IS scriptable — walk the AX tree by hand
   for text and state, click with CGEvent (System Events' `click at` may not
   fire SwiftUI tap gestures), aim at an element's centre, and re-read the tree

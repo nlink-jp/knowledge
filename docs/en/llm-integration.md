@@ -1659,3 +1659,36 @@ switch that disabled the pointer.
 - If a description states an **implementation promise**, ask whether you can have a test that fails when the promise breaks. If you cannot, drop the promise and describe the capability instead. "X is excluded" is a promise; "use this to find X" is a capability.
 - Before a release, grep **every tool description** for the words whose behaviour changed in it (here: "credential", "skipped", "counted"). The defect class where the behaviour side is fixed and the declaration side is left behind falls out of that one grep.
 - If a sibling product carries the same tool, review its description in the same commit.
+
+### If you measure LLM behaviour as a rate, a benign twin and n≥100 are the minimum
+
+**Symptom:** an experiment on the effect of nonce wrapping was re-run in the
+shape of an earlier record (20 trials per condition). At n=20 it produced the
+opposite picture — wrapping looked *worse*. Raising the same conditions to
+n=100 dissolved the reversal into 32% vs 23% breakthrough (p=0.15, not
+significant). Around a 30% rate, the 95% interval at n=20 is roughly ±20
+points. **The earlier record's "40% fell to 10%" was one observation carrying
+that same width.**
+
+**Why:** LLM behaviour is stochastic and shows up as a rate. Comparing rates is
+decided entirely by trial count, yet a single table of numbers reads as
+settled. A hint about direction and a measurement of effect size are different
+things.
+
+**How to apply:**
+
+- **n≥100 to compare rates.** At 20 you can only say whether the thing happens
+  at all. Zero events at n=100 buys an upper bound of 3.7%, not a proof that it
+  cannot happen.
+- **Print the confidence interval beside the point estimate**, or the next
+  person will quote the point estimate as an effect size.
+- **Always run the benign twin** — the same setup with the treatment removed.
+  Only a control rules out that the detector is measuring baseline behaviour.
+- **Check the classifier against the first real output.** Here a correctly
+  defended answer quoted the injected JSON, which broke the outer object and
+  sent the fallback branch down the "obeyed" path (1 in 84). A substring test
+  cannot tell quoting from obeying.
+- Before using an old measurement as a baseline, **re-run one condition by the
+  same procedure and confirm it reproduces.** Here the unwrapped condition
+  reproduced (32%, interval covering the old 40%) and the wrapped one did not
+  (23% against the old 10%). That only one half reproduced is itself the finding.
