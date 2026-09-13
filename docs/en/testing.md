@@ -1060,9 +1060,18 @@ them, so a field deleted by the withdrawal leaves them broken for months.
 - Add `go vet -tags <each tag> ./...` to `make test`. A tagged suite you cannot run can
   still be type-checked; needing real hardware to execute is not a reason to let it rot
   uncompiled.
-- Count the sweep in **surfaces the user and the model read**, not in code: tool
-  descriptions, usage, manifest, `--help`, READMEs (every language), setup guides, config
-  examples, the RFP. Fixing only one language's README is the likeliest miss.
+- Count the sweep in **surfaces the user and the model read**, not in code. The
+  checklist: the `initialize` `instructions` field (the first thing the model reads —
+  it arrives before `tools/list`), serverInfo, each tool's description and input schema,
+  the usage document, the runtime manifest, error messages and their details, `--help`,
+  READMEs (**every language**), setup guides, config examples, the RFP, and any
+  **bundled skill or prompt you ship**. The last two are the easiest to forget: a skill
+  is *installed into the agent's skill directory and read as instruction*, so a retired
+  argument name left there is not a documentation wart — it is the agent being told to
+  make a call the server refuses. Fixing only one language's README is the likeliest miss.
+- Check whether the existing tests only assert that things are **present**. The bundled
+  skill's tests checked that every tool name appeared in it, so a retired argument
+  surviving in eight files failed nothing. A withdrawal needs **absence** tests.
 - Do not rewrite historical design documents; annotate the withdrawal in place with a
   strike-through, a date and the successor. History stays honest and stops reading as
   current.
