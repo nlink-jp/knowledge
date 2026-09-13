@@ -1025,3 +1025,48 @@ Related: "independent review turns up something real right after a fix". For the
 - When fixing, look for a line that **undoes the fix** right after it. Two lines below the probe's new rule, the code rebuilt the environment from the parent's to set a temporary directory; left alone, the fix would have died in the commit that made it.
 
 Related: "drive the path that turns the boundary on". That one pins whether the boundary is installed at all; this one pins whether it is installed at **every** entrance.
+
+### A withdrawn mechanism disappears from the code, not from the **prose** — write a test that compiles the strings the model reads
+
+**Symptom:** File-mediated results were removed from two servers and released. The
+implementation, the schemas and the tests were all correct, and an arch test pinning the
+`work_dir` spelling passed. The shipped artifacts still told the model, in `run_query`'s
+**description**, that large results are written as JSONL under `workspace_root`, and in
+`get_usage`'s error table, to retry with `workspace_root` or raise
+`inline_row_threshold` — both operations the server now rejects. On another server the
+container manifest returned by `describe_runtime` still said results are files under
+`/work`; on a third, the setup guide still told the reader to fill in a config key that
+had been deleted. The same sweep turned up a server whose schema declared `work_dir`
+**optional** while the handler required it: the model reads that it may omit the
+argument, and the call then fails.
+
+**Why:** The arch test pinned **identifiers** — the spelling inside a schema, the presence
+of `required` — not the sentence next to them. Prose is not compiled: it has no type and
+no reference, so removing a mechanism leaves the paragraph describing it untouched, and
+nothing prompts anyone to grep. In MCP that paragraph is not a comment but **part of the
+product**: the `tools/list` description, the `get_usage` body and the `describe_runtime`
+manifest are inputs the model reads and acts on, so a lie there becomes a wrong call.
+Build-tagged suites (`integration`, `e2e`) compound it: `go test ./...` never compiles
+them, so a field deleted by the withdrawal leaves them broken for months.
+
+**How to apply:**
+- When you withdraw a mechanism, make a list of the retired terms and, in the same
+  commit, write a test that walks every string the model reads — each tool's description
+  and input schema, the usage document, the runtime manifest — and fails on any of them.
+  Keep one list, not one for schemas and one for prose.
+- Pin the **shape** of the contract too, not just the identifiers: "a tool that declares
+  `work_dir` must also require it". An optional mandatory argument reads, to a model, as
+  one with a default.
+- Add `go vet -tags <each tag> ./...` to `make test`. A tagged suite you cannot run can
+  still be type-checked; needing real hardware to execute is not a reason to let it rot
+  uncompiled.
+- Count the sweep in **surfaces the user and the model read**, not in code: tool
+  descriptions, usage, manifest, `--help`, READMEs (every language), setup guides, config
+  examples, the RFP. Fixing only one language's README is the likeliest miss.
+- Do not rewrite historical design documents; annotate the withdrawal in place with a
+  strike-through, a date and the successor. History stays honest and stops reading as
+  current.
+
+Related: "If a design document says a rule applies to all N, write the test that
+enumerates N in the same commit." That one pins the coverage of the application points;
+this one pins the coverage of the **explanations**.

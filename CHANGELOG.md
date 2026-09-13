@@ -2,6 +2,16 @@
 
 ## 2026-09-13
 
+- **testing**: a withdrawn mechanism disappears from the code, not from the
+  prose. Two servers shipped with tool descriptions and a `get_usage` error
+  table still instructing the model to use the mechanism that had just been
+  removed; a third shipped a schema declaring an argument optional that the
+  handler required. Prose is not compiled, and in MCP it is part of the product
+  — so keep one list of retired terms and walk every string the model reads.
+  Also: `go test ./...` never builds tagged suites, so add
+  `go vet -tags <tag> ./...` to the gate, and count a withdrawal sweep in
+  surfaces (descriptions, usage, manifest, `--help`, every language's README,
+  setup guides, config examples) rather than in code.
 - **mcp-server-design**: the per-call output-root entry is amended with the
   settled contract — one name (`work_dir`), one meaning (a directory the
   *caller* can read back), resolved argument → `_meta["jp.nlink/work_dir"]` →
