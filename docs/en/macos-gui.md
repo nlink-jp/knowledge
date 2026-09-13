@@ -310,6 +310,32 @@ from `Date()` at render time is evaluated when the underlying data changes, prin
 **How to apply:** wrap the text in `TimelineView(.periodic(from: .now, by: 1))`
 so the schedule ticks that text alone; nothing else redraws with it.
 
+### In a polling UI, never share one field between the poll's result and the action's answer
+
+**Symptom:** the user presses Run, the daemon refuses the request, and the panel says
+**nothing at all** — indistinguishable from never having clicked. The report comes back as
+"my manual runs are not recorded". The error-reporting path exists in the code and works
+in isolation. (task-clock-gui, 2026-09)
+
+**Why:** each action re-polls when it finishes, to show the real state rather than an
+optimistic guess. The error was written to one shared field, and **the successful poll that
+the action itself kicked off cleared that same field** about 100 ms later — invisible. The
+periodic poll (5 s) would have erased it shortly after anyway. Both the README and the code
+comment promised that failures are reported where the user acts; they never were.
+
+**How to apply:**
+
+- **Split the channels.** "What the poll found" and "what the action answered" are separate
+  fields, and a poll may only touch its own. The action's word wins when both hold
+  something — it answers the click the user just made.
+- Make it a rule that the action's word is cleared only by **the next action or by closing
+  the panel**. "A successful retry clears the failure it retried" then follows for free.
+- **Extract the rule into a pure value type and test it.** "An action's message survives the
+  successful poll that follows it" is a few lines of test; the UI layer cannot catch that
+  regression.
+- Verify on a real machine by **provoking the error and sampling the view's elements for
+  several seconds**. A single screenshot cannot tell "shown for 100 ms" from "never shown".
+
 ### Never disable a control on a status that cannot tell "no" from "don't know"
 
 **Symptom:** a login-item switch (`SMAppService`) that **nobody can ever turn on**.

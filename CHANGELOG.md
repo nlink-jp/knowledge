@@ -2,6 +2,12 @@
 
 ## 2026-09-13
 
+- **macos-gui**: in a polling UI, the poll's result and the action's answer
+  must not share one field. An action that re-polls when it finishes erases
+  its own error about 100 ms later, so a refused request reads exactly like a
+  click that never happened; split the channels, let only the next action or
+  closing the panel clear the action's word, and pin the rule in a pure value
+  type — the UI layer cannot catch that regression.
 - **security**: before writing "layer X covers this instead", count whether X
   can see the call in the shape it judges — a matcher that judges a path
   argument cannot cover a walk that has none, and the degraded fallback the
