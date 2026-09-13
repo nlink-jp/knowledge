@@ -26,7 +26,9 @@
   entry, so one denied name silently emptied every walk.
 - **testing**: when you add a boundary, drive the shipped artifact through the
   shipped boundary in the same commit — stubs and `chmod 000` pass while
-  production is broken.
+  production is broken — and drive the path that turns the boundary on, which
+  is where the next release of the same design failed: the test existed, the
+  installer was never run, and the feature shipped inert.
 - **security**: a protected-path list is enforced per operation, not per tool
   family — count the read tools among a credential list's enforcers, mirror
   the lanes (an operator-only Review for a single-file read), and pin every
