@@ -2,6 +2,13 @@
 
 ## 2026-09-13
 
+- **security**: a gate asks whether an operation is allowed, so an injection
+  that accepts the operation and corrupts only a value passes every layer — the
+  sandbox, the credential list and the human gate all engage on *which
+  operation, on what target*, and the call they see is correct. Count layers by
+  the failure mode each stops; rendering arguments in the approval prompt helps
+  but is clipped, and recognising a wrong value needs knowing the right one. The
+  control for this class is a diff review, which is operational, not a mechanism.
 - **security**: measuring injection resistance with loud attacks overstates it.
   Loud payloads (discard-all-instructions, forged authority, forged closing tag)
   scored 0 in 500 against a capable local model wrapped or not; task-consistent

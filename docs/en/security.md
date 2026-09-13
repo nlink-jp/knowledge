@@ -1562,3 +1562,43 @@ a property of the attack-and-task pair.
 
 Related: "Isolate untrusted data with nonce-tagged XML wrapping" (the
 mechanism), "Judging an injection needs two conditions" (operational triage).
+
+### A gate asks whether the operation is allowed — "the right operation with the wrong value" passes every layer
+
+**Symptom:** in an agent runtime, an injection riding a tool result made the
+model write a dictated wrong value into exactly the file the task named. Each
+defensive layer was held against it; none of them engages.
+
+| Layer | Against this attack |
+|---|---|
+| Sandbox (where a write may land) | Irrelevant — the destination is the legitimate file the task named |
+| Credential and persistent-file protection | Irrelevant — an ordinary file |
+| Human gate | The call arrives, and **the call is entirely correct**. Only the argument's content is poisoned |
+| Nonce wrapping of untrusted data | Did not stop this class (measured: through in 9 of 10 valid runs) |
+
+**Why:** every existing layer is built around *which operation, on what
+target*, and answers "may this operation proceed". An injection that accepts
+the operation and corrupts only a **value** never touches any of their
+conditions. The approval prompt shows the right tool name and the right path;
+there is nothing for the operator to find odd. The failure mode is different,
+so **adding another layer of the same kind does not engage either.**
+
+**How to apply:**
+
+- **Count layers by the failure mode each one stops, not by how many there
+  are.** If a design document says "defence in depth", say per layer what it
+  stops. A layer you cannot write that sentence for does not cover this mode.
+- No number of "may this operation proceed" layers covers **whether the value
+  is right**. Either a separate mechanism covers values, or say plainly that
+  none does.
+- **Rendering every argument in the approval prompt is worth doing** — but do
+  not treat it as sufficient. The implementation measured here clips each
+  argument at 120 characters: the poisoned part of a three-line file is
+  visible, and of a realistically sized write it is not. And even when it is
+  visible, **only someone who knows the right value can see that it is wrong.**
+- The effective control for this class is a **diff review** of the output (git
+  diff and kin) — an operational one, not a mechanism, and a design document
+  should name it as such rather than implying a gate covers it.
+
+Related: "Measuring injection resistance with loud attacks overstates it" (how
+to measure this class at all).
