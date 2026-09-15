@@ -278,6 +278,55 @@ re-decide command or control (`--reclassify` and the like), and document it as
 the only migration path. If re-deciding is expensive (API calls, say), keep it
 off the default path and make it deliberate.
 
+### Reverting someone's settings: record what you observed, never what you intended
+
+**Symptom:** A tool that changes another program's settings and offers to put
+them back produces four failures that all look unrelated — it refuses to restore
+a value the user had set by hand; it deletes a setting the user had set; after a
+write that only half landed it accuses "something else" of changing the settings
+and refuses to clean up; and it silently overwrites a change someone made
+outside it. In menubar-spacer (macOS status-item spacing preferences, 2026-09)
+an independent review found all four in one write layer.
+
+**Why:** They are one defect. The backup record was built from what the tool
+*meant* to write, while the read layer quietly reshaped what it *saw*:
+
+- The record's "what we applied" field held the requested target. A write the OS
+  honoured for one key only left the record describing a state the machine was
+  not in, so the restore path — which compares the live state against that field
+  to detect outside interference — classified the tool's own half-write as
+  someone else's change.
+- A plausibility range (0…64) was applied to values *read from the machine*. A
+  hand-set 100 was captured faithfully and then rejected as corrupt by the very
+  check meant to guard against corruption, leaving no in-app way back.
+- Values were coerced to the type the tool understands. `defaults write -g
+  SomeKey 8` without `-int` stores a **string**; read as an integer it came back
+  as "not set", so a restore would delete a key the user had set. A float was
+  truncated.
+
+**How to apply:**
+- Fill every field of the record from a read-back, never from the request. After
+  writing, re-read and re-save; the record must describe the machine even when
+  the write went wrong.
+- Validate a record when you **decode a file**. Never validate a value you
+  **observed on the machine** — a range check there refuses exactly the users
+  whose settings are furthest from default, which is who needs restoring most.
+- Keep a value you cannot interpret verbatim (a property list blob, a raw byte
+  string) and write it back unchanged. Model it as its own case so nothing can
+  confuse "a value I don't understand" with "no value".
+- Treat a state where each key holds either the original or the last observed
+  value as yours to clean up. Anything else is outside interference — and then
+  undo refuses, while an explicit new request proceeds but reports what it
+  replaced. Refusing an explicit request is obstruction; undoing over an
+  unexplained state is destruction.
+- Store the way back before the first write, hold an exclusive lock across
+  read → decide → save → write, and read the live state inside that lock. Two
+  copies of the tool otherwise record a state the tool itself produced as the
+  user's original.
+- Move an unreadable record aside instead of deleting it, and only after a write
+  actually happened. The read may have failed transiently, and its bytes may
+  still be readable by a person.
+
 ## Filesystem
 
 ### Never read volume free space from volumeAvailableCapacityForImportantUsage alone
