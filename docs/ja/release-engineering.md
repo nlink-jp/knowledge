@@ -264,6 +264,15 @@ rm -rf $(STAGE) ; \
   `bin.install "<name>"`。資産名にバージョンが中間に入る形式では brew の自動 version 検出が
   効かないため `url` ハードコード + `version` 明示。`brew style` の ComponentsOrder は
   `url` が `version` より前を要求するので、`url` に `#{version}` 補間は使えない。
+- **新しい macOS を要求するアプリは cask の下限を明示的に設定する。** 共有テンプレートの
+  既定 `:big_sur` のままだと、動作しない OS に対応していると広告することになり、しかも
+  何も失敗しない——アプリが動かない環境に cask が入ってしまう。シンボルはマーケティング名
+  ではないので Homebrew 自身の表から読む（`brew ruby -e 'puts MacOSVersion::RELEASES'`
+  または `Library/Homebrew/macos_version.rb`。26 が `:tahoe`、27 が `:golden_gate`）。
+- **`zap` がアプリの保存状態を消すべきかは、チェック項目ではなく判断である。** *システム側*の
+  設定を変更し、変更前の値の記録を保持するツールでは、その記録を zap で消すと
+  「変更されたまま戻す記録がない」状態を作る——`zap` はシステム設定自体を戻せない。
+  この種の記録は残し、アンインストール前にアプリ内で取り消すよう利用者に伝える。
 - **cask（GUI .app）**: `depends_on macos: :big_sur`（文字列形は style が symbol 形に矯正）、
   `zap trash: [...]`。
 - **cask が notarization の真テスト**: formula は brew が quarantine xattr を剥がすが、

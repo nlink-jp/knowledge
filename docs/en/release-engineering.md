@@ -310,7 +310,18 @@ installs signed+notarized release zips as-is (prebuilt).
   `brew style`'s ComponentsOrder requires `url` before `version`, so `#{version}`
   interpolation in `url` is not possible.
 - **Cask (GUI .app)**: `depends_on macos: :big_sur` (string forms get corrected
-  to symbols by style), `zap trash: [...]`.
+  to symbols by style), `zap trash: [...]`. **An app that needs a newer macOS
+  must set that floor explicitly** — the shared template's `:big_sur` default
+  otherwise advertises support the app does not have, and nothing fails: the
+  cask installs on a system where the app cannot run. The symbol is not the
+  marketing name; read it from Homebrew's own table, `brew ruby -e 'puts
+  MacOSVersion::RELEASES'` or `Library/Homebrew/macos_version.rb` (26 is
+  `:tahoe`, 27 is `:golden_gate`).
+- **Whether `zap` should remove an app's saved state is a judgement, not a
+  checklist item.** For a tool that changes a *system* setting and keeps the
+  record of the previous value, zapping that record strands a changed machine
+  with no way back — `zap` cannot undo the system setting itself. Leave such a
+  record alone and tell the user to undo inside the app before uninstalling.
 - **The cask is the true notarization test**: brew strips quarantine xattrs for
   formulae but **keeps them for casks** → `spctl -a -t exec` performs the full
   Gatekeeper assessment. "accepted, source=Notarized Developer ID" on a clean
