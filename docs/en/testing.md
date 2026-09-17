@@ -968,6 +968,64 @@ detect the difference.
 - A trace of "lines the model returned" is not evidence of what was
   painted; confirm painting from the raw bytes.
 
+### Anything that occupies N rows in an inline TUI must erase below itself — the renderer's flush clears one
+
+**Symptom:** Inline terminal images in an inline TUI, with the row
+accounting already correct (the emitter declares a box and tells the row
+counter that number; the unit tests pass). On a real terminal three images
+still left three footer fragments standing on the screen. Neither the unit
+tests nor four independent verification passes reading the source found it
+(2026-09, an agent's TUI).
+
+**Why:** Bubble Tea's inline renderer flushes a queued line from the top of
+its own frame and appends `EraseLineRight`, which clears **one row, to the
+right of the cursor**. The image then draws down N rows at its declared
+width, so every cell of the old frame to the RIGHT of a narrower picture
+survives on every row the picture covers. A 40-column picture under a wider
+footer leaves the difference on every one of those rows. This is
+independent of the row arithmetic and happens with the accounting perfectly
+correct.
+
+**How to apply:**
+- Under an inline renderer, output that occupies **more than one row**
+  (images, sixel, hand-drawn boxes) writes one erase-to-end-of-screen
+  (`ESC[J`) immediately before its payload. Nothing above the cursor is
+  touched, and the renderer repaints just below it anyway.
+- "If the row count is right the screen is right" does not hold: the
+  declared **width** is occupied too, and erasing happens per row.
+- This class is **decidable only on a real terminal**. No number of
+  source-reading passes reaches it. Take an A/B on the real terminal — the
+  fix, and the same tree with the one line removed — under the same
+  conditions, and count the leftovers.
+
+### A terminal capability probe asks a second question every terminal answers
+
+**Symptom:** A probe asked whether the terminal could draw inline images
+with an APC graphics query and read silence as "no" via a timeout. On Apple
+Terminal it blocked for the **full 2.001 s at every start**, and because
+that terminal does not understand APC it printed the query's own body —
+`Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA` — on the operator's screen first (2026-09,
+an agent's TUI; the environment classified only tmux/screen, the kitty
+family and iTerm2, so every other terminal took this path).
+
+**Why:** The capability question has **no negative answer**. A terminal that
+does not know the protocol simply says nothing, and silence cannot be told
+from slowness, so the only usable verdict is the timeout — which every
+terminal that cannot draw then pays in full.
+
+**How to apply:**
+- Send a **DA1 request (`ESC[c`) immediately after** the capability query.
+  Every VT-compatible terminal answers it, so "a DA1 reply arrived with no
+  graphics reply before it" is a definitive no. Measured: 2.001 s → under
+  1 ms. Keep the timeout as the backstop for a terminal that answers
+  neither.
+- A terminal that does not parse the escape **prints its body**. Erase the
+  line the probe dirtied before handing the terminal to the UI (`\r` plus a
+  line erase).
+- Record the effect by **measuring before and after with the same
+  instrument**. Both the probe's duration and the dirtied screen are
+  observable only on a real terminal.
+
 ## Do not write a single observation as a rule — write it with its counts
 
 **Symptom:** A search API's answers came back without citations twice when

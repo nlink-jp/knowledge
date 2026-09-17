@@ -8,6 +8,77 @@ For signing and notarization, see [release-engineering.md](release-engineering.m
 
 ## SwiftUI / AppKit (mostly menu-bar resident apps)
 
+### Separate macOS 27 menu bar API discovery from functional proof
+
+**Symptom:** A menu bar organizer feasibility probe resolved the private
+`MenuBarClientCore` framework and its hiding-related classes and methods, but a
+restricted execution environment saw neither displays nor MenuBarAgent. Both
+became visible in desktop context. After the user granted the signed diagnostic
+app Accessibility access, reading AX children also succeeded. No hiding,
+movement, or restoration had actually been exercised. (2026-09)
+
+**Why:** Framework loading, GUI-session access, TCC Accessibility trust,
+individual item identity, and successful control are separate conditions. An
+empty result does not distinguish them. macOS 27's public `NSStatusItem` session
+API manages an app's own panel, not arbitrary other applications' items.
+
+**How to apply:**
+- Report API resolution, permission, AX reachability, individual item extraction,
+  hiding/movement, and restoration separately, with OS build and execution context.
+  Never label an unexecuted step as successful.
+- Distinguish failed, empty, and partial reads. Failure does not mean every item
+  has been successfully hidden.
+- Rerun the unchanged signed diagnostic app after the user grants access.
+  Rebuilding can change the permission test conditions; do not mix those results.
+- Matching class names and argument counts do not establish invocation success.
+  Validate actual argument types, including Objective-C object `@` versus block
+  `@?`, and results before using a private call.
+- Check unrelated icons and their functions during a hiding test. The reference
+  reports collateral behavior including Notification Center; reproduce on the
+  intended OS before making an adoption decision.
+
+**Follow-up observation (2026-09-15):** Two bounded workers on build 26A428
+confirmed activation and AX-label return after normal release and SIGKILL.
+However, an explicitly allowed fixture B and the audio/video system identifier
+were absent alongside the target during both requests. Refreshing fixture
+registration and restarting did not resolve B; its cause remains unknown. This
+is a one-window AX result, not a general compatibility or pixel-visibility claim.
+The updated probe also reported AX trust false while Settings showed its toggle
+on; an independent authorized observer supplied the observations.
+
+- Preserve targets, allowed control apps and unrelated system identifiers in
+  before/during/after records. Target disappearance alone is insufficient.
+- Timestamp observations against the actual worker lifetime. Treat menu opening,
+  action execution, visible appearance and full system function as separate checks.
+- A visible permission toggle is not proof that a newly signed process is trusted.
+  Report the mismatch; never convert an unreadable tree into a successful test.
+
+References: [Apple's own-status-item API discussion](https://developer.apple.com/videos/play/wwdc2026/289/),
+[macOS 27 reference implementation limitations](https://github.com/fif7y/pelmet/blob/2a1968cc66816b02d7900d9efb13e7119642309b/docs/FAQ.md).
+
+### Menu bar spacing: distinguish fresh-app geometry from global live behavior
+
+**Symptom:** On macOS27.0(26A428), changing current-user/current-host global
+`NSStatusItemSpacing` and `NSStatusItemSelectionPadding` together to4/4 and24/24
+changed freshly launched AppKit fixture window widths. Text measured37→25→45→37
+points across original,compact,wide,restored states. A human confirmed visible
+change in a longer trial. Finder was not restarted and the user did not log out.
+
+**Why:** New processes can consume settings even when a global live update is
+not established. Own NSStatusItem geometry, actual screen appearance, other
+applications, and system items are different pieces of evidence. Both keys were
+changed together, so their independent effects remain unproven.
+
+**How to apply:**
+- Treat this as a demonstrated fixture mechanism, not an all-app promise. Fresh
+  launch sufficiency does not establish that relaunch is necessary.
+- Preserve exact key absence and values in the precise preference scope. Do not
+  replace absence with an assumed OS default; record any-host fallback separately.
+- Serialize experimental writes and watchdog restoration. Once recovery begins,
+  reject later experimental writes even if restoration fails. Use unique payloads.
+- Measure settled samples, retain human visual feedback separately, and restore
+  and re-read original preferences with a fresh process.
+
 ### Menu-bar apps cannot be built with SwiftUI alone
 
 **Symptom:** Menu-bar resident (`LSUIElement`) apps require AppKit knowledge for

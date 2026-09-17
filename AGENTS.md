@@ -34,3 +34,7 @@ CHANGELOG.md
 - This repo is public — treat every line as published.
 - Do not copy memory files verbatim; memories may contain machine-local or
   personal context that must be generalized.
+- For OS compatibility investigations, distinguish local measurements from
+  upstream reports and unexecuted test criteria; API discovery is not functional validation.
+
+- macOS spacing trials: preserve exact preference scope/key absence, serialize watchdog restoration against later writes, and separate fresh-fixture geometry from all-app behavior.

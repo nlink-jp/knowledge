@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-17
+
+- **testing**: two terminal lessons from inline images in an inline TUI.
+  Output that occupies N rows must erase below itself — the inline
+  renderer's flush clears one row, so the old frame survives to the right of
+  a narrower picture on every row it covers, with the row accounting
+  perfectly correct. And a capability probe sends a device-attributes
+  request alongside its capability query, because the capability question
+  has no negative answer: silence cannot be told from slowness, and the
+  measured cost of reading silence as "no" was the full 2.001 s budget at
+  every start on Apple Terminal, plus the query's own body printed on the
+  screen. Both classes are decidable only on a real terminal.
+
+## 2026-09-15
+
+- **macos-gui**: record spacing-only fixture measurements, human visual confirmation, exact absent-key restoration, and serialized watchdog recovery.
+
+- Extend macOS 27 menu-bar validation lessons with bounded live-trial AX evidence, allowed-control checks, and permission-toggle mismatches.
+
+- **macos-gui**: separate macOS 27 private API discovery, GUI access,
+  Accessibility trust, item extraction, actual control, and restoration.
+  Record the execution scope and OS build; do not interpret missing access
+  as successful hiding, or a runtime signature check as functional proof.
+
 ## 2026-09-13
 
 - **testing**: a withdrawn mechanism disappears from the code, not from the
