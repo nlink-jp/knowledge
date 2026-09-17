@@ -760,3 +760,12 @@ supersede-in-place rule for a request whose newer version makes the older
 irrelevant, or no window at all. The shape to look for in review is a state
 machine whose "in flight" field has exactly one clearing path, and a capability
 flag that keeps advertising the feature while that field is stuck.
+
+The fix that kept everything worth keeping was a deadline on the in-flight entry
+rather than removing the window: coalescing still protects the peer during a
+drag, and liveness is restored for the case that matters, a newer request
+waiting behind an older one. Two details make it safe. An expired window with
+nothing queued must send nothing, or liveness becomes a resend loop of state the
+peer already has. And a reply arriving after the expiry acknowledges whatever is
+in flight then, so if those events are surfaced, say that the newest wins rather
+than pretending the correlation survived.
