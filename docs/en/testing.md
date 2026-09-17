@@ -1137,3 +1137,25 @@ them, so a field deleted by the withdrawal leaves them broken for months.
 Related: "If a design document says a rule applies to all N, write the test that
 enumerates N in the same commit." That one pins the coverage of the application points;
 this one pins the coverage of the **explanations**.
+
+### Verify WebKit authorization at the actual callback boundary
+
+**Symptom:** During a macOS client port, JavaScript navigation produced click-like
+metadata. An async method with a name resembling an authentication delegate
+compiled successfully but never received the certificate challenge.
+
+**Why:** Navigation type and button number do not prove human approval. A method
+that merely resembles an optional Objective-C protocol method can compile without
+implementing it. Isolated predicates cannot reveal missing call paths for redirect
+cookies or certificate verification.
+
+**How to apply:** Bind web-to-native connection authority to a one-shot native
+confirmation of an immutable candidate. Use a temporary HTTPS server and real
+WKWebView to exercise automatic location changes, form POSTs, cookies received
+after redirects, certificate challenges, and replay after cancellation. Trust
+fixture certificates only inside the test; do not alter the system trust store.
+Check the SDK's async delegate name and do not equate successful compilation with
+callback delivery. If a parallel dependency suite stalls shared fixtures, rerun
+sequentially to diagnose it rather than deleting failed tests.
+
+Source: spice-client port and simulation verification (2026-09).

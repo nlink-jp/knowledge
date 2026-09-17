@@ -2,6 +2,10 @@
 
 ## 2026-09-17
 
+- **testing**: verify web-to-native authority through real WebKit/HTTPS callbacks, immutable native approval, and isolated certificate fixtures.
+
+## 2026-09-17
+
 - **testing**: two terminal lessons from inline images in an inline TUI.
   Output that occupies N rows must erase below itself — the inline
   renderer's flush clears one row, so the old frame survives to the right of
