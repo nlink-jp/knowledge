@@ -300,3 +300,20 @@ usage goes; every extra device is surface the product never exercises but the
 test can still die on. When a hypervisor crashes rather than erring, check the
 exit status before the guest logs: a container started with `--rm` throws that
 status away, so a fixture container should live until its owner removes it.
+
+**When the product does need the unstable device, isolate it instead of dropping
+it.** The same fixture later gained an audio device, because playback is a real
+feature, and the crash came back: 3 crashes in 12 runs with the device against
+0 in 18 without, and 2 in 5 on the newer hypervisor, so upgrading was not the
+answer. What the crash needed was churn — many client connect/disconnect cycles
+with the playback channel open. Splitting the run into two phases, the
+churn-heavy suites against a device-free fixture and the audio check on its own
+fixture with a single connection, was clean in 5 of 5 and then 4 of 4 whole
+runs. Measure the rate before and after rather than declaring it fixed: both of
+these were intermittent, and a single clean run proves nothing.
+
+One more detail for audio specifically: a silent stream exercises the whole
+path. The transport carries whatever PCM it is handed, so the guest can play
+zeros and the client's packet counters still move, which keeps the machine
+running the gate quiet. Verifying audio should not mean a laptop suddenly
+emitting a test tone.

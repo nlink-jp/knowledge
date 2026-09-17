@@ -176,3 +176,31 @@ early-exiting consumer (`grep -q`, `head`, `read`) on one pipeline whose status 
 a gate reports a failure that the same evidence, printed a line earlier, contradicts, suspect
 the plumbing before the asset — then fix the check and re-run it for a machine verdict instead
 of reasoning the FAIL away.
+
+## On macOS's bash 3.2, an empty array under `set -u` is an unbound variable
+
+**Symptom:** A fixture script built its optional arguments as an array and
+expanded them in the middle of a long command:
+
+```sh
+set -euo pipefail
+AUDIO_ARGS=()
+[ -n "${WANT_AUDIO:-}" ] && AUDIO_ARGS=(-audiodev spice,id=a -device virtio-sound-pci,audiodev=a)
+podman run ... "${AUDIO_ARGS[@]}" ...
+```
+
+With the option off, the script died before doing anything:
+`AUDIO_ARGS[@]: unbound variable`.
+
+**Why:** macOS still ships bash 3.2 as `/bin/bash`, and there `"${arr[@]}"` on an
+*empty* array counts as unset under `set -u`. Bash 4.4 and later special-case it.
+A script with `#!/bin/bash` gets 3.2 on macOS no matter which bash Homebrew
+installed, so this is invisible when it is developed or tested under bash 5.
+
+**How to apply:** Expand optional arrays as `${arr[@]+"${arr[@]}"}`, which yields
+nothing when the array is empty and the elements otherwise. The same applies to
+`$@` in a function with no arguments. Do not reach for `set +u` around the call:
+that disables the check for everything else on the line too. And remember the
+neighbouring trap in the same construct — a `#` comment cannot be placed inside a
+backslash-continued command; it swallows the continuation and the command runs
+with the wrong arguments or not at all.

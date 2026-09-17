@@ -35,7 +35,7 @@ English version: [README.md](README.md)
 | [testing](docs/ja/testing.md) | 実データ E2E、モック設計、失敗注入、MCP テストハーネス、クロスプラットフォーム検証、エラー文言の質、診断時の証拠の質、ログの時刻表現、独立検証パスの収束判定、新しい境界は本物を本物の檻で駆動して検証、モデル比較ベンチの設計、inline TUI の行計算は tmux で実測、複数行を占める出力は自分の下を消す、端末の能力プローブ、モデルが読む文面を機械照合、境目に接する区間の切断漏れ、ヘッドレスのテストとビュー描画カウンタ、同時1クライアントのフィクスチャと並列スイート、直さない欠陥の固定 |
 | [containers-and-infra](docs/ja/containers-and-infra.md) | macOS の Podman、DuckDB bind mount、matplotlib フォント、ログローテート、SSH 死活監視、case-sensitive ボリュームの禁忌、Podman 上の QEMU/TCG による実ゲスト OS、VMのデバイスを製品の使い方に合わせる |
 | [config-and-io](docs/ja/config-and-io.md) | Bubble Tea の Update 内 Send による凍結、canonical 識別子、strict 設定デコード、データ保持期限、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO、任意の応答で開いたままになる送信窓 |
-| [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
+| [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠、bash 3.2 の set -u と空配列 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
 | [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用、upstream への提案が望まれているかの見極め |
 
