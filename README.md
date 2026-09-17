@@ -36,7 +36,7 @@ Documents are consumed by reading `main` — there are no releases.
 | [config-and-io](docs/en/config-and-io.md) | Bubble Tea's Send-from-Update freeze, Canonical identifiers, strict config decode, data retention expiry, storage-dir reconcile, volume free space, OAuth, terminal IO, send windows held open by an optional reply |
 | [shell-scripting](docs/en/shell-scripting.md) | BSD/GNU sed differences, zsh expansion quirks, Bash trap scope, substitution pitfalls |
 | [embedded](docs/en/embedded.md) | M5Stack / ESP32 lessons |
-| [development-process](docs/en/development-process.md) | Rewrite-vs-refactor, contribution triage, ADR granularity, docs practice, separating archived repositories, broken submodules, reports vs controls, ADR citations in ported code |
+| [development-process](docs/en/development-process.md) | Rewrite-vs-refactor, contribution triage, ADR granularity, docs practice, separating archived repositories, broken submodules, reports vs controls, ADR citations in ported code, judging whether an upstream proposal is wanted |
 
 Japanese versions live in [docs/ja/](docs/ja/) (Japanese is the authoring source).
 

@@ -37,7 +37,7 @@ English version: [README.md](README.md)
 | [config-and-io](docs/ja/config-and-io.md) | Bubble Tea の Update 内 Send による凍結、canonical 識別子、strict 設定デコード、データ保持期限、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO、任意の応答で開いたままになる送信窓 |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖、Bash trap スコープ、置換の罠 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
-| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用 |
+| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用、upstream への提案が望まれているかの見極め |
 
 英語版は [docs/en/](docs/en/)（日本語が原文）。
 

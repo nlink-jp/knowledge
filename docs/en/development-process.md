@@ -1134,3 +1134,28 @@ trace of that reading nobody re-verifies.
 - **Name the shared mechanisms.** "The common parts" means a different set to every reader.
 - Say what the rule is **not**: it is not a rule to port features, and it does not change what the porting ADRs decide.
 - If you deliberately change only one side, record the reason in the commit message and in the ADR. A divergence nobody wrote down reads as an oversight to the next person, and gets "fixed" the wrong way.
+
+## Before proposing a fix upstream, read the project's participation history, not its settings
+
+**What happened:** A local patch fixed a real defect in a vendored dependency,
+and the defect was still live at the tip of the dependency's `main` — the very
+commit the project pinned. The obvious next step was to offer it upstream. The
+repository was public, MIT, unarchived, with issues open and pull requests
+allowed from anyone, which all reads as "contributions welcome". The history said
+something else: no `CONTRIBUTING`, no issue or pull-request template, no
+discussions, zero forks, one star, and every pull request across the maintainer's
+two related repositories was their own, from agent-generated branches, three of
+them still open after three weeks. The one issue ever filed was the maintainer's
+own. The decision was to keep the local patch and revisit at the next dependency
+upgrade (spice-client, 2026-09-18).
+
+**How to apply:** Repository settings say what is mechanically possible, not what
+is wanted. The cheap signals that a proposal will be read are participation ones:
+forks, pull requests from accounts other than the owner's, issues from outside,
+and how long the maintainer's own pull requests sit before merging. When those
+are all zero, budget the proposal as a gift with no expected reply, or skip it.
+A solo, agent-driven project is also the case most likely to reach the same fix
+on its own, which lowers the value of the proposal further. Either way, write
+down the decision and its evidence next to the patch, so the next person does not
+redo the investigation — and make the upgrade path check whether the hole was
+closed upstream, since a patch that stops applying cleanly is the signal.
