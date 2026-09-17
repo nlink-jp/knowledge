@@ -623,7 +623,42 @@ makes no noise, which is worse.
    is stored in the model and asserts Value() changed. View-level
    checks (the field renders) cannot catch it.
 
-### Go's `flag.FlagSet.Output()` is stderr — send human-readable reports explicitly to stdout
+### Calling Bubble Tea's `Program.Send` from inside Update freezes the whole UI — and the callbacks that run inside Update do not look like it
+
+**Symptom:** The TUI stopped accepting input entirely; neither Ctrl+C nor
+Ctrl+D ended it, and it had to be killed from outside. **The same mechanism
+has done this twice** — first through a slash command (`/clear`) that ran a
+hook which reached `prog.Send`, then through another slash command that sent
+an image to the screen (2026-09, an agent's TUI).
+
+**Why:** Bubble Tea v1's `msgs` channel is unbuffered, and the only reader is
+the goroutine running Update. A `Send` from inside Update's call stack waits
+for something nobody will read until Update returns. Later keystrokes queue
+on the same channel, so in raw mode even Ctrl+C is just another key that
+never arrives.
+
+What makes it hard to see is that **the callbacks running inside Update do
+not look like it**. Slash handlers, applying a settings change, running a
+hook — each is written as "a layer outside the UI" and each is in fact called
+synchronously from `Update`. The same function works at startup (no program
+yet) and mid-turn (another goroutine), so reading the code suggests Send is
+fine.
+
+**How to apply:**
+- Do not hand the Program to a callback that can be called synchronously from
+  Update. Return the notification as the callback's **return value** — folded
+  into the slash output, where its ordering is deterministic too.
+- If it must be sent, use `go prog.Send(...)`. That loses ordering, so do not
+  claim delivery in a return value; what a caller can act on is whether there
+  is a program at all.
+- Review heuristic: **enumerate every caller of `prog.Send`** and ask of each
+  "can this run synchronously from Update?". One yes is a freeze.
+- Pin it with a sender that never returns, and assert the caller returns
+  anyway. The synchronous version fails that on a timeout. Unit tests stay
+  green while the UI dies, so without this shape the next one is found on real
+  hardware.
+
+
 
 **Symptom:** A subcommand rendered its formatted report with
 `printReport(fs.Output(), …)`. The `--json` variant went to stdout, the text
