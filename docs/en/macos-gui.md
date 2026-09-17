@@ -1022,3 +1022,41 @@ in an event**.
 - Mark the always-visible number too (the menu-bar figure). For a user who
   never opens the popover, that mark is the only way to say "this number is
   incomplete".
+
+## What an app looks like is decided by the SDK it recorded linking against — and a toolchain update rewrites that silently
+
+**What happened:** A SwiftUI menu-bar app re-released with only string and layout
+changes came back drawing with the previous generation of window chrome (square
+corners). The Info.plist was identical apart from the version string. The
+difference was in the binary's `LC_BUILD_VERSION`:
+
+| build | minos | sdk |
+|---|---|---|
+| previous release (looked right) | 14.0 | **26.5** |
+| new release (square corners) | 14.0 | **14.0** |
+| other Swift GUI apps on the same machine, built before the update | 13/14.0 | 26.5 |
+
+macOS reads **which SDK an app was linked against** to decide which design
+generation to render it with. The newer toolchain (Xcode 27 / Swift 6.4) stamps
+that field with the *deployment target*, so the app declared an old SDK and got
+the old look.
+
+**Why nothing caught it:** the build, the signature, the notarization and the
+whole test suite pass either way. Only the OS's rendering changes, and no
+artifact check looks at that. The symptom also appears **only when the deployment
+target is older than the current SDK**, so an app targeting the current OS does
+not reproduce it on the same toolchain — a sibling app looking fine is actively
+misleading.
+
+**How to apply:**
+- Pass the SDK version to the link step explicitly in release builds:
+  `swift build -c release -Xlinker -platform_version -Xlinker macos -Xlinker <min> -Xlinker <sdk>`.
+  Setting `SDKROOT`, or passing `-Xlinker -sdk_version` on its own, does not work
+  (both measured). Derive `<min>` from `Package.swift`'s `.macOS(.vNN)` so the
+  deployment target is stated once.
+- **Add the check to `verify-release`**: read `LC_BUILD_VERSION`'s `sdk` with
+  `otool -l` and fail unless it equals the current SDK. A visual regression can
+  only be judged by a human, so this is the one proxy a machine can gate on.
+- After updating a toolchain, **diff the first release artifact against the
+  previous one at the binary level**, not just the sources. `LC_BUILD_VERSION`,
+  signing attributes and embedded versions all change without any source diff.

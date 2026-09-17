@@ -26,7 +26,7 @@ English version: [README.md](README.md)
 | ドキュメント | 内容 |
 |---|---|
 | [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数・ライセンス表記 |
-| [macos-gui](docs/ja/macos-gui.md) | SwiftUI/AppKit の罠、メニューバーアプリ、macOS 27の実現性・間隔検証、Wails |
+| [macos-gui](docs/ja/macos-gui.md) | SwiftUI/AppKit の罠、メニューバーアプリ、macOS 27の実現性・間隔検証、リンクした SDK が外観を決める、Wails |
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
 | [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計、文書 id 付き offset ページング、ファイル出力先は呼び出しごとの引数 |
 | [llm-integration](docs/ja/llm-integration.md) | Gemini/genai SDK、出力検証、drift、トークン、dedup、パイプライン、エージェントのツール除外、判定モデルは thinking でなく世代で選ぶ、ローカルサーバの接頭辞キャッシュと system プロンプト、再送上限は再生計測で、ローカルモデルが常置指示に行動する場所（system ではなく最初の user メッセージ） |

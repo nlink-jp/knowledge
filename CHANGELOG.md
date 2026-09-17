@@ -2,6 +2,18 @@
 
 ## 2026-09-17
 
+- **macos-gui**: an app's appearance is decided by the SDK recorded in
+  `LC_BUILD_VERSION`, and the Xcode 27 / Swift 6.4 `swift build` stamps that
+  field with the deployment target instead — a re-released menu-bar app came
+  back drawing with the previous generation of window chrome, with an identical
+  Info.plist and no source cause. Pass `-platform_version` explicitly (SDKROOT
+  and a lone `-sdk_version` do not work), derive the minimum from Package.swift,
+  and gate `verify-release` on the linked SDK: build, signature, notarization and
+  tests all pass either way, and the symptom only shows when the deployment
+  target is older than the SDK, so a sibling app looking fine proves nothing.
+
+## 2026-09-17
+
 - **testing**: an interval cut must fire when a segment *touches* the boundary,
   not only when one straddles it — contiguous segments leave nothing straddling
   an instant that a state change or a gap split lands on exactly, and a limit
