@@ -1159,3 +1159,37 @@ callback delivery. If a parallel dependency suite stalls shared fixtures, rerun
 sequentially to diagnose it rather than deleting failed tests.
 
 Source: spice-client port and simulation verification (2026-09).
+
+## Cut an interval at a boundary on "touches it", not only on "straddles it" — a miss hides behind sampling phase
+
+**What happened:** An aggregation filing activity into logical days (a day
+starting at 05:00, say) looked for the day-boundary cut with
+`seg.Start < boundary && boundary < seg.End` — a segment straddling it. Segments
+are contiguous, so when a state change or a gap split lands exactly on the hour,
+**nothing straddles the boundary**. No cut happened, and because the next
+boundary was only recomputed once the stored one was cleared, **a boundary
+already passed stayed as the limit and every later boundary was skipped too**.
+A session crossing days then ran until the next long absence, and the day it
+should have opened reported zero. This also disabled an already-released cap
+("a session spans at most two logical days") by the same route.
+
+**Why it stayed hidden:** Whether it fires is decided by the **phase** of the
+sampling tick (`unix % interval == 0`). The tests used a single phase, and in a real multi-week history almost no
+sample ever met the condition — so the deployment was asymptomatic. The phase is re-rolled every time the daemon
+restarts, so "not happening now" is not "cannot happen". A code-reading
+verification pass also failed to see that the predicate tested only the straddle.
+
+**How to apply:**
+- Make the predicate **two-pronged**: cut on a straddling segment *and* on a
+  segment that begins **at or after** the boundary (`!start.Before(limit)`). In a
+  contiguous series the second is the common case; the first alone always misses
+  the exact touch.
+- For any value held until a condition is met (a limit, a next deadline, a next
+  boundary), ask whether it **recovers from a miss**. If it does not, put the
+  code that advances it next to the test that consumes it — one miss otherwise
+  becomes a permanent outage.
+- Test this class with a **table over step sizes and start offsets (phases)**.
+  A test written at one phase cannot detect it, structurally.
+- If the boundary is a wall-clock hour, **daylight saving makes the logical day
+  23 or 25 hours**. Before writing "never exceeds 24h", write the test that
+  crosses the change and measure what is conserved and where the boundary lands.

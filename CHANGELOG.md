@@ -2,6 +2,20 @@
 
 ## 2026-09-17
 
+- **testing**: an interval cut must fire when a segment *touches* the boundary,
+  not only when one straddles it — contiguous segments leave nothing straddling
+  an instant that a state change or a gap split lands on exactly, and a limit
+  that is only recomputed once cleared turns that single miss into a permanent
+  one. The defect disabled both a new day-boundary rule and an already-released
+  session cap, and it stayed asymptomatic because firing depends on the phase of
+  the sampling tick, and a real multi-week history almost never met it. Tests
+  for this class vary step
+  and phase in a table; and a wall-clock boundary makes the logical day 23 or 25
+  hours across a DST change, so "never exceeds 24h" needs the crossing test
+  before it is written down.
+
+## 2026-09-17
+
 - **testing**: verify web-to-native authority through real WebKit/HTTPS callbacks, immutable native approval, and isolated certificate fixtures.
 
 ## 2026-09-17
