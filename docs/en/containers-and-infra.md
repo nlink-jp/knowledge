@@ -283,3 +283,20 @@ current version.
   what actually bounds an interrupted run — a trap does not fire on SIGKILL.
 - A per-run ticket goes to QEMU as `-object secret,…,file=` from a `0600` file
   under `~/.cache`, never as `data=` in argv where `podman inspect` shows it.
+
+## Give a virtual machine the devices the product actually uses — a spare display head crashed the hypervisor
+
+**What happened:** A test guest was given `-device virtio-gpu-pci,max_outputs=2`,
+copied from an upstream harness that exercises a two-head layout. With a SPICE
+agent running in the guest and a client connecting and disconnecting repeatedly,
+QEMU dumped core (exit 139). It reproduced on `qemu-system-arm` 8.2.2 (Ubuntu
+24.04) and 10.0.13 (Debian 13), so upgrading was not the answer. The application
+under test presents a single display stream and never asked for the second head.
+With `max_outputs=1`, eleven consecutive runs kept the peer alive
+(spice-client, 2026-09-18).
+
+**How to apply:** Copy a fixture's device list only as far as the product's own
+usage goes; every extra device is surface the product never exercises but the
+test can still die on. When a hypervisor crashes rather than erring, check the
+exit status before the guest logs: a container started with `--rm` throws that
+status away, so a fixture container should live until its owner removes it.

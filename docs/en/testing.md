@@ -1211,3 +1211,34 @@ code runs in the test process at all. And when a suite is enabled by an
 environment variable, `swift test` exits 0 with the suite skipped if the variable
 is missing; a gate that trusts the exit status alone passes with zero tests, so
 have the tests leave a receipt the gate checks.
+
+## A server that serves one client at a time turns parallel test suites into flakes
+
+**What happened:** A live-peer gate grew a second test suite. Both suites drove
+the same QEMU SPICE server, and `swift test` runs suites in parallel. Connections
+started failing, a frame observer starved, and the failures moved between tests
+from run to run. Nothing was wrong with either suite: QEMU's SPICE server serves
+one client, and the two suites were fighting over it (spice-client, 2026-09-18).
+
+**How to apply:** Before adding a second suite against a shared live fixture, ask
+how many clients the fixture serves at once. When the answer is one, `.serialized`
+on each suite is not enough — it serialises within a suite, not across suites. Run
+them as separate sequential invocations of the test runner, which is the only
+arrangement the runner cannot undo. The symptom to recognise is failures that
+migrate between tests across runs while each test passes when run alone.
+
+## Pin a defect you are not fixing as a checked fact, so the gate fails when it is fixed
+
+**What happened:** A live gate found a real product defect: after the first
+viewport resize, no later resize on the same agent connection reached the guest.
+Fixing it meant widening a vendored dependency's patch, which an ADR had scoped
+deliberately, so it was not this change's call. Dropping the assertion would have
+left nothing to notice the day it was fixed (spice-client, 2026-09-18).
+
+**How to apply:** Record the defect as the assertion. The gate requires the
+guest to apply the first mode and requires the second mode to be *absent*, with a
+message saying that its arrival means the defect is fixed and the test and the
+records must be updated. A defect pinned this way cannot rot quietly in either
+direction: it fails if it gets worse, and it fails if it gets better while the
+documents still claim it is broken. This is the machine-checked half of "record
+what you did not fix".

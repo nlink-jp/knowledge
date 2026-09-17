@@ -742,3 +742,21 @@ use did.
 - Write the tests with Japanese bodies. English-only tests pass the
   default tokenizer's defect through.
 
+## Do not gate the next send on an acknowledgement the peer is not obliged to send
+
+**What happened:** A remote-desktop client sent the guest a monitors
+configuration and then refused to send another until the first was acknowledged.
+The transport it ran over consumes that message in the hypervisor and never
+replies, by design. The first request therefore latched the sender for the life
+of the connection: every later resize was queued and dropped, while the session
+kept reporting that resizing was available, so the failure was silent for the
+operator. Reconnecting cleared it, which is why manual testing never caught it
+(spice-client, 2026-09-18).
+
+**How to apply:** A send window of one, held open by a reply, is only safe when
+the protocol *requires* the reply. When it is optional, or when one transport of
+several omits it, the window needs a second way to close: a timeout, a
+supersede-in-place rule for a request whose newer version makes the older
+irrelevant, or no window at all. The shape to look for in review is a state
+machine whose "in flight" field has exactly one clearing path, and a capability
+flag that keeps advertising the feature while that field is stuck.
