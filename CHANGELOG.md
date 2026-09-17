@@ -2,6 +2,17 @@
 
 ## 2026-09-17
 
+- **config-and-io**: Bubble Tea's `Program.Send` from inside Update freezes
+  the whole UI, Ctrl+C included, and the callbacks that run inside Update —
+  slash handlers, settings application, hook execution — do not look like
+  they do. Recorded after the same mechanism did it a second time, with the
+  remedy (return the notification, or `go Send` and stop claiming delivery),
+  the review heuristic (enumerate every Send caller and ask whether it can
+  run from Update), and the regression shape that catches it: a sender that
+  never returns.
+
+## 2026-09-17
+
 - **macos-gui**: an app's appearance is decided by the SDK recorded in
   `LC_BUILD_VERSION`, and the Xcode 27 / Swift 6.4 `swift build` stamps that
   field with the deployment target instead — a re-released menu-bar app came
