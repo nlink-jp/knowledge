@@ -1060,3 +1060,9 @@ misleading.
 - After updating a toolchain, **diff the first release artifact against the
   previous one at the binary level**, not just the sources. `LC_BUILD_VERSION`,
   signing attributes and embedded versions all change without any source diff.
+- **Count the sweep population from the workspace root, `_wip/` included.** The
+  fix was rolled out to every Swift GUI in the series checkouts on 2026-09-17; a
+  project scaffolded under `_wip/` the same day was not in that enumeration and
+  produced a deployment-target-stamped build the next morning (spice-client,
+  2026-09-18). `find <workspace> -name Package.swift` is the population, not
+  `find <series>`.

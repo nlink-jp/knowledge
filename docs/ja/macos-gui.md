@@ -943,3 +943,8 @@ macOS は**アプリがどの SDK に対してリンクされたか**を見て�
 - toolchain（Xcode / Swift）を更新したら、**更新後の最初のリリース成果物を更新前の
   成果物とバイナリ属性で比較**する。`LC_BUILD_VERSION`・署名・埋め込み版数のような、
   ソース差分に現れない属性が黙って変わる。
+- **sweep の母集団はワークスペースルートから `_wip/` 込みで数える。** 2026-09-17 に
+  series 配下の Swift GUI 全数へ展開したが、同日に `_wip/` で scaffold されたプロジェクトは
+  その数え上げに入っておらず、翌朝の成果物がデプロイメントターゲット刻印のままだった
+  （spice-client、2026-09-18）。母集団は `find <series>` ではなく
+  `find <workspace> -name Package.swift` で得る。
