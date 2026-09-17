@@ -247,3 +247,39 @@ becomes the lifetime of the daemon.
   pid reuse — the start time survives exec and always changes with reuse.
   Reference implementation:
   [task-clock](https://github.com/nlink-jp/task-clock)'s live-run registry.
+
+## A real Linux guest with its own SPICE server runs under Podman on Apple silicon without nested virtualization
+
+**What happened:** A macOS SPICE client had only a fake peer to test against. The
+backend's own live harness needs a nested KVM guest inside Apple/container, which
+needs an M3 or newer; the host was an M2 Max and the Podman machine exposes no
+`/dev/kvm`. A native QEMU is no way out either: the Homebrew `qemu` formula has no
+spice-server backend.
+
+**What worked (spice-client ADR-0002, 2026-09-18):** Ubuntu 24.04's
+`qemu-system-arm` + `qemu-system-modules-spice` inside the Podman machine, with
+`-accel tcg`, boots a minimal arm64 guest fast enough to gate on: an Alpine 3.22
+`linux-virt` kernel (9.6 MB) plus an 8.4 MB initramfs made from the `alpine:3.22`
+image's own userland and a pruned module tree reached its init markers 4 s after
+`podman run` (2 of 2 boots), and a real spice-server 0.15.1 delivered display
+frames in the tens per second, cursor, and input acknowledgements to the client.
+Both base images are pinned by digest; apt/apk package versions are recorded from
+the built image rather than pinned, because stable repositories keep only the
+current version.
+
+**How to apply:**
+- The Alpine virt kernel ships `virtio_gpu`, `virtio_input`, `drm` **and `evdev`**
+  as modules; without `evdev` the guest has `/dev/dri/card0` but no
+  `/dev/input/event*`, so injected keys vanish silently. `modprobe` them in init
+  and wait for the guest to report that it is reading each event device before
+  injecting: evdev does not buffer for readers that are not there yet.
+- Build the guest inside the pinned container, not on the host: `apk add linux-virt`
+  gives kernel and modules, busybox `depmod -b` re-indexes the pruned tree, and
+  `cpio -H newc | gzip -n` makes the initramfs reproducible.
+- Podman machine specifics carry over: QEMU binds `0.0.0.0` inside, the host
+  publish is `127.0.0.1:` and an ephemeral port read back with `podman port`
+  (gvproxy can retain a fixed port from an earlier run), and a `--rm` container
+  under `timeout --signal=KILL` plus removal of a stale name at the next start is
+  what actually bounds an interrupted run — a trap does not fire on SIGKILL.
+- A per-run ticket goes to QEMU as `-object secret,…,file=` from a `0600` file
+  under `~/.cache`, never as `data=` in argv where `podman inspect` shows it.

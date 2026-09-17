@@ -151,7 +151,11 @@ grep は末尾まで読むので生産側は正常終了し、隣の行は問題
 
 **適用方法:** 生産側の出力を一度変数に取り、それを grep する —
 `info=$(codesign -dvv "$bin" 2>&1); printf '%s\n' "$info" | grep -q …`。または全部読む形
-（`grep -c … >/dev/null`）にする。終了ステータスをゲートに使うパイプラインに、`pipefail`・
+（`grep -c … >/dev/null`）にする。乱数トークンの常套句も同じ罠で、
+`LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24` は `head` がパイプを閉じて `tr` が 141 で死に、
+`set -euo pipefail` ではその行でスクリプトごと止まる（spice-client の実ピアゲート、2026-09-18、
+最初の `podman run` の前。この節が knowledge にある状態で踏んだ）。`openssl rand -hex 16` は
+必要な分だけ読む。終了ステータスをゲートに使うパイプラインに、`pipefail`・
 出力の多い生産側・早期終了する消費側（`grep -q`、`head`、`read`）を同居させない。1 行前に
 印字された同じ証拠と矛盾する FAIL をゲートが出したら、資産より先に配管を疑う — そして FAIL を
 理屈で片付けず、検査を直して再実行し機械の判定を取る。

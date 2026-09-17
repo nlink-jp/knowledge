@@ -167,7 +167,11 @@ racy: a short output may fit in the pipe buffer and pass.
 
 **How to apply:** Capture the producer's output once into a variable and grep that —
 `info=$(codesign -dvv "$bin" 2>&1); printf '%s\n' "$info" | grep -q …` — or use a form that
-reads everything (`grep -c … >/dev/null`). Never put `pipefail`, a chatty producer and an
+reads everything (`grep -c … >/dev/null`). The usual random-token idiom is the same trap:
+`LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24` ends with `head` closing the pipe and
+`tr` dying with 141, and under `set -euo pipefail` the script aborts at that line (spice-client's
+live peer gate, 2026-09-18, before its first `podman run`, with this very section already in
+the knowledge base). `openssl rand -hex 16` reads exactly what it needs. Never put `pipefail`, a chatty producer and an
 early-exiting consumer (`grep -q`, `head`, `read`) on one pipeline whose status is a gate. When
 a gate reports a failure that the same evidence, printed a line earlier, contradicts, suspect
 the plumbing before the asset — then fix the check and re-run it for a machine verdict instead

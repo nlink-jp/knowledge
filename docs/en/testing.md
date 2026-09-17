@@ -1193,3 +1193,21 @@ verification pass also failed to see that the predicate tested only the straddle
 - If the boundary is a wall-clock hour, **daylight saving makes the logical day
   23 or 25 hours**. Before writing "never exceeds 24h", write the test that
   crosses the change and measure what is conserved and where the boundary lands.
+
+## A counter fed by the view's draw callback proves nothing in a headless test
+
+**What happened:** A live-peer gate for a SPICE client asserted that the session's
+`frames_presented` diagnostic grew once a real server was sending frames. The
+first run waited 30 s and failed: that counter is incremented in the Metal view's
+drawable callback, and a `swift test` process has no view. The frames were
+arriving; nothing was counting them. The design review had predicted it from the
+source before the run reproduced it (spice-client ADR-0002, 2026-09-18).
+
+**How to apply:** In a headless test, observe what the view observes, not what
+the view reports: subscribe to the frame source with the demand a visible window
+would set and count distinct revisions. Do the same audit for every counter a
+gate asserts — find the one call site that increments it and ask whether that
+code runs in the test process at all. And when a suite is enabled by an
+environment variable, `swift test` exits 0 with the suite skipped if the variable
+is missing; a gate that trusts the exit status alone passes with zero tests, so
+have the tests leave a receipt the gate checks.

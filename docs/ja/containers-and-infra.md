@@ -221,3 +221,34 @@ case-sensitive ボリューム
   クラッシュを守れない。コマンド列照合は run 内 exec で偽陰性・pid 再利用で
   偽陽性になる — 開始時刻は exec を跨いで不変かつ pid 再利用で必ず変わる）。
   実装例: [task-clock](https://github.com/nlink-jp/task-clock) の live-run registry。
+
+## nested virtualization 無しの Apple silicon でも、Podman 上で実物の SPICE サーバー付き Linux ゲストが動く
+
+**何が起きたか:** macOS の SPICE クライアントには疑似ピアしか相手が無かった。バックエンド
+自身の live ハーネスは Apple/container 内の nested KVM ゲストを要し、M3 以降が必要。ホストは
+M2 Max で、Podman machine には `/dev/kvm` が無い。ネイティブ QEMU も逃げ道にならない。
+Homebrew の `qemu` formula は spice-server バックエンドを持たない。
+
+**うまくいったこと（spice-client ADR-0002、2026-09-18）:** Podman machine 内の Ubuntu 24.04 の
+`qemu-system-arm` + `qemu-system-modules-spice` を `-accel tcg` で動かすと、最小の arm64
+ゲストがゲートに使える速さで起動する。Alpine 3.22 の `linux-virt` カーネル（9.6 MB）と、
+`alpine:3.22` イメージ自身のユーザランドに刈り込んだモジュール群を合わせた 8.4 MB の
+initramfs は、`podman run` から 4 秒で init のマーカーに達し（2 回中 2 回）、実物の
+spice-server 0.15.1 が毎秒数十の表示フレーム、カーソル、入力 ACK をクライアントに届けた。
+両ベースイメージは digest 固定。apt/apk のパッケージ版は固定せずビルド済みイメージから記録する。
+安定版リポジトリは現行版しか置かないからである。
+
+**適用方法:**
+- Alpine の virt カーネルは `virtio_gpu`、`virtio_input`、`drm`、**そして `evdev`** を
+  モジュールで持つ。`evdev` が無いとゲストには `/dev/dri/card0` はあっても
+  `/dev/input/event*` が無く、注入したキーは黙って消える。init で `modprobe` し、ゲストが各
+  イベントデバイスを読み始めたと報告するまで注入を待つ。evdev はまだ居ない読者のために溜めない。
+- ゲストはホストではなく固定したコンテナ内で作る。`apk add linux-virt` でカーネルとモジュールが
+  揃い、busybox の `depmod -b` が刈り込んだ木を索引し直し、`cpio -H newc | gzip -n` で initramfs が
+  再現可能になる。
+- Podman machine の癖はそのまま効く。コンテナ内で QEMU は `0.0.0.0` にバインドし、ホスト側は
+  `127.0.0.1:` の ephemeral ポートを `podman port` で読み戻す（gvproxy は前回の固定ポートを
+  保持しうる）。中断された実行を実際に有界にするのは、`timeout --signal=KILL` 下の `--rm`
+  コンテナと次回起動時の同名コンテナ除去であって、trap ではない。trap は SIGKILL では走らない。
+- 実行ごとのチケットは `~/.cache` 配下の `0600` ファイルから `-object secret,…,file=` で QEMU に
+  渡す。argv の `data=` は `podman inspect` に映る。
