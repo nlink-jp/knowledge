@@ -204,3 +204,48 @@ that disables the check for everything else on the line too. And remember the
 neighbouring trap in the same construct — a `#` comment cannot be placed inside a
 backslash-continued command; it swallows the continuation and the command runs
 with the wrong arguments or not at all.
+
+## `$?` after an `if` statement is the statement's own status, not the condition's
+
+**Symptom:** A helper classified failures and retried one of them, passing every other
+failure back with its original status:
+
+```sh
+retry_on_port_collision() {
+    while true; do
+        if error="$("$@" 2>&1)"; then return 0; fi
+        status=$?                       # wrong
+        case "$error" in
+            *"address already in use"*) sleep 1 ;;
+            *) echo "$error" >&2; return "$status" ;;
+        esac
+    done
+}
+```
+
+The unit test for the pass-through path failed: the command exited 125 and the function
+returned 0. `error` held the right stderr and `case` took the right branch. Only the
+status was lost.
+
+**Why:** `if` is a compound command with a status of its own. When the condition is
+false and there is no `else` or `elif`, the `if` statement completes with **0**. Reading
+`$?` after `fi` reads that, not the condition. This is POSIX behaviour, identical across
+shells. It fails in the forgiving direction, so it shows up as the error path silently
+reporting success — the hardest shape to notice.
+
+**How to apply:** Read the condition's status **inside** a branch. Immediately after
+entering `else`, `$?` is the status of the condition's last command:
+
+```sh
+if error="$("$@" 2>&1)"; then
+    return 0
+else
+    status=$?
+fi
+```
+
+Writing `cmd && return 0` and reading `$?` next does not work under `set -e`: a failing
+left operand makes the whole `&&` list fail and the shell exits there. Condition context
+is exempt from `set -e`, which makes `if`/`else` the only form that is safe to write.
+The same trap sits after `while`, `until` and `case`. Whenever you want to keep a
+condition's status, keep it inside the branch.

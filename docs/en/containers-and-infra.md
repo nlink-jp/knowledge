@@ -317,3 +317,36 @@ path. The transport carries whatever PCM it is handed, so the guest can play
 zeros and the client's packet counters still move, which keeps the machine
 running the gate quiet. Verifying audio should not mean a laptop suddenly
 emitting a test tone.
+
+## Allocating an ephemeral port and binding it later is inherently racy — the fix is a bounded retry
+
+**Symptom:** An integration gate that publishes a container on an ephemeral loopback
+port failed once in three consecutive runs:
+
+```
+Error: something went wrong with the request: "listen tcp 127.0.0.1:41343: bind: address already in use"
+```
+
+It happened starting the phase-2 peer right after the phase-1 peer was stopped. The same
+sequence passed many times before and after, so it was not a configuration error.
+
+**Why:** Publishing an ephemeral port always leaves a gap between asking the kernel for a
+free one and actually binding it, and nothing reserves it in that gap. A socket that just
+left TIME_WAIT, or an unrelated outbound connection, can take the same number first. No
+container runtime offers an option that closes the gap (pinning the port number closes
+it but reintroduces collisions with the previous run's leftovers, which is a different
+problem). This is a race that follows from the shape of the API, not a defect in an
+implementation. Because it is rare, the usual outcome is a team learning to treat the
+gate as flaky.
+
+**How to apply:** Retry the start itself, a bounded number of times, taking a fresh
+allocation on each attempt. Waiting for the same port is pointless.
+
+- Gate the retry on the error text for **"address already in use" only**. Every other
+  failure — missing image, bad argument — must surface immediately with its own status
+  and message. Retrying all failures turns a real fault into "tried five times, gave up"
+  and deletes the cause.
+- Print one line to stderr when you retry. A silent fix hides the frequency going up.
+- Remove the named container before retrying: a failed start can leave the name taken.
+- The limit can be small; five was enough. On reaching it, fail with the last error text
+  included verbatim.

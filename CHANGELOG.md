@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-18
+
+- **shell-scripting**: `$?` read after a whole `if` statement is the statement's
+  own status, which is 0 when the condition is false and there is no `else`. A
+  retry helper classified failures correctly and still returned success for the
+  pass-through path. Read the condition's status inside the branch; `cmd &&
+  return 0` is not an alternative under `set -e`.
+- **containers-and-infra**: publishing an ephemeral port allocates it and binds
+  it a moment later, with nothing reserving it in between, so a container start
+  can lose the race to whatever released a port just then (once in three gate
+  runs, right after the previous phase stopped). Retry the start with a fresh
+  allocation, gated on that one error text, and say so on stderr.
+- **testing**: a transfer that stalls at the same round number every run points
+  at a credit window, not at the byte handling — a 16,000-byte chunk needed
+  eight tokens against a ten-token grant replenished five at a time. Also: size
+  stability proves nothing as a completion signal when the receiver preallocates
+  the file; key on modification time, always emit a line at a deadline, and take
+  the receiver's own digest as the evidence.
+- **development-process**: hashes over a vendored tree prove nobody edited it
+  unrecorded, not that the recorded patches still explain it — replay them
+  against the pinned upstream. And a local patch is the least-reviewed code in
+  the repository: when a dependency misbehaves, read your own diff against it
+  before reading its implementation.
+
 ## 2026-09-17
 
 - **config-and-io**: Bubble Tea's `Program.Send` from inside Update freezes

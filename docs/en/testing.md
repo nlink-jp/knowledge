@@ -1242,3 +1242,50 @@ records must be updated. A defect pinned this way cannot rot quietly in either
 direction: it fails if it gets worse, and it fails if it gets better while the
 documents still claim it is broken. This is the machine-checked half of "record
 what you did not fix".
+
+## A stall at a round number on a credit-controlled channel is a window problem, not a data-handling bug
+
+**Symptom:** Sending a file to a guest agent stopped at exactly 32,000 of 64,000 bytes,
+every run. The partial content was correct, nothing errored, nothing disconnected. The
+chunk size was the dependency's 16,000-byte default.
+
+**Why:** The channel was under token (credit) flow control. A message costs one token per
+2 KiB wire fragment; the peer grants ten tokens and returns them five at a time. A
+16,000-byte chunk needs eight. The first one spends eight of ten leaving two, the batch
+of five arrives making seven, and the second chunk needs eight — for ever. The stop
+position is the same round number every run because it is decided by the window's
+arithmetic, not by the data. Reading the byte handling and the buffer boundaries finds
+nothing, because there is nothing there to find.
+
+**How to apply:**
+
+- A stall at a position that is constant across runs and an exact multiple of the chunk
+  size points at flow control. A data-dependent bug moves with the content.
+- Measure the credits first: initial token count, the unit a message is charged in, and
+  the granularity of replenishment. Three numbers, and the implementation's log gives
+  them faster and more reliably than the specification.
+- Choose the chunk so it **fits the window the peer can open**, not so it is as large as
+  possible. If one message costs more than half the initial credit, the second one jams.
+- A dependency's default is a default for the peer that dependency had in mind. Pointing
+  it at a different hypervisor or server implementation voids the assumption with it.
+  Pass the number explicitly as your application's, with the reason recorded.
+
+## Size stability is not a completion signal when the writer preallocates
+
+**Symptom:** A guest-side watcher observed the receipt of a transferred file by hashing
+it "once its size has been stable for two seconds". It returned the hash of a partial
+file.
+
+**Why:** The receiving daemon allocated the whole file before the first byte arrived, so
+a file still being written already has its final size. "The size is stable" is true from
+the moment the transfer starts, which makes it a check that asserts nothing.
+
+**How to apply:** Key on a quantity that tracks the writing. Modification time is not
+affected by preallocation. Always pair it with:
+
+- **A hard deadline that always emits a line.** Silence does not distinguish "still
+  writing" from "never coming", so a quiet observer leaves the verifier waiting.
+- **A line for the file being removed.** Cleaning up after a completed transfer is
+  common, and a vanished file should be a reported outcome rather than silence.
+- **A digest computed by the receiver** as the evidence of completion. The sender's
+  "succeeded" is a statement about the sender's own state.

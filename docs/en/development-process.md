@@ -1159,3 +1159,52 @@ on its own, which lowers the value of the proposal further. Either way, write
 down the decision and its evidence next to the patch, so the next person does not
 redo the investigation — and make the upgrade path check whether the hole was
 closed upstream, since a patch that stops applying cleanly is the signal.
+
+## Verify a vendored patch by replaying it against upstream — hashes prove "unchanged", not "explained"
+
+**Symptom:** A pinned upstream dependency was vendored with local patches, one per ADR.
+Every vendored file and every patch file was pinned by hash and checked by a script. When
+the time came to add a third patch, the two recorded ones no longer explained the
+difference between the vendored tree and upstream. The check had been green throughout.
+
+**Why:** Hashes pin one property: nobody edited anything without recording it. The patch
+files are hashed too, but that says their contents did not change, not that applying them
+to upstream produces the vendored tree. Those are independent properties, and checking
+only the first lets a patch decay quietly into a description. The decay surfaces when the
+pin is moved — exactly when the record is most needed.
+
+**How to apply:** Actually **re-apply** the recorded patches to the pinned upstream and
+require the result to equal the vendored tree.
+
+- Read the files a patch touches from the patch's own headers, so adding a patch needs no
+  change to the checker.
+- Apply them in the **order** the upstream record lists. The order is part of the record.
+- Fetching upstream needs the network, so this can be its own target rather than part of
+  the offline test run — but run it before moving the pin.
+- Past one local patch, split them one patch per decision (one ADR). Which decision needs
+  which lines is the only handle you get when reconciling with upstream changes later.
+
+## A local patch is part of the system under test — read your own diff before the dependency's code
+
+**Symptom:** A file transfer through a dependency stalled partway. Reading the
+dependency's implementation turned up a re-entrancy defect, which was fixed. It still
+stalled. The third cause found was the real root. The first was in a local patch this
+repository had applied two ADRs earlier: it returned early on a denied-permission path
+and skipped unrelated work at the end of the same method.
+
+**Why:** A local patch is the least-reviewed code in the repository. Upstream's tests do
+not exercise it. Your own tests look at the feature the patch was for — the clipboard, in
+that case. What the patch does to the **other responsibilities of the same function**
+falls through both nets. Worse, it is filed in memory as "a small clipboard change", so
+it is not a candidate when chasing an unrelated feature.
+
+**How to apply:**
+
+- The moment you suspect a dependency, **read your own diff against it first**, side by
+  side with the pristine upstream file. Read the diff, not your memory of it.
+- Check what the patched function does besides the patch's purpose. An early `return` or
+  `guard` is the classic way to strand unrelated work at the end of a method.
+- Expect several causes behind one symptom. A symptom that does not move after a fix
+  usually means there is another cause, not that the fix was wrong.
+- When you widen a patch, record that decision in the **current** ADR, not the original.
+  When and why the patch grew is what the next person moving the pin needs.
