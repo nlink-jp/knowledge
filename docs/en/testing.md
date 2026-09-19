@@ -1319,3 +1319,7 @@ program. **The convenient observation point is usually below the real one.**
 - Paths a person experiences — drawing, input — get **looked at by a person at least
   once**. Both defects found here surfaced on the first day someone looked at the
   screen, with every automated check green.
+- **The observer has to be running before the event it observes.** The trap waiting
+  right after you move an observation point up: the X key observer was started after
+  the readiness marker the harness waits on, so the injected key arrived first and was
+  missed. Start it before that marker and confirm it is up before emitting it.

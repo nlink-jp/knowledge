@@ -13,7 +13,9 @@
   application in the guest ever saw a keystroke. Name the layer each test observes,
   add a check for the gap between it and the layer a user experiences, break a
   never-failing check on purpose once, and have a person look at drawing and input
-  paths at least once.
+  paths at least once. Added after moving one such observation up a layer: the
+  observer has to be running before the event it observes, which means before the
+  readiness marker the harness waits on, not after it.
 
 ## 2026-09-18
 
