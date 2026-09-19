@@ -1066,3 +1066,40 @@ misleading.
   produced a deployment-target-stamped build the next morning (spice-client,
   2026-09-18). `find <workspace> -name Package.swift` is the population, not
   `find <series>`.
+
+## When every view is correct and the drawing is not, the thing to dump is the layer tree
+
+**Symptom:** The top 44pt of a session window was a black band, and the status text,
+checkbox and two buttons that live there were not visible at all. Accessibility
+reported all four controls present at the right positions and sizes. A recursive dump
+of the view hierarchy showed every view with `isHidden` false, `alphaValue` 1.0 and
+the intended frames. The window background was the system colour and the appearance
+was light. **Nothing was hidden and nothing was transparent, and nothing was visible.**
+
+Reading the code found nothing. A minimal reproduction harness — the same structure, a
+control row above a drawing view inside an `NSHostingView` — was tried five ways and
+drew correctly every time.
+
+**Why:** The fault was in the layers, not the views. Dumping the layer tree showed one
+content layer inside the drawing view measuring 1024x752 where its view was 1024x676,
+and the parent layer's `masksToBounds` was false, so the extra 76pt was not clipped
+and painted straight over the control row above it. **The view hierarchy and the layer
+hierarchy are different things, and the second is under no obligation to respect the
+first's bounds.** Checking view frames can never see this.
+
+**How to apply:**
+
+- For "laid out but not visible", **dump the layer tree**, not the view tree: each
+  layer's `frame`, `opacity`, `isHidden`, `isOpaque`, `backgroundColor`, whether
+  `contents` is set, and `masksToBounds`. One layer whose frame disagrees with its
+  view's bounds is the answer.
+- Add the diagnostic behind a temporary environment variable and remove it afterwards.
+  Attaching to the running process is not an option for a signed app under the
+  Hardened Runtime, because the debugger cannot attach.
+- When you embed someone else's drawing view — a dependency's — in your layout,
+  **clip it to your own frame**. Clipping is not cosmetic here; it is the structural
+  guarantee that whatever they do stays inside the area you gave them. `.clipped()` in
+  SwiftUI, `masksToBounds` on the parent in AppKit.
+- A reproduction harness is good at establishing what is *not* the cause, and that is
+  all it does. **Elimination and observation are different tools**; switch to observing
+  the real thing sooner than feels natural.

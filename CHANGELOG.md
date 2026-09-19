@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-19
+
+- **macos-gui**: a control bar was laid out correctly, not hidden, not transparent,
+  and invisible — a content layer inside a neighbouring view measured 1024x752
+  where its view was 1024x676, and the parent did not clip. View frames can never
+  show this; dump the layer tree. Clip a dependency's drawing view to your own
+  frame as a structural guarantee, and note that a reproduction harness only
+  establishes what is not the cause.
+- **testing**: a gate proved an injected key reached the guest kernel and passed for
+  its whole life while the guest's X server ran with zero input devices, so no
+  application in the guest ever saw a keystroke. Name the layer each test observes,
+  add a check for the gap between it and the layer a user experiences, break a
+  never-failing check on purpose once, and have a person look at drawing and input
+  paths at least once.
+
 ## 2026-09-18
 
 - **shell-scripting**: `$?` read after a whole `if` statement is the statement's

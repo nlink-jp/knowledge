@@ -1289,3 +1289,33 @@ affected by preallocation. Always pair it with:
   common, and a vanished file should be a reported outcome rather than silence.
 - **A digest computed by the receiver** as the evidence of completion. The sender's
   "succeeded" is a statement about the sender's own state.
+
+## A gate that cannot name the layer it observes has only proved the layer below
+
+**Symptom:** A live-peer gate verified on every run that an injected key reached the
+guest, and passed throughout. The day someone gave that guest a desktop and typed into
+a terminal on it, **not one character arrived.**
+
+**Why:** The test read the guest's `/dev/input/event*` directly. The key really did
+reach the guest kernel. But the guest's X server had no input driver and no udev, so it
+started with zero input devices and no X client ever saw a keystroke. What the test
+proved was "reaches the kernel"; what a user experiences is "reaches the application".
+A whole layer sat between the two, and it had been broken for as long as the gate had
+existed.
+
+The observation point ends up one layer low because that is the easy place to put it.
+Raw input events are easy to read; observing an X client's receipt needs another
+program. **The convenient observation point is usually below the real one.**
+
+**How to apply:**
+
+- Write down, per test, which layer it proves. If you cannot, its scope is unknown.
+- When the layer you observe is below the layer a user experiences, **add a check that
+  covers the gap**. Not everything has to move up. Here the guest was made to log how
+  many input devices Xorg took, and the gate requires at least two: key delivery is
+  still observed low, but the missing layer now fails the gate.
+- A check that has never failed is evidence of correctness *and* evidence that it may
+  be looking at nothing. Break it deliberately once and confirm it fails.
+- Paths a person experiences — drawing, input — get **looked at by a person at least
+  once**. Both defects found here surfaced on the first day someone looked at the
+  screen, with every automated check green.
