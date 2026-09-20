@@ -392,7 +392,7 @@ closes nothing in that state. It is also why re-clicks in that state sometimes
   0, and the question "can they be matched by number?" gets a false answer
   either way.
 
-### A popover with controls activates the app when it opens
+### Put a menu-bar panel with controls in a non-activating panel — activating on open does not fix it
 
 **Symptom:** a pop-up button (SwiftUI `Picker(.menu)`) inside a menu-bar popover: on the
 **first click after opening**, the menu flashes and disappears. From the second click on it
@@ -403,16 +403,37 @@ makeKey() on a menu-bar NSPopover right after showing it"). So the first click i
 arrives **while the menu the click just opened is tracking** and ends the tracking. In the
 trace the menu ended 78 ms after it began, with `didBecomeActive` right behind it.
 
+**This entry once recommended the wrong remedy (corrected 2026-09-20).** It said: call
+`NSApp.activate` right after showing; measured, activation completes 12–39 ms later (nine of
+nine). Right after that shipped, the report was "only the first time after launch, the menu
+does not open". Recorded with the signed bundle launched through LaunchServices, **the
+activation request was not honoured right after launch** — the frontmost app stayed the
+previous one, no `didBecomeActive` arrived, the first click then activated the app and the menu
+ended after 71 ms. That refusal is a fact this file already records under "Two pitfalls of a
+menu-bar NSPanel". The nine-of-nine check used a build started from a terminal — a child of the
+frontmost app — and never met the condition.
+
 **How to apply:**
-- For a panel with controls, call `NSApp.activate` right after `show(relativeTo:)` and
-  `makeKey()`. Measured: activation completes 12–39 ms after the panel appears (nine of
-  nine), before anyone can click. After the fix the shortest menu stayed open 909 ms.
-- When the panel closes **while your app is still active**, hand activation back to whoever
-  was frontmost (remember `NSWorkspace.shared.frontmostApplication` before opening, then
-  `yieldActivation(to:)` + `activate()`). An accessory app that stays active with no window
-  leaves the user's keystrokes going nowhere. If the outside click made another app
-  frontmost, do nothing.
-- A display-only panel does not need this; `makeKey()` alone gives the same rendering.
+- Host a panel with controls in an **`NSPanel` with `.nonactivatingPanel`**, and never ask for
+  activation. A click in the panel does not activate the app, so nothing interrupts menu
+  tracking. Under the same condition (the first click, 21.8 s after launch) the menu stayed
+  open for 1,906 ms and no activation happened at all (one run). Nothing is taken, so nothing
+  has to be handed back on close. Follow "Two pitfalls of a menu-bar NSPanel" and the existing
+  implementations (task-clock-gui, instant-translate, net-meter).
+- **Test anything that depends on activation with the signed bundle launched through
+  LaunchServices, within 30 seconds of launch.** A build started from a terminal or an IDE is
+  a child of the frontmost app and the OS treats it differently. "N out of N" means something
+  only within the conditions that were tried.
+- A hidden title bar still has a safe area. SwiftUI content in a `.titled` +
+  `.fullSizeContentView` panel asked for 32 pt more height (535 pt against 503 pt).
+  `ignoresSafeArea()` on the view did not change the size asked for; `safeAreaRegions = []`
+  on the hosting controller did.
+- While a non-activating panel is key, `NSApp.isActive` **reads true** (no `didBecomeActive`,
+  another app still frontmost; one run). For "is the app active", ask
+  `NSWorkspace.shared.frontmostApplication`.
+- When adopting a mechanism, search the knowledge base by the **mechanism's name** (here:
+  activation). Searching by the symptom or the part (popover, Picker) did not reach the entry
+  that records the refusal.
 
 ### A panel that refreshes every second must not refresh while one of its menus is tracking
 

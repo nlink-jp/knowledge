@@ -1361,5 +1361,10 @@ Reading the raw lines in time order settled each in minutes.
   record once.
 - **When the person who used it and the script disagree, read the raw lines first.** The
   script is code you have just written and nobody has reviewed.
-- Keep the recorder behind a compile-time flag and confirm with `strings` that it is not in
-  the release binary.
+- Keep the recorder behind a compile-time flag and confirm **by symbols** that it is not in
+  the release binary (`nm <binary> | grep -ci trace` gave 0 for the release and 25 for the
+  diagnostic build). This entry first recommended `strings`, which was wrong: Swift stores ASCII
+  string literals of 15 bytes or fewer inline in the code, so they show up in neither `strings`
+  nor `grep -a`. The diagnostic binary also gave 0, so the check never established absence
+  (corrected 2026-09-20). **A check for absence must first be seen to come up positive on a
+  target where the thing is present.**

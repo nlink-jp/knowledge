@@ -2,6 +2,19 @@
 
 ## 2026-09-20
 
+- **macos-gui (correction)**: the entry added earlier today that told a popover with controls
+  to activate the app on open was wrong, and is rewritten. Right after launch macOS refuses the
+  activation request, so the first click activated the app after all and ended the menu 71 ms
+  in — found only with the signed bundle launched through LaunchServices; the nine-of-nine check
+  behind the original advice used a build started from a terminal. The remedy is a
+  `.nonactivatingPanel` `NSPanel` that never asks for activation (menu open for 1,906 ms under
+  the same condition). Also recorded: a hidden title bar still gives SwiftUI content a 32 pt
+  safe area (`safeAreaRegions = []`), `NSApp.isActive` reads true while such a panel is key,
+  and the lookup that would have prevented this is by the mechanism's name, not the symptom's.
+- **testing (correction)**: `strings` cannot confirm that a diagnostic recorder is absent from
+  a Swift binary — literals of 15 bytes or fewer are stored inline and appear nowhere; the
+  diagnostic build also gave 0. Count symbols with `nm` instead, and see a check for absence
+  come up positive once before trusting its negative.
 - **macos-gui**: seven lessons from building a menu bar network meter, each measured on
   macOS 27.0. A popover with controls has to activate the app when it opens — otherwise the
   first click's activation ends the menu that click just opened, 78 ms in. A panel refreshed
