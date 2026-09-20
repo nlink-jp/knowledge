@@ -29,6 +29,16 @@
   behaved like the original: a control build's result does not carry over to another app.
   Also recorded: a frontmost accessory app stops being frontmost when its status item click
   opens the popover.
+- **macos-gui**: on macOS 27 a click on an app's own status item reaches its global
+  mouse-down monitor before the button's action (the menu bar is hosted by another process),
+  so "monitor closes, action toggles on `isShown`" turns a re-click into close-then-reopen —
+  visibly so with `animates = false`, and masked only by the close animation's margin
+  otherwise. The two events cannot be matched by identity (the action runs under a
+  synthesized mouse-up with event number 0) and, while the app is active, the action
+  sometimes never arrives. Match them by order instead, take the note only for clicks inside
+  the status item button's *window* frame read at click time with top-left ownership (the
+  screen's top row is exactly `frame.maxY`), and always put a re-click — inactive, active,
+  and at the item's edges — among the verification cells.
 
 ## 2026-09-19
 

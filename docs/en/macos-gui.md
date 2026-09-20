@@ -285,7 +285,8 @@ is not what breaks dismissal, and the monitors are needed either way.
   button's own action toggles the popover, so closing here too turns one click
   into close-then-reopen. Ignore the popover's own window as well. This decision
   (where the click landed → close or not) can be extracted into a pure function
-  and pinned by a test.
+  and pinned by a test. **On macOS 27 the same click also reaches the global
+  monitor, so this alone is not enough** — see the next entry.
 - The local monitor **also closes on a mouse-down in any other window of the
   same app**. When you add a separate window, or a control that opens a window
   of its own, reconcile it with that rule in the same change.
@@ -309,6 +310,74 @@ is not what breaks dismissal, and the monitors are needed either way.
   already-frontmost app's window / non-activating panel / empty menu bar / an
   inside click keeps it open / a second button click closes it without
   reopening.
+
+### A click on your own status item also reaches the global monitor (macOS 27)
+
+**Symptom:** With the panel open, clicking the status item again does not close
+it. It vanishes and comes straight back (gone 23–40 ms after mouse-down, shown
+again 68–221 ms after it — with the button still held). Outside clicks close it
+correctly, so a check that only opens the panel and clicks elsewhere never
+notices. (nvme-lens, 2026-09, macOS 27.0)
+
+**Why:** On macOS 27 the menu bar is hosted by another process, so a click on
+your own status item reaches the **global mouse-down monitor first** (in every
+trace taken, whether or not the app was active) and the button's action 14–49 ms
+later. If the monitor closes unconditionally and the action toggles on
+`isShown`, one click becomes close-then-reopen. The previous entry's rule — the
+local monitor ignores the status item's window — does not prevent it: the same
+click arrives on the global side too.
+
+Whether it surfaces was **decided by the close animation**. With
+`animates = false` the monitor's close completes at once and the action finds
+`isShown == false` and reopens. With the default animation `isShown` is still
+true when the action arrives, so it "closes again" and looks right (6/6 on a
+control build; two other apps with the same structure, 3/3). That is a timing
+margin, not a guarantee.
+
+The two events **cannot be matched by identity**. The action runs under a
+synthesized `leftMouseUp` whose `eventNumber` was 0 whatever number the
+mouse-down carried (checked by numbering the synthetic clicks), and the
+timestamps differ. And while the app is active (after a click inside the panel)
+**the action sometimes never arrives** (3 of 5 traced re-clicks) — so a fix that
+makes the monitor skip clicks on the item and leaves the closing to the action
+closes nothing in that state. It is also why re-clicks in that state sometimes
+"worked" before the fix.
+
+**How to apply:**
+- **Match the two by order.** Keep closing on every global mouse-down; when the
+  click was on your own status item, note that this click's action is awaited.
+  The next action consumes the note and does nothing. If no action comes, void
+  the note at the next mouse-down the monitor sees — so keep the monitor
+  installed "while the panel is shown, or while an action is awaited", and run
+  the same sync from `popoverDidClose`. Rely on none of: a time window, the
+  animation's margin, `isShown` alone. Extract the state machine as a pure value
+  type and pin it with tests.
+- Take the note **only for clicks on the item**. Where item clicks never reach a
+  global monitor, no note is ever taken and the behaviour stays the plain toggle
+  it was (no regression).
+- Decide "on the item" from **the button's window frame, not the button's, read
+  at click time**. Measured: the window is the menu bar's full height (30 pt),
+  the button 22 pt, and the rows between belong to the item. A variable-length
+  item changes width with its content, so a frame read earlier is stale within
+  tens of seconds.
+- Judge the edges with the **top-left pixel convention**. A global monitor's
+  event has `window == nil`, so `locationInWindow` is already in screen
+  coordinates (bottom-left origin), and **the screen's top row is exactly
+  `frame.maxY`** and belongs to the item (where a pointer pushed against the
+  edge sits). `frame.minY` (the first row under the menu bar) and `frame.maxX`
+  (the neighbour's first column) do not. `CGRect.contains` answers the opposite
+  on both vertical edges. Measure which points belong to the item by clicking
+  them with the panel closed and seeing whether it opens, and pin those boundary
+  points in tests.
+- Always include **a re-click of the status item** in the verification cells,
+  plus **a re-click after a click inside the panel** (app active) and **that the
+  click after it opens the panel**. Try the item's top row, bottom row, left and
+  right columns, and a right-click. The popover's arrow overlaps the item's
+  bottom rows at its centre; a click there is a click inside the panel (neither
+  the monitor nor the action fires) — not a defect.
+- Give synthetic clicks a `mouseEventNumber`. Without one every click is number
+  0, and the question "can they be matched by number?" gets a false answer
+  either way.
 
 ### Don't build tree drag & drop on SwiftUI List/OutlineGroup
 
