@@ -375,6 +375,19 @@ closes nothing in that state. It is also why re-clicks in that state sometimes
   right columns, and a right-click. The popover's arrow overlaps the item's
   bottom rows at its centre; a click there is a click inside the panel (neither
   the monitor nor the action fires) — not a defect.
+- **Remove the monitor in one place, and drop the reference there.**
+  `NSEvent.removeMonitor` over-releases a monitor it is handed twice. The first
+  version that synced the monitor from `popoverDidClose` **segfaulted when the
+  app was quit from the button inside the panel**: `applicationWillTerminate`
+  removed the monitor and kept the reference, termination closed the panel's
+  window, and `popoverDidClose` removed it again. Fail a test when a second
+  removal site appears (counting call sites in the source is enough).
+- Put **the ways out of the app** among the verification cells: quitting from a
+  button inside the panel, quitting with other windows open, an external
+  terminate while the panel is open — judged by **exit status and new crash
+  reports**. A probe that only ever terminates the app from outside with the
+  panel closed never runs the panel's close during termination (here a human
+  hand check found it, not the probe).
 - Give synthetic clicks a `mouseEventNumber`. Without one every click is number
   0, and the question "can they be matched by number?" gets a false answer
   either way.

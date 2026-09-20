@@ -39,6 +39,11 @@
   the status item button's *window* frame read at click time with top-left ownership (the
   screen's top row is exactly `frame.maxY`), and always put a re-click — inactive, active,
   and at the item's edges — among the verification cells.
+- **macos-gui**: `NSEvent.removeMonitor` over-releases a monitor removed twice. Syncing the
+  monitor from `popoverDidClose` crashed on quit from a button inside the panel, because
+  `applicationWillTerminate` had removed it and kept the reference. One removal site that
+  drops the reference, a test that counts the sites, and the app's exits (judged by exit
+  status and crash reports) among the verification cells.
 
 ## 2026-09-19
 
