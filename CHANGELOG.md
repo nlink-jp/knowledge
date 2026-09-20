@@ -79,6 +79,13 @@
   `applicationWillTerminate` had removed it and kept the reference. One removal site that
   drops the reference, a test that counts the sites, and the app's exits (judged by exit
   status and crash reports) among the verification cells.
+- **development-process**: a formatter target with no pinned configuration applies the tool's
+  defaults to the whole tree — a scaffolded, never-run `make fmt` rewrote all 39 files of a
+  4-space Swift repository to 2-space. Configuration could not rescue it: across 18 Swift
+  repositories, fixing only the indentation still changed 451 of 583 files, because the
+  pretty-printer re-lays-out line breaks. Land a formatter with its configuration and a
+  no-diff run, measure the diff before adding one to existing code, and size the remedy to the
+  measured scope (one hook in the whole organization: delete it, add a scaffold-checklist item).
 
 ## 2026-09-19
 

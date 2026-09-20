@@ -1135,6 +1135,24 @@ trace of that reading nobody re-verifies.
 - Say what the rule is **not**: it is not a rule to port features, and it does not change what the porting ADRs decide.
 - If you deliberately change only one side, record the reason in the commit message and in the ADR. A divergence nobody wrote down reads as an oversight to the next person, and gets "fixed" the wrong way.
 
+### A formatter target exists only once its configuration is pinned and it has been run
+
+**Symptom:** Running `make fmt` as a finishing step after a three-file change in a Swift repository rewrote all 39 Swift files, about 4,700 lines. The target called `swift format --in-place --recursive` with absolute paths, so the recursive-rewrite guard (which refuses relative paths) let it through. The repository had no `.swift-format`, so the tool's defaults (2-space) were applied to a 4-space codebase. The target had been put there at scaffold time and never run. (nvme-lens, 2026-09)
+
+**Why:** A formatter's output is a function of the tool *and* its configuration. A formatter hook with no pinned configuration hands the result to the tool's defaults and its version. And **a target being in the `Makefile` is not evidence that it is safe to use** — a target that has never been run is unverified code.
+
+Adding a configuration afterwards does not necessarily rescue it. Measured across the same organization's 18 Swift repositories (583 files): every one is consistently 4-space, yet a configuration that only fixes the indentation still changes 451 files, about 13,700 diff lines. Line length is the largest contributor, and relaxing it still does not reach zero, because the pretty-printer re-lays-out line breaks and that part is not configurable. **Hand-formatted code cannot always be reproduced by configuring a formatter.**
+
+Command guards do not help either. Through `make`, the guard sees only `make fmt`, and an absolute path is the correct usage it is designed to allow. "Rewrote the wrong place" and "never checked what it does" are different classes of accident.
+
+**How to apply:**
+- Land a formatter target **in the same commit as the formatter's configuration**, run it on a clean checkout, and commit it only when it produces **no diff**. Tools with no configuration, like `go fmt`, are exempt.
+- A new project is free to adopt a formatter with its configuration from day one: code written under it stays at zero diff.
+- **Before adding one to an existing codebase, measure the diff first** (run it on a scratch copy and count `diff -r`). If there is a diff, either land the one-time `style:` commit that brings the tree in line together with the target, or do not add it.
+- Do not format reflexively as a finishing step. Target only the files you touched, and look at the diff first.
+- If it has already run: restore, by explicit path, only the files that were clean in the `git status` taken before the run. For files carrying your own edits, restore them and re-apply the edits, then confirm identity by checking that the rebuilt artifact's hash matches the one you had verified.
+- **Size the remedy to the measured scope.** Here exactly one formatter hook in the whole organization was affected. Count before adding checks or guard rules — for one occurrence, deleting that target and adding one item to the scaffold checklist is the smallest correct fix.
+
 ## Before proposing a fix upstream, read the project's participation history, not its settings
 
 **What happened:** A local patch fixed a real defect in a vendored dependency,
