@@ -2,6 +2,14 @@
 
 ## 2026-09-20
 
+- **llm-integration**: a shared space between agent sessions stays empty without independent
+  observers and a trigger to write. A machine-local board worked end to end and was archived
+  after sixteen days: 386 sessions registered, 12 ever posted, no record was corroborated or
+  disputed. Reading was enforced and writing optional; the quality model assumed observers that
+  one operator's sessions never provide; what was posted already lived in git, memory and
+  project documents. Count the independent-observer pairs and the marginal information before
+  building, ship the keep-or-kill counters with the feature, and treat push delivery as a cost
+  paid every turn.
 - **macos-gui**: two lessons from rehosting a menu-bar popover in a non-activating `NSPanel`.
   Nothing tells such a panel that the user went elsewhere: mouse-down monitors cover one way
   of leaving, and Cmd-Tab and a Space change need `NSWorkspace`'s notifications on the same

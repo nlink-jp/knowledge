@@ -528,6 +528,66 @@ formulation: **"do not do X" is the pattern to avoid.**
    thing disappear" but **where did the demand flow** — if it flowed
    into an unanticipated path, that is this defect.
 
+### A shared space between agent sessions stays empty without independent observers and a trigger to write — count both before building
+
+**Symptom:** We built a machine-local board through which concurrent
+agent sessions share records across runtimes (append-only records,
+turn-boundary delta delivery through hooks, claims on paths being
+edited, a machine evaluator on the write side). End-to-end tests passed
+on both runtimes and it went through two review rounds. Sixteen days of
+measurement: **386 sessions registered and 12 of them ever posted**;
+records appeared on three days (two of them the day of rollout and the
+day after), with nothing on the fourteen days between. **No record was
+ever corroborated or disputed by another session, and nothing was
+quarantined** — the machinery meant to protect quality never ran once.
+What was posted was release state, measurements and decisions, all of
+which were already written to git, to the agent's own memory and to
+project documents. The board carried one more copy of them into the
+context of unrelated sessions as well. It was archived (2026-09, the
+shared-board case).
+
+**Why:** Three causes, independent of each other.
+1. **Reading was enforced by a hook; writing was optional.** The same
+   shape as the entry two above — a capability with no trigger. The more
+   reliably delivery works, the more the system looks alive and the
+   harder zero posts are to notice.
+2. **The quality model stood on a premise that did not exist.** Keeping
+   quality through corroboration counts and decay works only when
+   several sessions observe the same thing **separately**. One
+   operator's sessions mostly work on different repositories, one after
+   another, so that pair never appears. "Running concurrently" and
+   "seeing the same thing independently" are different facts.
+3. **Delivery ignored relevance, and the content already had a home.** A
+   new channel is worth the information it carries that no existing
+   home holds, not the number of items it carries. The better organized
+   the existing homes, the closer that difference is to zero.
+
+**How to apply:**
+1. Before building anything that shares state between sessions, **count
+   two things in the records you already have**: how many pairs of
+   sessions touched the same target in the same period (the denominator
+   of independent observers), and how many facts one session knew that
+   would have saved another session work **and were in none of the
+   existing homes** (the denominator of marginal information). If either
+   is near zero, what is missing is the premise, not the mechanism.
+2. Design the trigger to write as strongly as the trigger to read. If
+   delivery is enforced by a hook, put posting behind a runtime-side
+   trigger too — "evaluate at the end of a unit of work", for example. A
+   design that relies on voluntary posting is empty before it is
+   measured.
+3. **Ship the counters that decide keep-or-kill in the same commit as
+   the feature.** Posting sessions over registered sessions, days with a
+   post, corroborations, refusals issued. Here the refusals issued by
+   path claims were not logged, so whether the one function unique to
+   the tool ever helped could not be determined afterwards.
+4. Push delivery that cannot be narrowed by relevance is a standing cost
+   on every session's context. Estimate it as paid **every turn**, read
+   or not.
+5. Passing end-to-end tests and being used are facts about different
+   layers. Fix a date two weeks after release to read the counters
+   above, and at zero go back to the denominators in 1 before repairing
+   anything.
+
 ### Model-facing guidance has layers, and the in-band layer wins — put triggers upstream, and let no layer name the competing path
 
 **Symptom:** A delegated-search tool whose description named its
