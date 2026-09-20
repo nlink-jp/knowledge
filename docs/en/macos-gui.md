@@ -435,6 +435,58 @@ frontmost app — and never met the condition.
   activation). Searching by the symptom or the part (popover, Picker) did not reach the entry
   that records the refusal.
 
+### Nothing tells a non-activating panel that the user went elsewhere — close on the ways that involve no click, too
+
+**Symptom:** a menu-bar panel moved from `NSPopover(.transient)` to an `NSPanel` with
+`.nonactivatingPanel`, with outside clicks closed by global + local mouse-down monitors. The
+independent review before the release pointed out that it no longer closed on **moves that
+involve no mouse-down**: after Cmd-Tab the panel kept floating over the other app, and after a
+Space change it stayed open on the old Space, out of sight. The next click on the item then
+only closed a panel nobody could see — one dead click, from the user's side. (net-meter,
+2026-09, macOS 27.0. The popover had closed itself in both cases.)
+
+**Why:** the app never becomes active, so no `didResignActive` ever arrives. The panel gets
+the events addressed to it and nothing else; no notification says the user has gone somewhere
+else. Mouse-down monitors watch only one of the ways of going elsewhere.
+
+**How to apply:**
+- With one close path in place, **count its entrances by kind**: an outside mouse-down, a
+  re-click on the item, Esc, `NSWorkspace.didActivateApplicationNotification` (an app other
+  than yours came forward) and `NSWorkspace.activeSpaceDidChangeNotification`. The first four
+  were confirmed on hardware (one to four times each); the Space change was not measured.
+- Do not close on `didResignKey`. On an item click it runs before the global monitor, and
+  close becomes close-then-reopen.
+- When moving away from a popover, **list what the popover was doing implicitly before removing
+  it**: placement, material, outside clicks, closing on app and Space changes, following the
+  item when its width changes. A rehosting done to fix a reported defect tends to drop
+  behaviour nobody reported.
+
+### Right after a status item's length changes, its window has the new width at the old origin — follow it by the move notification
+
+**Symptom:** a setting inside the panel changes the item's width (`NSStatusItem.length`), so the
+panel was placed below the item again — one run loop turn later, on the assumption that the
+window "has not moved yet". The panel ended up as much as 57 pt off: the same display mode put
+it at x=2102 on open and at x=2159 after coming back from another mode (twice). (net-meter,
+2026-09, macOS 27.0)
+
+**Why:** setting `length` resizes the item's window **at once, width only**; its origin stays
+where it was, so its right edge is wrong. The process that hosts the menu bar corrects the
+origin **29–41 ms later**, and `NSWindow.didMoveNotification` follows (three changes out of
+three). The frame read on the next run loop turn was that in-between state.
+
+**How to apply:**
+- Whatever follows the item is placed again from the item window's `didMoveNotification`
+  (register with `object: nil` and check identity in the handler: your own panel's `setFrame`
+  posts the same notification, and without the check it loops). After the change: three mode
+  changes, one placement each, 44–50 ms after the change, at the item's centre every time.
+- Do not solve it with a delay. Putting "100 ms" where "one turn" failed is the same guess with
+  a bigger number.
+- The item also moved by 1–5 pt with nothing of ours happening (a neighbour changed width). The
+  move notification is needed for more than your own setting.
+- How to measure: give the diagnostic build — and only it — a hook that cycles the setting and
+  records the item window's frame with timestamps. It needs no click and no panel and can be
+  repeated at will. Ask the user only for checks that really need a person's hands.
+
 ### A panel that refreshes every second must not refresh while one of its menus is tracking
 
 **Symptom:** in the same panel the menu opens and an item can be picked, but **the choice does

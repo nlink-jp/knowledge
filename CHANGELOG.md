@@ -2,6 +2,14 @@
 
 ## 2026-09-20
 
+- **macos-gui**: two lessons from rehosting a menu-bar popover in a non-activating `NSPanel`.
+  Nothing tells such a panel that the user went elsewhere: mouse-down monitors cover one way
+  of leaving, and Cmd-Tab and a Space change need `NSWorkspace`'s notifications on the same
+  close path — found by the pre-release review, not by a report; list what the popover did
+  implicitly before removing it. And right after `NSStatusItem.length` changes, the item's
+  window has the new width at the old origin; the menu bar corrects it 29–41 ms later with a
+  `didMoveNotification`. Follow that notification — waiting one run loop turn left the panel
+  57 pt off, and a longer wait would be the same guess.
 - **macos-gui (correction)**: the entry added earlier today that told a popover with controls
   to activate the app on open was wrong, and is rewritten. Right after launch macOS refuses the
   activation request, so the first click activated the app after all and ended the menu 71 ms
