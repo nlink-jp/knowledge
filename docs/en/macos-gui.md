@@ -1472,3 +1472,31 @@ first's bounds.** Checking view frames can never see this.
 - A reproduction harness is good at establishing what is *not* the cause, and that is
   all it does. **Elimination and observation are different tools**; switch to observing
   the real thing sooner than feels natural.
+
+## After `CFPreferencesSynchronize` fails, the process cannot believe its own reads
+
+**Symptom:** an app that writes two global preferences keeps a record of the way back, saved
+for the *target* before the first mutation and corrected from a read-back afterwards. When the
+flush failed the correction was skipped, the record named a state the Mac never reached, and
+the next Undo refused the user's own earlier change as an outsider's. Two repairs were written
+and withdrawn in review before one held. (1) Settling the record from a read made after the
+failure: `CFPreferencesSetMultiple` has already changed the process's own view when the flush
+fails, so that read can return a value the disk never got — a failed Undo read back the
+original, the record was dropped, and after a relaunch the app's value was still in effect with
+no way back. (2) Leaving the record alone but carrying on: the *next click* made the same read
+and believed it — a retried Undo reported "already original" and discarded the record; a
+retried "back to default" made the next process record the app's own value as the Mac's
+original. The failure message said "try again".
+
+**How to apply:**
+- The pre-write record names **both** states the Mac can be left in: the target, and what is
+  being replaced when that is the app's own earlier value (never an outsider's). A write that
+  throws leaves the record exactly so; the "is this state ours?" test accepts either.
+- Once a flush fails, mark the **process**: refuse further reads-to-decide and writes, stop
+  refreshing the window (what it displays is a read too), and tell the user to quit and
+  reopen. A new process reads from disk and settles a two-state record on what it finds.
+- In tests, a relaunch is a **new** coordinator over the same stubs, and the stub's failure
+  must be able to *land* before it throws. Tests that reused the coordinator, or whose stub
+  only knew "throws, nothing changed", passed through all of the above.
+- How long macOS keeps reporting the unsaved value was not measured. Design so that nothing
+  depends on the answer.

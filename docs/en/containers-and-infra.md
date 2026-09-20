@@ -350,3 +350,16 @@ allocation on each attempt. Waiting for the same port is pointless.
 - Remove the named container before retrying: a failed start can leave the name taken.
 - The limit can be small; five was enough. On reaching it, fail with the last error text
   included verbatim.
+
+## `podman ps --filter name=` is an unanchored regular expression
+
+**Symptom:** a server looked a container up with `--filter name=tool-<id>`. Podman matched
+`tool-gamma` against `tool-gamma2-…` and against the same id created under another work
+directory (measured on podman 6.1.2: two throwaway containers, the bare name lists both, the
+anchored one lists one). With one wrong hit a delete force-removed someone else's container;
+with several, the "ID" came back as two lines and `podman rm` failed on it.
+
+**How to apply:** always `name=^<regexp-quoted name>$`, built in one function. A unit fake that
+answers every `ps` with one canned id cannot see a wrong name at all — give it a table of
+containers and match the way podman does (unanchored regex), so that a missing anchor fails
+the unit test, and keep one opt-in test that asks the real podman the same question.

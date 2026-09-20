@@ -1226,3 +1226,53 @@ it is not a candidate when chasing an unrelated feature.
   usually means there is another cause, not that the fix was wrong.
 - When you widen a patch, record that decision in the **current** ADR, not the original.
   When and why the patch grew is what the next person moving the pin needs.
+
+## A lesson nobody is held to is a note — turn it into a check the day it is written
+
+**Symptom:** an audit of one week's changes across about forty repositories found the same
+shape four times. The knowledge base said a menu-bar popover's re-click handling was saved by
+an animation's timing "in two other apps" — and those two apps' own documents still stated the
+insufficient rule as fact. It said a cask's macOS floor must be set deliberately — and ten
+casks carried the template default, two re-issued after the entry was written. A tool learnt
+that `NaN` passes a range check written from the outside, fixed its config parser, and left its
+own flags and the six siblings it was copied from. A sweep's fix reached some servers and not
+the two that share a workspace. In every case the lesson was *recorded* correctly. Nothing
+held anything to it.
+
+**How to apply:**
+- When you write the entry, ask what would fail if it were ignored tomorrow. If the answer is
+  "nothing", write that check now: an org-wide comparison (cask floor vs `Package.swift`), a
+  source check in the package, a retired-phrase scan that covers every read surface.
+- The same day, grep the fleet for the old shape. "Applied where it was found" is the normal
+  outcome of a fix, not the end of one.
+- A list repeated in a second file drifts unless something compares them. Replace the copy with
+  a pointer, or write the comparison.
+
+## Line citations move with the code — remap all of them by diff, from the base copy
+
+**Symptom:** ADRs cite code as `file.go:NNN`, and a test fails when a cited line no longer
+carries one of its paragraph's identifiers. An edit that added lines tripped it three times in
+one series. Fixing the citation the test reports is the wrong repair: the test cannot see a
+citation that shifted onto *another* line naming the same thing. And the first remapping script
+was not idempotent — it read the numbers from the working copy, so a second run moved
+citations it had already moved.
+
+**How to apply:** map every citation into every file changed since a base ref, by diffing the
+base text against the working tree (`difflib` equal-blocks give the line map). Read the number
+to map from the **base ref's copy of the document**, pair citations by position, and report —
+do not guess — a cited line that was itself edited or a document whose citations were added or
+removed. Run it twice; the second run must move nothing.
+
+## An independent pass converges in rounds — and the author's fix is where the next defect is
+
+**Symptom:** a fix for a record that went wrong after a failed write was blocked by review as
+worse than the shipped code; its replacement was blocked again, on a path the first review had
+made visible; the third design held. Both withdrawn fixes had tests, passing, and both commit
+messages stated the opposite of what the code did. None of it was found by the author, who had
+read the code, run the suite and mutated it.
+
+**How to apply:** give each release candidate to a reviewer that has not seen the reasoning,
+with instructions to break it rather than to describe it, and re-review the *fix*, not only the
+original. Judge convergence by severity across rounds (regression → pre-existing path reachable
+by retry → wording), not by the count of findings. Triage every finding against the code before
+acting; write down the ones you decline and why.

@@ -1658,3 +1658,28 @@ description (anyone who can get a CVE published through a CNA writes its descrip
   through.
 - Do not apply this to MCP results. Making text inert for display is the job of whoever
   displays it; rewriting it here changes the data the model receives.
+
+## A directory the sandbox can write is input: reach it through an `os.Root`, opened from the directory someone vouched for
+
+**Symptom:** a server runs model-written code in a container with `/work` bind-mounted, and
+also touches `/work` from the host: it returns files to the model, stages uploads into
+`_upload/`, writes scripts into `_code/`. Its path check was lexical. Code in the sandbox can
+leave a symlink in `/work`; followed on the *host*, it points wherever that code chose. A link
+returned the content of a host file — or, for an unknown extension, its size, mtime and
+SHA-256 — past the credential blacklist the same server applies to explicit paths, and the
+staging code, which created its files by path, overwrote a host file through a link planted at
+the destination. Moving every access to an `os.Root` on the work directory closed that, and
+review found the next layer: the root itself was opened *by path*, so with a work directory
+nested inside another workspace's `/work`, the workspace directory could be the link.
+
+**How to apply:**
+- Every host-side read and write under a sandbox-writable directory goes through an `os.Root`.
+  Open that root through a root on the one directory the caller vouched for
+  (`wd.OpenRoot(id + "/work")`), and refuse to bind-mount a workspace directory whose real
+  path is not where it was asked for.
+- Reject what is not a regular file before reading: a FIFO named `x.txt` blocks a server that
+  answers one request at a time.
+- Close the class with a source check, and make it an **allow-list** of what the package may
+  use from `os` and `path/filepath`, resolving import aliases. A deny-list keyed on the
+  identifier `os` passed `import stdos "os"`, `os.Chmod` and `filepath.Walk`. Give the check a
+  positive control that contains each bypass.

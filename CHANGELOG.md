@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-21
+
+- Eleven entries from an audit of one week's changes across the organisation and the repairs
+  that followed (ja + en). **config-and-io**: a terminal query read from a goroutine leaves a
+  reader behind that takes the terminal's next input (`/dev/tty` is a blocking descriptor on
+  macOS; read with `select(2)` on the calling goroutine, to the last reply); a time budget is
+  stated once, or the error names the wrong setting and a longer budget is silently cut; a
+  checked number can still become a zero Duration, which means "unset" and "no timeout"; a path
+  in hand is not fed back through a grammar that finds paths in text. **macos-gui**: after
+  `CFPreferencesSynchronize` fails the process cannot believe its own reads — the record names
+  both states and the process stops; two repairs were withdrawn in review first.
+  **containers-and-infra**: podman's `name=` filter is an unanchored regex. **security**: a
+  sandbox-writable directory is reached through an `os.Root` opened from the directory someone
+  vouched for, and the source check is an allow-list. **testing**: a fake that answers every
+  question the same way cannot see a wrong question; a relaunch is a new object; a refusal
+  test needs a positive control. **development-process**: a lesson nobody is held to is a
+  note; line citations are remapped by diff from the base copy; an independent pass converges
+  in rounds, and the author's fix is where the next defect is.
+
 ## 2026-09-20
 
 - **mcp-server-design**: four entries from wrapping an unauthenticated public API. An upstream

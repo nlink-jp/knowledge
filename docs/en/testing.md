@@ -1468,3 +1468,29 @@ gets a structural fix.
 - Build fixtures that carry escapes from double-quoted strings, and assert first **that the
   text arrived**. A test firing blanks over a broken fixture is green with or without the
   guard.
+
+## A fake that answers every question the same way cannot see a wrong question
+
+**Symptom:** three defects in one audit had passed their suites for the same reason. A fake
+container runtime answered every lookup with one canned id, so a delete that looked up a name
+the create path never uses stayed green for several releases. A slash command's test handed it
+a fake resolver, proving only that the argument reached the layer that then lost it. A
+preferences stub failed by throwing *before* changing anything, while the OS fails *after* — so
+every test of "what happens after a failed write" ran against a failure that does not occur,
+and a relaunch was modelled by reusing the same object, which kept the very state a relaunch
+discards.
+
+**How to apply:**
+- A fake keeps state and matches the way the real thing does; a canned reply is a test of the
+  caller's control flow and nothing else.
+- Name the layer a test observes. If the defect is one layer down, the test is a test of the
+  layer above — add one that goes through.
+- A stub's failure modes come from the real component's, not from what is easy to write.
+  Where both "nothing changed" and "changed, then failed" exist, run every case both ways.
+- A process boundary in a test is a **new** object over the same persistent stubs.
+- A refusal test needs a positive control: the same flags with a valid value must be accepted,
+  or a mistyped flag name passes as a refusal (the flag package refuses it with the same exit
+  status).
+- When a repair is for a class, mutate a scratch copy per clause and watch the named test
+  fail. Four of four did here, and two earlier "fixes" that reviews later withdrew had tests
+  that passed against the behaviour they were meant to exclude.

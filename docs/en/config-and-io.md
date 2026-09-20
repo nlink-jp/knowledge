@@ -856,3 +856,77 @@ nothing queued must send nothing, or liveness becomes a resend loop of state the
 peer already has. And a reply arriving after the expiry acknowledges whatever is
 in flight then, so if those events are surfaced, say that the newest wins rather
 than pretending the correlation survived.
+
+## A terminal query read from a goroutine leaves a reader behind — and it takes the next input
+
+**Symptom:** a start-up capability probe wrote a query to `/dev/tty`, read the reply in a
+goroutine, and returned as soon as it had a verdict. The goroutine stayed blocked in
+`tty.Read`. On macOS `/dev/tty` cannot join kqueue, so Go opens it as a blocking descriptor,
+and `Close` does not wake a read that is already in it (the close is deferred until the read
+returns). Measured on Apple Terminal, three runs of three: 300 ms after `Close` had returned,
+the stale reader received the OSC 11 reply that the *next* query — the background-colour
+detection behind a `theme = "auto"` setting — was waiting for, and that query fell back to its
+default. On a dark profile the default was right, so nothing looked wrong; with a fixed theme
+the same read swallows the operator's first keystroke. It also hid a second defect: the parser
+stopped at the first reply and never read the device-attributes reply behind it, which went
+unnoticed only because the stale reader swallowed that too.
+
+**Why:** a terminal report carries no tag. Whoever is reading gets it, and a blocked `read(2)`
+that was started first usually wins. "Return when you have the answer" is not the end of a
+query; "nothing of mine is still reading" is.
+
+**How to apply:**
+- Read the reply on the calling goroutine, each wait bounded by `select(2)` on the descriptor.
+  Not `poll(2)`: macOS does not support it on `/dev/tty`. Guard the descriptor against
+  `FD_SETSIZE` — `FdSet.Set` indexes unchecked.
+- Read until the **last** thing the query asked for has answered, and step over reports from
+  someone else's query by absolute offset (a recursive re-slice forgot a reply it had already
+  passed).
+- Test with a pseudo-terminal, and state the property itself: after the probe returns, bytes
+  the terminal sends are readable by the next reader. That test failed on the old code for
+  every verdict; nothing else in the suite touched a terminal.
+- Confirm on a real terminal with an observable that cannot be right by luck — the colour the
+  next query parsed (`#161821`) against the fallback (`#000000`), not "dark or light".
+
+## A time budget is stated once, by the work that owns it
+
+**Symptom:** a handshake ran under a startup timeout, and the call helper inside it laid the
+per-call timeout on top. Every timeout was then reported under the per-call number — a
+handshake that gave up at its own 30 s said "timed out after 1m0s", sending the operator to the
+wrong setting — and because the shorter deadline wins, a startup budget configured *longer*
+than the call budget was silently cut at the call's value, while the reference called the two
+"separate". A first fix named the right number for `initialize` only: the first `tools/list`
+ran under the same outer deadline, set with a bare `context.WithTimeout`, and still blamed the
+call budget.
+
+**How to apply:** carry the budget in the context as a value and let a helper refuse to add a
+second one (`withBudget`: a context that already states a budget keeps it). Error text names
+the budget found in the context, never a struct field. Wherever an outer phase sets a
+deadline, it sets it through the same helper — a bare `WithTimeout` anywhere in the chain
+brings the wrong number back.
+
+## A checked number can still become a zero Duration — and zero never means "very short"
+
+**Symptom:** after ranges were restated from the inside to refuse NaN, `--timeout 1e-10` still
+passed: it is above 0, and it is no nanoseconds. `time.Duration(1e-10 * 1e9)` is 0, which the
+config loader read as "no override" and `http.Client` reads as "no timeout at all". The
+smallest value one could write behaved as the largest.
+
+**How to apply:** convert in one function that refuses a result `<= 0`, and use it for every
+unit and every source (flag, environment, file). Related, from the same sweep: a lesson fixed
+in the tool where it was found stayed unfixed in the six siblings it had been copied from, and
+in the *other* entry point of the same tool (config was fixed, flags were not). When a range
+check is corrected, grep the fleet for the old shape the same day.
+
+## A path in hand is not text — do not feed it back through a grammar that finds paths in text
+
+**Symptom:** a `/show <path>` command put an `@` in front of its argument and handed it to the
+`@reference` parser used for chat input. That parser ends a reference at the first space,
+correctly, because it reads running text. `/show Screenshot 2026-09-21 at 10.00.00.png` — what
+macOS names every screenshot — looked for "Screenshot". The command's own test passed a fake
+resolver, so it proved only that the spaces survived *to* the layer that lost them.
+
+**How to apply:** give the resolver an entry point that takes a path, and let the text grammar
+call that, not the other way round. Accept what a terminal delivers — one pair of quotes, or
+backslash-escaped spaces, which is what dragging a file into the window types — and expand
+nothing.
