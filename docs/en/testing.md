@@ -1334,3 +1334,32 @@ program. **The convenient observation point is usually below the real one.**
   right after you move an observation point up: the X key observer was started after
   the readiness marker the harness waits on, so the injected key arrived first and was
   missed. Start it before that marker and confirm it is up before emitting it.
+
+## The script that reads the trace calls a working fix broken
+
+**Symptom:** a GUI defect was fixed and checked against an event trace from the real machine
+(mouse-downs, actions, menu tracking and settings changes, to the millisecond). Twice in one
+day the matching script declared a correct fix a failure: first "29 of 58 clicks did nothing",
+then "5 of 7 selections were lost". Both times the person who had used the app said it looked
+fine. (net-meter, 2026-09)
+
+**Why:** both were assumptions about **the order of the record**.
+
+- First: the recorder's monitor is called **after** the app's own. By the time its line for a
+  closing click is written, the panel is already closed. Read as "the state before the click",
+  that made every closing click look as if nothing had happened.
+- Second: the binding's setter runs about 190 ms **before** the menu's end notification. The
+  script looked only at the lines after it.
+
+Reading the raw lines in time order settled each in minutes.
+
+**How to apply:**
+- Group one physical action under one identifier (an event number, say) and judge it by **the
+  state it left behind** (the state at mouse-up, say). Do not take the order of lines in the
+  record for the order of cause and effect.
+- Before writing a match of the form "B must follow A", check the actual order in the raw
+  record once.
+- **When the person who used it and the script disagree, read the raw lines first.** The
+  script is code you have just written and nobody has reviewed.
+- Keep the recorder behind a compile-time flag and confirm with `strings` that it is not in
+  the release binary.

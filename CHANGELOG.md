@@ -2,6 +2,20 @@
 
 ## 2026-09-20
 
+- **macos-gui**: seven lessons from building a menu bar network meter, each measured on
+  macOS 27.0. A popover with controls has to activate the app when it opens — otherwise the
+  first click's activation ends the menu that click just opened, 78 ms in. A panel refreshed
+  every second must hold refreshes while one of its menus is tracking, or the binding's
+  setter receives the old value. With the default animation `popover.isShown` stays true for
+  534–546 ms after a close is requested, which loses every other open click at two clicks a
+  second. A bar in a small scrolling graph is a sample, not a time bucket, and motion has to
+  be looked at as a filmstrip. Things that must look aligned are placed from one source and
+  the offset measured in ink. A status item's button reports the menu bar's own appearance,
+  not the system's. A field is sized for the longest real value, not for the sample data.
+- **testing**: the script reading an event trace declared a working fix broken twice in one
+  day — the recorder's monitor runs after the app's, and a binding's setter runs before the
+  menu's end notification. When the person who used the app and the script disagree, read
+  the raw lines first.
 - **config-and-io**: per-interface byte counters read through `sysctl` sit in 64-bit fields,
   but an unprivileged process on macOS 27 is handed the true value modulo 2^32, floored to
   1 KiB — found only by bracketing the reading with the bundled `netstat`, which gets the

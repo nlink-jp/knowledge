@@ -392,6 +392,142 @@ closes nothing in that state. It is also why re-clicks in that state sometimes
   0, and the question "can they be matched by number?" gets a false answer
   either way.
 
+### A popover with controls activates the app when it opens
+
+**Symptom:** a pop-up button (SwiftUI `Picker(.menu)`) inside a menu-bar popover: on the
+**first click after opening**, the menu flashes and disappears. From the second click on it
+opens. Reported as "only the first click behaves erratically". (net-meter, 2026-09, macOS 27.0)
+
+**Why:** `makeKey()` makes the popover key but leaves the accessory app inactive (see "Call
+makeKey() on a menu-bar NSPopover right after showing it"). So the first click inside the panel activates the app, and that notification
+arrives **while the menu the click just opened is tracking** and ends the tracking. In the
+trace the menu ended 78 ms after it began, with `didBecomeActive` right behind it.
+
+**How to apply:**
+- For a panel with controls, call `NSApp.activate` right after `show(relativeTo:)` and
+  `makeKey()`. Measured: activation completes 12–39 ms after the panel appears (nine of
+  nine), before anyone can click. After the fix the shortest menu stayed open 909 ms.
+- When the panel closes **while your app is still active**, hand activation back to whoever
+  was frontmost (remember `NSWorkspace.shared.frontmostApplication` before opening, then
+  `yieldActivation(to:)` + `activate()`). An accessory app that stays active with no window
+  leaves the user's keystrokes going nowhere. If the outside click made another app
+  frontmost, do nothing.
+- A display-only panel does not need this; `makeKey()` alone gives the same rendering.
+
+### A panel that refreshes every second must not refresh while one of its menus is tracking
+
+**Symptom:** in the same panel the menu opens and an item can be picked, but **the choice does
+not take**. The binding's setter received the **old value** (three times out of three).
+
+**Why:** the panel's model was updated once a second. When an update lands during menu
+tracking, SwiftUI **re-syncs the pop-up button to the current value**, and the item picked
+afterwards is reported as that old value. All three times, at least one update fell inside
+the tracking.
+
+**How to apply:**
+- Hold updates to the panel from `NSMenu.didBeginTrackingNotification` to
+  `didEndTrackingNotification` and deliver one afterwards. Count depth — menus nest. Deliver
+  it on the next run loop turn, so the pop-up button's own action runs first.
+- The gate (begin, end, "may I update now?") is a small pure type and can be tested.
+- Do not hold back the menu bar item itself; only the view that owns the menus.
+- Measured after the fix: seven selections of a different value, seven applied.
+- The setter runs **about 190 ms before** `didEndTracking` is posted. A script matching a
+  trace that looks only after the end notification counts good selections as lost.
+
+### With the default animation, `popover.isShown` stays true for about half a second after a close is requested
+
+**Symptom:** clicking the status item repeatedly, the panel very often fails to open.
+
+**Why:** open/close was decided from `popover.isShown`. In the trace, closing within about
+half a second of opening took **534–546 ms** (four times) from `performClose` to
+`popoverDidClose`, with `isShown` true throughout. The panel looks gone, so the user's next
+click means "open", the app reads "close", and nothing happens — at two clicks a second, every
+other open click was lost. The re-click guard in place at the time, "`isShown` plus a 0.25 s
+window", was exactly the shape "A click on your own status item also reaches the global
+monitor" warns against, and it failed as predicted.
+
+**How to apply:**
+- Replace it with the order-matching toggle of that entry and set
+  `popover.animates = false`. A close then takes 2–18 ms, and 58 clicks at a median of 183 ms
+  apart alternated correctly in 57 of 57 transitions.
+- Never decide open/close by a time window, by the close animation's margin, or by `isShown`
+  alone.
+
+### A bar in a small scrolling graph is a sample — and motion has to be looked at as a filmstrip
+
+**Symptom:** a small bar graph in the menu bar should be moving from right to left, but watched
+over time its segments changed oddly.
+
+**Why:** when the bars were made wider, each became a five-second time bucket to keep the
+window at about a minute. Drawn second by second and stacked as a filmstrip, the graph stood
+still for about five seconds, then jumped a whole bar, and in between only the rightmost bar
+kept changing height (it shows the bucket's maximum). And whenever a peak entered or left the
+window, every bar rescaled in the same instant. The version before that measured buckets back
+from `now`, so each sample crossed a bucket edge at a moment set by its own phase and two
+bursts sat one column apart on some ticks and two on others. One-second buckets would still
+lose and merge samples whenever a jittery timer straddles an edge.
+
+**How to apply:**
+- Do not cut bars by time: draw **the last N samples, one bar each**. The graph moves by
+  exactly one bar per sample and a bar never changes once drawn. There is no edge to fall
+  across. Leave the longer view to another surface (the panel's chart).
+- Auto-scale **up at once and down gradually** (20% per sample, say). Bars already drawn all
+  jumping taller the instant a peak leaves reads as the past being rewritten. Keep the state
+  in the controller, not the renderer; move it only when a new sample arrives; start fresh
+  when what is displayed changes.
+- **Motion cannot be judged from one rendered frame or from unit tests.** Feed a fixed input
+  through the real controller and renderer and write the frames, one per second, stacked into
+  one image. An independent review and every test had missed this.
+- What can be pinned, pin: "every frame equals the previous one shifted by one bar".
+
+### Things that must look aligned are placed from one source, and the offset is measured in ink
+
+**Symptom:** in a two-line menu bar item, the arrows and the numbers beside them looked slightly
+off-centre from each other.
+
+**Why:** the arrows had constants of their own ("2 to 10 pt above the row's bottom") while the
+digits sat where the font put them. The upward arrow happened to match; the one whose tip
+points down had the vertical middle of its ink **1.00 pt** above the digits' — exactly one
+pixel on a 1x display.
+
+**How to apply:**
+- Place the shape from the font's metrics (baseline and cap height) so it spans the digits'
+  band. Do not keep two sets of constants that happen to agree.
+- "Looks aligned" can be measured offscreen: take the middle of each one's ink from its top and
+  bottom extent and hold the difference within 0.5 pt, at 1x and at 2x (1x displays exist).
+
+### A status item's button reports the menu bar's own appearance, not the system's
+
+**Symptom:** a menu bar item is to be drawn in colour, but a template image cannot carry colour,
+and without templating the foreground colour is yours to choose.
+
+**Why:** measured: with the system in light mode and the app's appearance Aqua, the status item
+button's `effectiveAppearance` was `VibrantDark` (a dark wallpaper makes the menu bar dark; one
+observation).
+
+**How to apply:**
+- Default to a template image drawn in black with alpha: the OS picks the colour and the item
+  matches the system's own.
+- Only for a coloured finish, turn templating off and choose the foreground from
+  `button.effectiveAppearance`. Do not look at `NSApp.effectiveAppearance` or the system setting.
+- Give the image both a 1x and a 2x representation, each aligned to its own pixel grid. With
+  one, a Mac with displays of mixed scale shows an interpolated, blurred item on one of them.
+- With drawing as a pure "values + finish → image" function, appearance × scale × state can all
+  be checked offscreen.
+
+### Size a field for the longest real value, not for the sample data
+
+**Symptom:** the panel cut IP addresses in the middle.
+
+**Why:** the layout had only ever been looked at with `2001:db8::10`. In a "label column + value
+column" table the value had 158 pt; a typical global IPv6 address (36 characters) needs 232 pt
+and one with no run of zeros to compress, 39 characters, 254 pt.
+
+**How to apply:**
+- **Measure** the longest real value before fixing a dimension; move long values out of the
+  table into a row of their own across the full width.
+- Pin "the worst case fits" with a test, and use the worst case in previews and layout tests.
+
 ### Don't build tree drag & drop on SwiftUI List/OutlineGroup
 
 **Symptom:** Implemented insertion-indicator tree D&D in SwiftUI, then retracted
