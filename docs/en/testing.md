@@ -1368,3 +1368,103 @@ Reading the raw lines in time order settled each in minutes.
   nor `grep -a`. The diagnostic binary also gave 0, so the check never established absence
   (corrected 2026-09-20). **A check for absence must first be seen to come up positive on a
   target where the thing is present.**
+
+## Check a guard by mutating a copy — "not caught" comes in three kinds
+
+**Symptom:** Guards that tests had been green over from the first run were broken one at a time
+to see whether the tests noticed (90 mutations over four rounds). Most were caught. Some rounds
+had void mutations that merely "failed" — on a compile error or an endless wait — and in the
+last round 3 of 35 were not caught, each pointing at a different defect: (1) a backstop that
+shortens long strings never reached a string held directly by a `map[string]any` — **a hole in
+the guard itself**. (2) a test paging a very large document always passed an `offset`, so it
+never made the call a reader makes first (no `offset` — the path that used to return the whole
+document) — **the test did not take the real path**. (3) with the one-pass sanitising removed,
+per-site escaping was still there and the output stayed inert — **a redundant mechanism hid the
+absence**.
+
+**Why:** A green test shows that the guard is there. If it stays green with the guard removed,
+it was looking at nothing. Reading the code does not settle it: the author follows the path
+the author had in mind.
+
+**How to apply:**
+- Mutate **a copy, never the working tree**. Copy the tree into a fresh temporary directory
+  per mutation and delete nothing (cleaning up is a person's decision, later). The real tree
+  is never touched.
+- Confirm by file hash that the mutation **was applied**. A pattern that did not match is
+  "void", not "caught".
+- Confirm the failure on **an assertion line** (pick up `_test.go:NN:`). A compile error, a
+  panic or a timeout is void — rewrite a mutation that leaves an import unused so that it still
+  uses it, and move the arithmetic check ahead of the path that would panic.
+- A guard must fail, not hang. A test that waits forever because a fake clock never advances
+  gets a runaway cap so that it fails fast. Always run with a timeout.
+- When a mutation is not caught, decide which of the three kinds it is before fixing: a hole →
+  fix the guard; a path mismatch → make the test call what a reader calls; redundancy → reduce
+  to one mechanism (do not leave it as an "equivalent mutant" — the reader can no longer tell
+  which one is load-bearing).
+- Rerun all of them after fixing, and record "caught N / blind 0 / void 0".
+
+## A release gate that skips is a gate that passes
+
+**Symptom:** A live e2e test measuring drift between an upstream API and the primary sources (a
+government catalogue, a standards body's scores) served as a release gate — and called
+`t.Skip` when a primary source was unreachable, and only `t.Log` when one half could not be
+compared. Until the independent review said so, nobody had noticed that "compared nothing" was
+green. And since plain `go test` prints no log for a passing test, a run that compared 8 of 8
+looked the same as a run that compared none.
+
+**Why:** A skip says "this test does not apply in this environment". For a gate, "could not
+check" does not mean "does not apply"; it means **not checked**. It is fail-open in a shape
+other than `|| true`.
+
+**How to apply:**
+- In a test that runs as a gate, an unreachable dependency, a missing artifact and a fixture
+  that lost its meaning (dropped from the tracked set, say) are all **failures**, with a
+  message that says the check did not run.
+- Log the evidence of the comparison (how many of how many agreed) and run the gate's target
+  so that it shows (`go test -v`). A gate whose evidence is invisible cannot be told from one
+  that compared nothing.
+- Demonstrate the gate failing once: falsify an expectation and watch it go red.
+
+## Write a drift check against primary sources with tolerances — exact equality fails on sync lag every time
+
+**Symptom:** The design watched, in e2e, whether an aggregating API's data (catalogue listings,
+daily model scores) kept agreeing with the primary sources. Written as exact equality it fails
+without fail: on entries added to the primary source that day, and at the boundary of the
+model's daily refresh.
+
+**How to apply:**
+- Derive the tolerances **from how the sync works**: sample only entries added more than N
+  hours ago; require "entries older than N hours ≤ upstream's total ≤ the primary source's
+  total"; accept a daily-model value that equals any of the last three model dates. Fail only
+  above a set share of the sample (a quarter, say).
+- Draw the sample from both ends, the newest and the oldest. Lag shows at the new end, rot at
+  the old one.
+- Put into the failure message the design decision it reopens ("reconsider the declined
+  primary-source cross-check layer").
+- Share **one engine, and so one pacer**, across the whole e2e suite. A client per test
+  multiplies the burst allowance by the number of tests and runs into a per-IP ceiling.
+
+## The write path turns an escape into the raw character — close it by checking every source file
+
+**Symptom:** Every time a fixture for "upstream sends an escape sequence" was written, the path
+between the author and the file (an agent's file-writing tool, the decoding of a shell
+argument) turned the typed backslash + u + four digits into **the raw character**. It happened
+three times. The first put a raw ESC into a JSON fixture inside a Go raw string: invalid JSON,
+and a test that passed without having tested anything. The third put a raw U+202E into the
+source of a test about bidirectional controls — the very shape of a "Trojan Source" change.
+The document warning about all this carried a raw ESC itself.
+
+**Why:** Somewhere along the path, one JSON-style unescape too many. It cannot be seen (editors
+do not show control characters), so care does not prevent it. The same kind three times over
+gets a structural fix.
+
+**How to apply:**
+- Put a test at the repository root that walks every source file (code, Markdown, config,
+  scripts) and refuses a raw C0 control (other than tab and newline), DEL, C1, a bidirectional
+  control, U+FFFD and a BOM. Assert a floor on the number of files walked, so that it cannot
+  go green having looked at nothing.
+- When it fails, do not retype. Replace with a script that builds the code points with
+  `chr()` — and holds neither the characters nor the escapes itself.
+- Build fixtures that carry escapes from double-quoted strings, and assert first **that the
+  text arrived**. A test firing blanks over a broken fixture is green with or without the
+  guard.

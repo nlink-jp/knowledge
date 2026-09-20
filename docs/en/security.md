@@ -676,6 +676,26 @@ every review.
 - When an ADR says "never stored", grep every debug path and name the
   exception in the same sentence.
 
+### Go's `url.Error` quotes the whole URL — a config validation error can leak a credential
+
+**Symptom:** A `base_url` check wrapped the failure of `url.Parse` into its own error, and the
+message carried the entire input URL. Configure a malformed value such as
+`https://user:secret@host/%zz` and the userinfo travels from the error text to standard error
+to a log or an agent's conversation.
+
+**Why:** `(*url.Error).Error()` returns `Op + " " + strconv.Quote(URL) + ": " + Err`. The check
+that exists to refuse a URL with credentials quotes those credentials while explaining the
+refusal. `net/http` client errors are the same type, so a design that puts a secret in a
+request URL leaks it along the same path.
+
+**How to apply:**
+- For validation errors on input that may hold a URL, take the `*url.Error` out with
+  `errors.As` and report **only its inner `Err`**. Do not echo the input value.
+- Make it a test: given a malformed URL with credentials, the secret does not appear in the
+  error text.
+- Refuse a setting that puts credentials in a URL at all (a `base_url` with userinfo, a query
+  or a fragment is an error) — and keep the value out of that message too.
+
 ## Detection-logic quality
 
 ### SPF/DMARC fail alone as a suspicion signal breeds false positives
@@ -1602,3 +1622,39 @@ so **adding another layer of the same kind does not engage either.**
 
 Related: "Measuring injection resistance with loud attacks overstates it" (how
 to measure this class at all).
+
+### Make third-party text inert for a terminal once, over the whole result — not at each print site
+
+**Symptom:** A CLI printing CVE descriptions and advisory prose to a terminal called an escaping
+function at each print site. The independent review found five sites where the call had been
+forgotten: an ID, three dates, the provenance line. The field everybody suspects — the
+description — was covered; the short ones nobody suspects went through raw. `--json` was a hole
+too: `encoding/json` escapes C0 controls but writes C1 (U+0080–U+009F, the 8-bit CSI among
+them), the bidirectional controls and DEL as they are.
+
+**Why:** A call per print site is a convention that depends on remembering, and it breaks with
+every added field. Any string from upstream can be written by a third party, not only the
+description (anyone who can get a CVE published through a CNA writes its description).
+
+**How to apply:**
+- **Before** a renderer sees the result, walk the struct by reflection and rewrite every
+  string: C0, DEL, C1 and the bidirectional controls become escapes; a newline or tab survives
+  only in the fields named as multi-line text printed behind a gutter (anywhere else a newline
+  can forge a line of the tool's own output). Renderers do not call the escaping function —
+  with two mechanisms, one hides the absence of the other (a mutation check found exactly
+  that).
+- For JSON output, replace just those characters in the serialized bytes with the JSON `\u`
+  escapes they equal. Inside JSON they can only occur in a string, so the document is
+  identical to a parser and inert to a terminal. Test that the value survives a round trip.
+- Test by filling the **wire types** (what upstream's responses decode into) with a hostile
+  string by reflection, serving them from a fake upstream, and driving every command in every
+  output mode: no control character comes out raw, and no line of output starts with
+  upstream's text. Nothing is enumerated, so a field added later is covered the day it is
+  added. Put the escape first in the hostile string (a path that keeps the first ten bytes of
+  a date must carry it too). Read the command list off the usage text and fail while a
+  command has no case.
+- Assert first that the hostile fixture is still a successful run and that the hostile text
+  reached the output. Without either, the test is green without having passed anything
+  through.
+- Do not apply this to MCP results. Making text inert for display is the job of whoever
+  displays it; rewriting it here changes the data the model receives.

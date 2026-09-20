@@ -367,6 +367,53 @@ an independent review found all four in one write layer.
   actually happened. The read may have failed transiently, and its bytes may
   still be readable by a person.
 
+### A key that is present is a value that was given — do not read `""`, NaN or a sentinel as "not set"
+
+**Symptom:** One tool's independent review turned up the same kind of defect in three places.
+(1) `base_url = ""` in the config file was skipped, line and all, by a loader written as
+`if v != ""`, and the default URL was used without a word. (2) TTLs and the timeout were read
+with `strconv.ParseFloat` and refused on `x <= 0`; `NaN` makes every comparison false and went
+through, and `Inf` or `1e300` overflowed `time.Duration`. (3) The CLI's `--min-cvss` used a
+default of `-1` as its "not given" sentinel, so `--min-cvss -1` was not refused as out of
+range, and an unfiltered list came back as if it had been filtered.
+
+**Why:** All three infer from a value's content whether it was given. Whether it was given is
+a matter of **presence**, not of value. When the inference is wrong, what happens is not a
+refusal but silence, and the user believes the setting took effect — the same defect as a
+config loader that silently ignores unknown keys.
+
+**How to apply:**
+- Read config file keys **by presence** (`if v, ok := section[key]; ok`). An empty string goes
+  on to the validator and is refused by name. Only an environment variable may read "" as
+  unset (emptying one is the usual way to clear it) — say so in a comment.
+- Accept a number **inside its range**: `if !(f > 0 && f <= max)`. The negated `f <= 0` lets
+  NaN through. Derive the upper bound from what the type can hold.
+- Ask `flag.Visit` whether a CLI flag was given. Do not compare against a sentinel: a
+  sentinel is a value the user can type.
+- When a limit in the config and a limit in the engine are one fact — a page ceiling — and
+  neither package can import the other, tie them in a test that imports both. Clamp a
+  configured default that exceeds a tool's ceiling; refuse only a value the caller sent.
+
+### Do not build a cache key by joining parts with a separator — hash length-prefixed parts, and do not fold case
+
+**Symptom:** A result cache built its keys as `kind + "_" + vendor + "_" + product`. The tokens
+may contain `_`, so vendor `a` + product `b_c` shared a slot with vendor `a_b` + product `c`,
+and the second query was answered with the first one's result. Lower-casing the key to make it
+a safe file name merged identifiers that differ only in case (vendor advisory IDs mix case).
+
+**Why:** Joining is injective only while no part contains the separator. How the character set
+the input gate allows relates to the separator breaks silently the day the gate is loosened.
+
+**How to apply:**
+- Build keys in one function only. Feed each part to a hash **length-prefixed**
+  (`len:part|`), and use `kind` plus the head of the digest as the file name. Never join by
+  hand.
+- Normalize a part (lower-case it, say) only where you have **confirmed** that upstream treats
+  that identifier case-insensitively.
+- Keep a test of the pairs that would collide: a split across the separator, an empty part, a
+  difference in case only, another `kind`. Check through the engine as well that the second
+  query reaches upstream.
+
 ## Filesystem
 
 ### Never read volume free space from volumeAvailableCapacityForImportantUsage alone

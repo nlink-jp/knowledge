@@ -2,6 +2,30 @@
 
 ## 2026-09-20
 
+- **mcp-server-design**: four entries from wrapping an unauthenticated public API. An upstream
+  that silently ignores (an invalid `sort`, paging, an unknown vendor, an unknown parameter, a
+  parent ID that does not exist, a `vendor` that does not filter — six of one kind): validate
+  every value you send, do not declare an argument upstream ignores, and pin the traps live.
+  Upstream's "no data" arrives as a positive (zero hosts with a zero time, empty lists, an
+  unfiltered list): convert it, flag an unverifiable empty answer as `incomplete`, and treat
+  the positive side the same way. `not_found` is decided on the 404's body, not the status — a
+  missing route answered 401, and a listing has no single resource to be absent. And a
+  response budget is not closed by naming fields: behind the per-part caps, shorten and name
+  any other long string, and withhold a result over the byte ceiling whole. The skeleton entry
+  gains "check which sibling is newest, package by package".
+- **security**: Go's `url.Error` quotes the whole URL, so a config validation error can leak a
+  credential — report the inner `Err` only. And text for a terminal is made inert once over the
+  whole result, not at each print site (five sites had been forgotten); JSON output gets the
+  characters `encoding/json` leaves raw written as the `\u` escapes they equal; the test fills
+  the wire types by reflection.
+- **testing**: checking guards by mutating a copy, and the three kinds of "not caught" (a hole
+  in the guard, a test that never takes the reader's path, a redundant mechanism hiding the
+  absence); a release gate that skips is a gate that passes; drift checks against primary
+  sources are written with tolerances, on one shared pacer; and the write path that turns a
+  typed escape into the raw character — three times — closed by a test over every source file.
+- **config-and-io**: a key that is present is a value that was given (`""`, NaN and a flag
+  sentinel were each read as "not set"), and cache keys are hashes over length-prefixed parts,
+  not joins with a separator the parts may contain.
 - **llm-integration**: a shared space between agent sessions stays empty without independent
   observers and a trigger to write. A machine-local board worked end to end and was archived
   after sixteen days: 386 sessions registered, 12 ever posted, no record was corroborated or

@@ -469,6 +469,42 @@ missing, wrong-typed, and deliberately empty. Then reduce it to **one parse path
 single form as the batch of one and run it through the same function. Keeping two
 implementations in agreement by inspection fails.
 
+### Naming fields one at a time does not close a response budget — give the values with no knob a generic backstop
+
+**Symptom:** An MCP server's response budget was designed as per-part caps with `section`
+paging for the parts that had measured large (nearly 400 CPE matches, over 100 references, a
+14 KB advisory body). The independent implementation review found five fields with no cap: a
+title, a withdrawal reason, a rationale, an array of evidence labels, an embedded piece of
+JSON. It also found a clipped remediation text whose note sent the reader "to the vendor's
+site for the rest" — nothing here reached the remainder.
+
+**Why:** A per-part cap lands only on the fields the designer thought could grow. Every string
+field upstream sends can be written at any length by a third party. An enumeration is a list of
+what came to mind; it does not close the class. And the principle that the caller sizes the
+response with a knob (the server cannot know the context window) only works where a knob
+exists — there is none to turn on a 5,000-character `title`.
+
+**How to apply:**
+- Layer 1: for every part that measured large, its own cap + a count of what was left out + a
+  `section` / page that reaches all of it. **A note that sends the reader elsewhere for the
+  clipped remainder is a defect** — add the section.
+- Layer 2: **after** the tool has built its result, walk every string layer 1 does not govern
+  by reflection, shorten the ones over a set length (1,000 characters, say) and name the
+  fields in a note. Exclude by name what is governed (the text blocks, a page of text the
+  caller asked for). A string held directly by a `map[string]any` sits inside an interface and
+  cannot be set: take the concrete value out, shorten a copy, store it back — skip this and
+  the section results (maps) alone go through untouched.
+- Layer 3: a ceiling on the serialized size. Over it, do not cut at an arbitrary byte:
+  **withhold the whole result** as a structured error (`response_too_large`: lower the limit,
+  or open one section at a time). Put the ceiling well above the largest legitimate result the
+  layer-1 caps allow.
+- When the default `limit` (the operator's setting) exceeds a tool's ceiling, **clamp** it.
+  Refuse only a `limit` the caller sent — otherwise an error comes back about a value nobody
+  passed.
+- Copy before compacting. If the compact view shares its blocks with the engine's view,
+  shortening corrupts the data on the cache path. Assert in a test that the engine's own
+  values are left whole.
+
 ## Contracts with upstream APIs
 
 ### Retry safety comes from a resource you named, not from a token whose meaning you assumed
@@ -541,6 +577,93 @@ when the field is absent.
   once before release. Fake-only tests are a copy of the designer's
   understanding.
 
+### An upstream that silently ignores: validate every value you send, and do not declare an argument it ignores
+
+**Symptom:** An MCP server wrapping an unauthenticated public API met the same kind of trap
+six times from one upstream. An invalid `sort` is not a 400; it answers 200 in default order.
+The product match ignores `limit` / `offset` and returns everything. The advisory listing
+answers an unknown vendor slug (every natural guess was unknown) with 200 and zero rows, and
+drops unknown parameters — a hoped-for full-text `search` among them. Two derived endpoints do
+not check that the parent resource exists and answer 200 with an empty body for any ID at all.
+And the product match's `vendor` is not a filter: a vendor that matches nothing still gets
+every product of that name back (marked).
+
+**Why:** To the caller, an ignored argument looks like "the answer I asked for". A misspelt
+`kev_only` makes an unfiltered list read as the filtered one. Since upstream will not refuse,
+the only party that can is you. Found and plugged one at a time, this goes on to the sixth;
+close it as a kind.
+
+**How to apply:**
+- **Validate every value before sending it.** Hold enums as closed sets and check ranges
+  yourself. Never skip validation on the assumption that upstream returns a 400.
+- **Do not declare in a tool's schema an argument upstream ignores.** Undeclared, it is
+  refused by name by strict decoding — the wall you already have. A `query` that looks like it
+  searches and does nothing is the worst shape there is.
+- If upstream ignores paging, take the whole list and page locally, and say so in the result.
+  If there is a separate truncation signal (`capped` and the like), let that alone mean
+  "incomplete".
+- Pin the traps the design rests on in the live e2e suite. On the day upstream fixes one, do
+  not fail: log "fixed — update this record" and pass, because your own validation stays
+  harmless. Fail when a trap gets **worse** (the marker disappeared, for instance).
+- Before wrapping a new endpoint, measure three things: an invalid value, an unknown
+  parameter, a parent ID that does not exist. The documentation may say they are refused; the
+  measurement decides.
+
+### Upstream's "no data" arrives in the shape of a positive — let neither a negative nor a positive be mistaken
+
+**Symptom:** An exposure-footprint API answered a CVE it does not track with `exposed_hosts: 0`
+and Go's zero time (`0001-01-01T00:00:00Z`). Relayed as is, that reads "zero hosts are
+exposed". A related-CVEs API answered an ID it had never heard of with the same three empty
+lists as "no relatives". The trap ran the other way too: a product match with a vendor
+returned 41 rows of that product name although the vendor matched nothing, under a headline
+that read as "41 CVEs apply to that vendor's product".
+
+**Why:** Upstream's serializer fills "nothing" with zero values and "could not narrow" with
+everything. Both are well-formed answers with status 200. The model or person reading them has
+nothing to doubt them with.
+
+**How to apply:**
+- **Convert** each "no data" shape into a different shape in your own projection:
+  `tracked: false` (and no numbers at all), a name in `absent` (the block omitted),
+  `product_known: false`, `assessed: false` plus the reason. Never relay a zero value.
+- Decide the conversion on the fingerprint upstream actually sends for "nothing" (a zero
+  time, `assessed: false`, empty lists plus an absent parent), and pin that fingerprint in a
+  test.
+- **An empty answer that could not be verified is not an answer.** Carry a machine-readable
+  flag (`incomplete: true`), not a word in a note, and exit non-zero from the CLI. Never cache
+  an unverified empty body — once the parent appears, it would read as "present, related to
+  nothing".
+- **Treat the positive side the same way.** If upstream marks rows it could not confirm
+  (`vendor_unknown` and the like), always pass that on as a row flag and a count, and when the
+  count equals the number of rows say in the headline and a note that what was asked for
+  matched nothing. Always emit the count, zero included — zero is a checked fact.
+- When there are several "upstream has no data" shapes, put one table in the manual: what you
+  see / what it means / what it does **not** mean — and add a row when you add a shape. List
+  the real negatives (the ones upstream states) separately.
+
+### Decide `not_found` on the shape of the 404's body, not on the status
+
+**Symptom:** In the same API a CVE that is not indexed answers 404 with
+`{"error": "CVE not found: …"}`, while a path that is not part of the public API answers
+**401**, not 404. With 404 passed straight through as `not_found`, a typo in `base_url` or a
+retired API version turns every CVE into "not found" and nothing tells the two apart. And
+because a 404 from a list endpoint was `not_found` too, over MCP it read as "no matches".
+
+**Why:** `not_found` is an **answer** to the caller ("this index does not have it"). A missing
+route or a wrong setting is a failure, not an answer; under one code the failure quietly
+becomes a negative answer.
+
+**How to apply:**
+- Only a 404 carrying the API's own resource-absent body becomes `not_found`. Any other 404, a
+  401 and a JSON 403 are `endpoint_unavailable` (neither a retry nor different arguments fixes
+  it — tell the operator). A non-JSON 403 / 429 may be a WAF: `rate_limited`.
+- **A listing has no single resource to be absent.** Rewrite a 404 from a list, search or
+  match endpoint to `endpoint_unavailable` in the engine. In the CLI, only single-resource
+  commands exit 0 on `not_found`.
+- Word the message "**not in this index**", never "does not exist". A CVE published minutes
+  ago may simply not be indexed yet.
+- Never cache an error, `not_found` included.
+
 ## Server implementation structure
 
 ### Port a proven skeleton for new Go MCP servers
@@ -560,6 +683,13 @@ effort and varies quality.
 Porting means changing the import path, swapping sentinel code constants, and
 deleting unused features (e.g. RawResult). Only the tool-handler layer and the
 upstream client are new code.
+
+**Check, package by package, which sibling is the newest.** The tool closest in purpose was
+taken whole as the source of the port; its config loader turned out to be a generation old
+(silently ignoring unknown keys, with no search path and no report of the file it read), and
+only the independent design review noticed. Siblings get their skeleton updated at different
+times. Find with `git log` the sibling whose copy of each package was touched last, and take
+that one.
 
 ### Dual state (in-memory + disk) must mutate through a single layer
 
