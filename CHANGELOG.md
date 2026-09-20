@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-20
+
+- **config-and-io**: per-interface byte counters read through `sysctl` sit in 64-bit fields,
+  but an unprivileged process on macOS 27 is handed the true value modulo 2^32, floored to
+  1 KiB — found only by bracketing the reading with the bundled `netstat`, which gets the
+  unaltered value. A field's width does not guarantee the value's width. Take deltas modulo
+  2^32 always (flooring and the modulus commute), discard any sample whose interval was
+  stretched by sleep, and do not read "they matched" on a fresh machine as "no truncation".
+- **testing**: a menu bar status item cannot be observed through the window list on
+  macOS 27 — the app owns no window for it and no process gains one. An empty result is not
+  evidence that nothing is shown; print the total window count so that "cannot see" is not
+  mistaken for "does not exist".
+
 ## 2026-09-19
 
 - **macos-gui**: a control bar was laid out correctly, not hidden, not transparent,

@@ -110,6 +110,46 @@ for itself.
   already held. Implement it by doing the work in a transaction and rolling back
   — an exact count rather than an estimate.
 
+### macOS hands an unprivileged process altered per-interface byte counters — a field's width does not guarantee the value's width
+
+**Symptom:** to show per-interface send and receive rates, the cumulative byte counters in
+`if_data64` were read through `sysctl` (`NET_RT_IFLIST2`). The fields are 64 bits wide, so
+the design began from "a wrap cannot happen" — until the values were compared with the OS's
+own `netstat -ib` at the same moment and did not match. What the home-made process received
+was **the true value modulo 2^32, then floored to 1 KiB**. At 9 MB/s that wraps about every
+8 minutes. (2026-09. On a macOS 27.0 machine, wired: two comparisons bracketed by `netstat`
+readings, run independently. On a macOS 26.6.2 VM the 1 KiB flooring was confirmed once;
+32-bit truncation there is unconfirmed, because the counters were below 4 GiB and it could
+not be told.)
+
+**Why:** a type's width says which values can fit, not which values are actually handed
+over. An OS may return different precision from the same API depending on the caller. Why
+the bundled tool and the home-made process differed was not established (a privilege only
+the bundled tool holds is the guess). Neither the compiler nor a test finds this kind of
+alteration: the numbers look plausible, and so do the rates computed from their deltas. It
+only shows at the moment of a wrap, as a spike of several GB/s.
+
+**How to apply:**
+- When a design reads an OS counter, **compare it with an unaltered reference before
+  trusting the type**. Bracket it — reference, own reading, reference — and check that the
+  own reading falls between the two references taken modulo 2^32. A one-sided comparison
+  cannot be told apart from the traffic that flowed in between.
+- Truncation cannot be observed until the true counter has passed 2^32. "They matched" on a
+  freshly booted machine or a VM is no evidence that there is no truncation.
+- **Always take deltas modulo 2^32.** 1024 divides 2^32, so flooring and the modulus
+  commute; the result is correct on an OS that truncates and on one that does not, as long
+  as one sample's increase stays below 4 GiB.
+- That condition depends on **a bounded sampling interval**. A sample stretched by a sleep
+  or a stalled timer is discarded and the baseline re-established, whatever the values say.
+  Measure elapsed time with a clock that keeps running during sleep; with one that stops, a
+  sleep hides inside an interval of ordinary length.
+- Treat a wrap and a reset (an interface being re-created, for instance) as different
+  things. A link-speed cap alone does not separate them: if the delta after a reset is
+  spread evenly over 4 GiB, a 10GbE cap accepts about three in ten as a normal increase.
+- The resolution is 1 KiB per sample. Traffic below that alternates between 0 and one unit.
+- When reading `netstat -ibn` mechanically, a row without an address (loopback, tunnels) has
+  one column fewer. A fixed column number reads the packet count as bytes on those rows only.
+
 ## Data retention
 
 ### A retention period is not a retention depth — ingestion lag eats into what you keep

@@ -322,6 +322,17 @@ instead of retrying — the retries are what reach the user's other windows. Thi
 harness is well suited to opening a window and photographing states; it is not a
 reliable text-input driver.
 
+**The status item itself cannot be observed through the window list (macOS 27.0, two
+observations):** the check above looks at the **panel's window**, which the app opens.
+Using the same method to confirm that the menu bar item is showing leads to a wrong
+conclusion. Launching an app with one `NSStatusItem` left zero windows owned by that app's
+pid, and the total number of windows in the list was the same before and after the launch —
+no process gained a window. The item was visibly there. An empty result is not evidence that
+nothing is shown. Confirm the item by eye, through the accessibility tree, or by having the
+app report its own geometry. Also confirm that the probe can see the window server at all:
+print the total window count alongside, so that "cannot see" is never mistaken for "does not
+exist".
+
 **Complementary, not a replacement:** the states this cannot reach (an IME
 composition, a first-time model download) still need unit tests over pure
 functions plus a person looking once.
