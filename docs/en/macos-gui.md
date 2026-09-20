@@ -225,8 +225,12 @@ more visible in macOS 26, so unchanged code is observed as "it went dark one day
   - This bullet used to give the reason as "`makeKey()` activates the app as a
     side effect". That was an **inference** from the identical rendering; the
     activation state itself had not been measured. Measured on macOS 27.0, the
-    app does not become frontmost after `makeKey()` (next entry). The drawing
-    benefit stands as a separate fact.
+    app does not become frontmost after `makeKey()` (next entry; same result
+    in two apps). If anything it goes the other way: an accessory app that was
+    frontmost because its settings window had been opened was no longer
+    frontmost 0.15 s after a status item click opened the popover — the
+    previously frontmost app was, 3 times out of 3, with or without
+    `makeKey()`. The drawing benefit stands as a separate fact.
 - Do not leave outside-click dismissal to `.transient`: ship this **together
   with explicit global + local mouse-down monitors**. That is not because of a
   side effect of `makeKey()`, though — see the next entry.
@@ -255,9 +259,22 @@ with only the `makeKey()` line removed behaved identically, and the app never
 became frontmost after `makeKey()` (`NSWorkspace.frontmostApplication` and
 `lsappinfo front` agreed, sampled from 0.15 s after opening). A different app's
 observation — dismissal stopped working after a settings window +
-`NSApp.activate` was added (status-lens, 2026-08) — stands as a separate fact.
-But the audit argument "this app never activates itself, so it is unaffected"
-does not hold: the app that audit cleared had this very defect.
+`NSApp.activate` was added (status-lens, 2026-08) — stands as an observation.
+Measured on that same app on macOS 27.0 (2026-09), though, **activation
+history changed nothing**: a control build with only the monitor call removed
+gave the same numbers in all three states — never activated / settings window
+open and the app made frontmost before every trial / settings opened, then
+closed (windows that take activation closed 3/3; a non-activating panel and
+the empty menu bar 0/3). The audit argument "this app never activates itself,
+so it is unaffected" does not hold: the app that audit cleared had this very
+defect.
+
+**What `makeKey()` does to this differed between the apps.** In load-spinner
+removing it changed nothing; in status-lens, removing `makeKey()` as well made
+**nothing close at all** (0/3 on all four kinds of surface, including clicks
+that made another app frontmost — and that was the shape of the build the
+2026-08 observation was made on). All the two apps had in common: `makeKey()`
+is not what breaks dismissal, and the monitors are needed either way.
 
 **How to apply:**
 - For a menu-bar `NSPopover`, **unconditionally** install
@@ -279,6 +296,11 @@ does not hold: the app that audit cleared had this very defect.
   removed and check whether the symptom persists before fixing anything.** A
   few minutes of control experiment kept a false causal claim out of the docs
   and the commit history here.
+- **Do not carry a control build's result over to another app.** "Removing
+  `makeKey()` changes nothing" was a fact about the first app; in a second app
+  built from the same parts, removing it meant nothing closed. The rule
+  (install the monitors) transfers; the causal detail has to be re-measured in
+  that app before it is written down.
 - Verify on a real machine with the procedure in "A menu-bar app's popover can
   be verified from a script" below. Aim outside clicks only at **a window or
   non-activating panel you own**, or at a point whose AX role you have just

@@ -21,6 +21,14 @@
   inference. Install global + local mouse-down monitors unconditionally, build a control
   with the suspected cause removed before fixing, and never judge dismissal by a click on a
   normal window alone.
+- **macos-gui**: the same measurement repeated on the second menu-bar app, the one the
+  "activation breaks `.transient`" reading came from. A control build without the monitors
+  gave identical numbers whether the app had never been activated, had its settings window
+  open, or had opened and closed it — activation history changed nothing. With `makeKey()`
+  removed as well, nothing closed at all, where the first app's `makeKey()`-less control had
+  behaved like the original: a control build's result does not carry over to another app.
+  Also recorded: a frontmost accessory app stops being frontmost when its status item click
+  opens the popover.
 
 ## 2026-09-19
 
