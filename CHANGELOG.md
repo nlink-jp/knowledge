@@ -2,6 +2,12 @@
 
 ## 2026-09-21
 
+- **macos-gui** (correction, ja + en): the entry added earlier today about
+  `CFPreferencesSynchronize` was designed against a failure nobody had measured. Measured on
+  macOS 27.0: a write that is not saved still returns true, and the API reports the unsaved
+  value for up to a minute, in new processes too; the plist on disk is truthful from 0 ms.
+  The entry now says to check the file, and to measure a failure before designing for it.
+  The summary of that entry in the item below is superseded.
 - Eleven entries from an audit of one week's changes across the organisation and the repairs
   that followed (ja + en). **config-and-io**: a terminal query read from a goroutine leaves a
   reader behind that takes the terminal's next input (`/dev/tty` is a blocking descriptor on
