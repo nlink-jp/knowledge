@@ -221,16 +221,72 @@ more visible in macOS 26, so unchanged code is observed as "it went dark one day
 **How to apply:**
 - Call `popover.contentViewController?.view.window?.makeKey()` immediately after
   `show(relativeTo:)`. That alone is **pixel-identical** to `NSApp.activate` +
-  `makeKey()` — `makeKey()` activates the app as a side effect, so no separate
-  activate call is needed.
-- The side effect is that `.transient` outside-click dismissal breaks (it is
-  never trustworthy once the app is active). Adopt this only together with
-  explicit global + local mouse-down monitors that close the popover yourself.
+  `makeKey()`, so no separate activate call is needed.
+  - This bullet used to give the reason as "`makeKey()` activates the app as a
+    side effect". That was an **inference** from the identical rendering; the
+    activation state itself had not been measured. Measured on macOS 27.0, the
+    app does not become frontmost after `makeKey()` (next entry). The drawing
+    benefit stands as a separate fact.
+- Do not leave outside-click dismissal to `.transient`: ship this **together
+  with explicit global + local mouse-down monitors**. That is not because of a
+  side effect of `makeKey()`, though — see the next entry.
 - Verify on a real machine: open it with a synthetic click, capture with
   `screencapture -x -o -R <bounds>` (the composited result, backdrop included),
   and compare mean luminance before/after. **A window-only capture
   (`screencapture -l <windowid>`) drops the backdrop and cannot judge a
   translucent material** — it produces a false "it's dark" reading.
+
+### Don't leave a menu-bar NSPopover's outside-click dismissal to `.transient`
+
+**Symptom:** With a `behavior = .transient` popover open, clicking an empty
+stretch of the menu bar, or another menu-bar app's panel, does not close it.
+Clicking another app's window does, so an everyday check concludes "it closes".
+(load-spinner, 2026-09, macOS 27.0)
+
+**Why:** As measured, `.transient` closed the popover **only when the outside
+click landed in a window that takes activation** — another app's normal window
+(even when that app was already frontmost). Clicks on **surfaces that take no
+activation** — an empty stretch of the menu bar, another process's
+non-activating panel — were missed 3 times out of 3.
+
+The defect had been handed over as "`makeKey()` activates the app, and
+activation breaks `.transient`". **Neither half reproduced.** A control build
+with only the `makeKey()` line removed behaved identically, and the app never
+became frontmost after `makeKey()` (`NSWorkspace.frontmostApplication` and
+`lsappinfo front` agreed, sampled from 0.15 s after opening). A different app's
+observation — dismissal stopped working after a settings window +
+`NSApp.activate` was added (status-lens, 2026-08) — stands as a separate fact.
+But the audit argument "this app never activates itself, so it is unaffected"
+does not hold: the app that audit cleared had this very defect.
+
+**How to apply:**
+- For a menu-bar `NSPopover`, **unconditionally** install
+  `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`
+  (`.leftMouseDown` / `.rightMouseDown`) while it is shown and `performClose`
+  yourself. Remove both in `popoverDidClose`.
+- **The local monitor must ignore the status item button's window.** The
+  button's own action toggles the popover, so closing here too turns one click
+  into close-then-reopen. Ignore the popover's own window as well. This decision
+  (where the click landed → close or not) can be extracted into a pure function
+  and pinned by a test.
+- The local monitor **also closes on a mouse-down in any other window of the
+  same app**. When you add a separate window, or a control that opens a window
+  of its own, reconcile it with that rule in the same change.
+- Swift 6: monitor handlers are nonisolated. Wrap the body in
+  `MainActor.assumeIsolated` and keep the non-Sendable `NSEvent` out of its
+  return value (read `event.window` outside, `return event` outside).
+- **When a defect is handed over as "X causes it", build a control with X
+  removed and check whether the symptom persists before fixing anything.** A
+  few minutes of control experiment kept a false causal claim out of the docs
+  and the commit history here.
+- Verify on a real machine with the procedure in "A menu-bar app's popover can
+  be verified from a script" below. Aim outside clicks only at **a window or
+  non-activating panel you own**, or at a point whose AX role you have just
+  re-read (`AXMenuBar`). **Testing only a click on a normal window passes a
+  broken app** (the first attempt here did). Cover: normal window / the
+  already-frontmost app's window / non-activating panel / empty menu bar / an
+  inside click keeps it open / a second button click closes it without
+  reopening.
 
 ### Don't build tree drag & drop on SwiftUI List/OutlineGroup
 

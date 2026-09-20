@@ -12,6 +12,15 @@
   macOS 27 — the app owns no window for it and no process gains one. An empty result is not
   evidence that nothing is shown; print the total window count so that "cannot see" is not
   mistaken for "does not exist".
+- **macos-gui**: a menu-bar `NSPopover`'s `.transient` dismissal closed it only for outside
+  clicks that landed in a window taking activation; clicks on an empty stretch of the menu
+  bar or on another process's non-activating panel were missed every time (macOS 27.0). The
+  defect had been handed over as "`makeKey()` activates the app and activation breaks
+  `.transient`" — a control build without `makeKey()` behaved identically and the app never
+  became frontmost, so the `makeKey()` entry's activation claim is now marked as an
+  inference. Install global + local mouse-down monitors unconditionally, build a control
+  with the suspected cause removed before fixing, and never judge dismissal by a click on a
+  normal window alone.
 
 ## 2026-09-19
 
