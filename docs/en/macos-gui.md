@@ -1473,38 +1473,42 @@ first's bounds.** Checking view frames can never see this.
   all it does. **Elimination and observation are different tools**; switch to observing
   the real thing sooner than feels natural.
 
-## `CFPreferencesSynchronize` returns true for a write that was not saved — check the file
+## At write time, neither CFPreferences nor the plist says whether a preference was saved
 
-**Corrected 2026-09-21.** This entry first said "after `CFPreferencesSynchronize` fails, the
-process cannot believe its own reads" and prescribed a two-state record and a process that
-stops. That was designed against a failure nobody had measured, and the measurement removed it.
+**Corrected twice on 2026-09-21.** This entry first prescribed a two-state record and a
+process that stops "after `CFPreferencesSynchronize` fails"; then, after one measurement, said
+to verify a write against the plist. Both were wrong, each for the same reason: designed on
+something that had not been measured *on the real target*.
 
-**Measured (macOS 27.0, a throwaway preference domain whose plist was made immutable):**
-`CFPreferencesSetMultiple` + `CFPreferencesSynchronize` returned **true**. `CFPreferencesCopyValue`
-then returned the value that had been asked for — in the writing process *and in new
-processes* — for somewhere between 15 s and a minute, and afterwards returned the old value,
-with no error at any point. The plist on disk held the old value from 0 ms after the write.
-After a write that *was* saved, the plist held the new value from 0 ms, including when the
-write created the file. `defaults read` agreed with the disk.
+**Measured (macOS 27.0):**
+- *An unsaved write* (a throwaway ByHost domain whose plist was made immutable):
+  `CFPreferencesSetMultiple` + `CFPreferencesSynchronize` returned **true**.
+  `CFPreferencesCopyValue` then returned the value that had been asked for — in the writing
+  process *and in new processes* — for between 15 s and a minute, and afterwards the old
+  value, with no error at any point. The plist held the old value throughout.
+- *A saved write, throwaway domain:* the plist showed the new value 0 ms after `Synchronize`.
+- *A saved write, the real global ByHost domain*
+  (`~/Library/Preferences/ByHost/.GlobalPreferences.<host uuid>.plist`): the plist showed it
+  **4–8 s later**; the API showed it at once. The throwaway result did not transfer.
 
-**Symptom this produced:** an app that verifies its write by reading the key back through
-CFPreferences saw its check pass exactly when it should have failed. It showed and recorded the
-new value; the Mac stayed on the old one; the next Undo took the old value for someone else's
-change and refused.
+So right after a write, the API cannot show an unsaved change and the plist cannot show a
+saved one. They agree again within seconds (success) or about a minute (failure).
 
 **How to apply:**
-- To learn whether a preference write was *saved*, parse the plist
-  (`~/Library/Preferences/ByHost/.GlobalPreferences.<host uuid>.plist` for the global
-  current-host domain; host uuid from `gethostuuid`). The return value of `Synchronize` and a
-  read-back through the API both answer a different question. Keep the API as the fallback for
-  a file that will not parse, and let a hardware test assert the file shows a real write at
-  once — where the file lives is long-standing behaviour, not an API.
-- With a truthful read-back, "write, read back, compare, say so if it differs" is the whole
-  design, and the record of the way back is simply made true afterwards: **Mac unchanged →
-  record unchanged; otherwise record what the Mac holds.**
-- **Measure the failure before designing for it.** Three designs were written, reviewed and
-  blocked (settle the record from a read after the failure; a record naming two states; a
-  process that refuses to continue), each answering the previous review's finding. All three
-  assumed the failure is *reported*. One twenty-line probe showed it is not, so none of that
-  code could ever have run. When reviews keep finding the same class of defect in successive
-  fixes, stop patching and test the premise.
+- A read-back through the API detects a value the OS *rejects or ignores*. It does not detect a
+  failure to *save*. Say so in the product's limits instead of building on it; the cause is a
+  Mac that cannot save preferences for any app. If it must be closed, the only parameter-free
+  rule is "hold the change unconfirmed until the API and the plist agree", which costs every
+  change a wait of seconds.
+- What needs none of this: after a *reported* failure, put the way-back record back as it was
+  **without reading** (the read can return the value that was asked for); after a write whose
+  read-back equals the state before it, leave the record exactly as it was, so a value someone
+  else set is never adopted as the app's own.
+- **Measure the failure before designing for it, on the real target.** Three designs were
+  written and blocked in review, all assuming the failure is *reported*; a twenty-line probe
+  showed it is not. The next design trusted a probe of a throwaway domain, and the hardware
+  test on the real domain failed every successful write. A stand-in measures the stand-in.
+  When a measurement must touch real user state, do it under a guard that sets the user's
+  values aside, restores them on every exit path, and verifies the restore.
+- When reviews keep finding the same class of defect in successive fixes, stop patching and
+  test the premise.
