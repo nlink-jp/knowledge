@@ -2,6 +2,17 @@
 
 ## 2026-09-21
 
+- **llm-integration** (ja + en): scoped the three-stage claim. Stages one and two
+  are properties of an artifact and belong to development — a formula pointing at
+  an older release means the thing is not installable at the version it claims.
+  Stage three is a property of a machine: on a development machine a resident
+  agent holding the binary it started with is the normal state, often the wanted
+  one, and unavoidable where the host cannot reload a server. So it is a
+  debugging lead for "why is this answering something I already fixed", not a
+  release completion criterion and not a gate — the attempt to put it in the
+  release checklist was withdrawn for that reason. The measurement itself and the
+  field-over-word marker stand as written.
+
 - **llm-integration** (ja + en): two ways a model licence shipped wrong, and the
   guard that catches both. One catalog read the terms off the conversion repo it
   downloads from; another read them off the base model the weights were trained

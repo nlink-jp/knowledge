@@ -1427,6 +1427,17 @@ weights, and in the second the error inverted a permission.
   directory brew had already removed, and answered with values from three
   releases earlier (`lsof -p <pid> | awk '$4=="txt"'`). **An upgrade does not
   replace a running process.**
+  Scope that correctly, though: stages 1 and 2 are properties of an artifact and
+  belong to development — a formula pointing at an older release means the thing
+  is not installable at the version it claims, which is a release defect. Stage
+  3 is a property of a machine. On a development machine a resident agent
+  holding the binary it started with is the normal state, often the wanted one,
+  and where the host cannot reload a server (Claude Desktop) it is not even
+  avoidable. So stage 3 is a **debugging lead for "why is this answering
+  something I already fixed"**, not a completion criterion for a release, and
+  not a gate: making it one turns ordinary development into a permanently
+  failing check. The org's own attempt to put it in the release checklist was
+  withdrawn for exactly that reason.
   For the marker, **a field the release added beats a word it removed**: a value
   can coincide with the correct one, a field cannot exist early. Here the absence
   of `weights_repo` identified the response as pre-0.4.5 outright, while reading
