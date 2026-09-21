@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-22
+
+- **security** (ja + en): compare places by identity, not by name — APFS is
+  case-insensitive, and four reviews of chrome-pilot-mcp's confinement found the
+  same class each time (case variants, a planted temporary name, a swapped work
+  directory, a dangling link climbing with `..`).
+- **config-and-io** (ja + en): record a guessed value marked apart from a fact,
+  and compare only facts (image-forge's architecture check).
+- **testing** (ja + en): kitty's graphics protocol takes PNG only and `q=2` hides
+  the refusal; when a dependency's cancel waits for the other side, keep the slot
+  until it answers, and measure whether it does (spice-vdagent does not).
+
 ## 2026-09-21
 
 - **llm-integration** (ja + en): scoped the three-stage claim. Stages one and two

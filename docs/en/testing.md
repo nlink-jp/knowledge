@@ -1494,3 +1494,32 @@ discards.
 - When a repair is for a class, mutate a scratch copy per clause and watch the named test
   fail. Four of four did here, and two earlier "fixes" that reviews later withdrew had tests
   that passed against the behaviour they were meant to exclude.
+
+## kitty's graphics protocol takes PNG only — and `q=2` hides the refusal
+
+**Symptom:** gem-agent and lagent sent pictures to kitty-protocol terminals with `f=100`, which means PNG;
+the protocol has no JPEG format. A JPEG sent as `f=100` drew nothing on kitty (seen by the operator,
+2026-09-22), `q=2` — which discards the terminal's replies — hid the failure, and the rows it would
+have used were still counted.
+
+**How to apply:** Before sending to kitty, decode anything that is not PNG and re-encode it as PNG, scaled
+first to what the declared box can show (a photo re-encoded as PNG at full size is many times its JPEG).
+iTerm2's `File=` names no format and draws JPEG itself, so leave that path alone. Terminal drawing is
+judged only on a real terminal: of two runtimes sharing the code, record which one was actually checked.
+
+## When a dependency's cancel waits for the other side, keep the slot until it answers — and measure whether it does
+
+**Symptom:** spice-client finished a cancelled row at once and freed its transfer slot. The SPICE library
+it uses keeps the job, and its slot, until the guest answers the cancellation; the next transfer hit the
+library's limit and failed, and the waiting files failed one after another. Reproduced on the live peer
+before the fix, then recorded: spice-vdagent did not answer the cancellation at all (2026-09-22), so the
+slot does not come back until the connection ends.
+
+**How to apply:**
+- Where your count and the dependency's can disagree (a cancel, a timeout), count the slot as in use until
+  the dependency reports the job ended. Treat a refusal on the dependency's limit as "not now": back in
+  the queue, not a failure.
+- Do not time out queued items on the clock of the ones being sent: waiting is not a stall.
+- Measure whether the other side answers, and keep the result in the gate's record (`cancel-ack none`).
+- If the release procedure requires a gate pass on the exact commit, the release commit that adds the
+  change log needs its own run — count it when planning.

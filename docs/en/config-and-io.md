@@ -930,3 +930,25 @@ resolver, so it proved only that the spaces survived *to* the layer that lost th
 call that, not the other way round. Accept what a terminal delivers — one pair of quotes, or
 backslash-escaped spaces, which is what dragging a file into the window types — and expand
 nothing.
+
+## Record a guessed value marked apart from a fact — and compare only facts
+
+**Symptom:** image-forge gained a check refusing, before a render, a LoRA or ControlNet made for another
+architecture than the model (2026-09-22). The registry's arch field held, without distinction, the
+catalog's value, a value given with `--arch`, and a guess from the name (`profile.Detect`, SDXL whenever
+nothing matched). Comparing guesses as facts, an SD1.5 model whose name lacks `sd15` (e.g.
+`dreamshaper_8`) is recorded as SDXL and every SD1.5 LoRA is refused; the GUI, filtering on the same
+field, had been hiding them all along. `--arch` was not validated either, so `pony` or `SDXL` became a
+"fact" as typed.
+
+**Why:** A guess with a default is indistinguishable from a fact once written without a mark. It is
+harmless when recorded and decides outcomes the day a feature refuses or filters on it.
+
+**How to apply:**
+- Record the value's source (`catalog` / `flag` / `detected`) with it, and refuse or filter only on facts.
+  An entry written before sources were recorded is trusted only where it can be confirmed (the catalog's
+  own entry).
+- Decide the source in one place and test the write side too; a read-side test passes even when every
+  registration records a fact.
+- Validate values the user supplies: unvalidated free text is treated as a fact the moment it is compared.
+- Put the mark in the listing (`arch_trusted`) so a front-end can filter by the same rule.

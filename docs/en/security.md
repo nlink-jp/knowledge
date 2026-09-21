@@ -1712,3 +1712,34 @@ chosen by the server, not by the client.
 - A cross-host redirect is testable without DNS: give the transport a `DialContext` that dials
   one listener for every hostname. To `http.Client` it is a real cross-host redirect (it strips
   the header); to the test it is one server.
+
+## Compare places by identity, not by name — this disk does not distinguish case
+
+**Symptom:** chrome-pilot-mcp's uploads and recordings were confined to the work directory, with a
+check refusing the server's own directory and the credential locations (2026-09-22). Four
+independent reviews in a row found the same class of hole. Spelled `CHROME-PILOT-MCP/profiles/…/Cookies`,
+a path passed the server-directory check; `.ENV` passed the `.env` rule and `~/.SSH` the credential
+list. APFS is case-insensitive by default, so one directory has many names, and a string comparison
+passes every spelling it was not written for. A hard link planted at a predictable temporary name, a
+work directory swapped during a recording, and a dangling link containing `..` got past name-only
+checks the same way.
+
+**Why:** Deciding "is this inside that place" by name needs an answer for every spelling — case,
+symlinks, normalisation, hard links all reach the same object under another name. Adding spellings to
+a list only waits for the next one.
+
+**How to apply:**
+- Compare a place that exists with `os.SameFile`: `Stat` the path and each existing directory above it;
+  if any is the protected place, the path is inside. Keep the name comparison, case-folded, as the
+  second opinion for a place that does not exist yet (it over-refuses on a case-sensitive disk, which a
+  floor may do).
+- Write through an `os.Root`, **opened at the start of the call and held**; reopening by path later
+  follows whatever was swapped in. Check where the directory would be before creating anything, and
+  after, that the directory the root reaches is the one the path names; refuse when either cannot be
+  resolved. `os.Root` refuses absolute symlinks.
+- Create temporary files under an unguessable name with `O_EXCL` and rename into place, so an existing
+  entry (a hard link to an outside file among them) is replaced rather than written through, and nothing
+  planted at a predictable temporary name is written through. Do not derive the temporary name from the
+  final one: a long name would no longer fit.
+- The place of each fix was the place of the next defect. An independent review after every fix, with
+  the findings' severity falling (high → high → medium → low), was the sign of convergence.
