@@ -1416,7 +1416,11 @@ weights, and in the second the error inverted a permission.
 - **Check that a correction reaches an installed model.** One tool recorded the
   licence at install time and consulted the catalog only when that was empty, so
   corrected terms would never have been shown to anyone who already had the
-  model — the field a user reads is the one to test.
+  model. **So did the other** — on the released binary, after the catalog was
+  corrected, an installed `base` reported `mit` while the catalog reported
+  `apache-2.0` in the same run. **Assume this asymmetry is the default for the
+  class**: correcting a catalog is finished only when the correction reaches the
+  surface that reads installed entries — the field a user reads is the one to test.
 - Where two statements genuinely exist (an HF card and a Civitai listing for the
   same weights), report the stricter and name both rather than picking one.
 

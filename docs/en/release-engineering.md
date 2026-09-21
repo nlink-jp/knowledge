@@ -59,6 +59,23 @@ failures stacked.
    zip must exit non-zero. check-org's check10 compares the *vendored
    scripts*, not the Makefile recipe, so this class has to be fixed per
    repo, at the latest as the first step of that repo's next release.
+8. **That control needs a control of its own.** The single empty-file
+   state in 7 shows only that the gate refuses *something*. What the old
+   form actually misses comes out only from **six states (no marker /
+   good / another tag / does not unpack / does not run / stale marker)
+   run against both the old and the new recipe**. Measured on
+   voice-scribe, the old form passed **three of the six at exit 0**:
+   another tag, does not unpack, does not run. A stand-in shell script
+   plays the packaged binary, so no build is needed.
+   **The trap:** the first run reported exit 2 for all six states under
+   both recipes — it looked like a working comparison and compared
+   nothing. Creating the zip and its marker back to back gives them the
+   same mtime, `-nt` is false, and **every state dies at the second gate
+   before reaching the block under test**. The tell is that **a state
+   that must pass (good) is failing** — always include the success row
+   and confirm it is green before believing the table. Fix it by setting
+   mtimes explicitly (backdate the zip with `touch -t`, then touch the
+   marker), not by sleeping.
 
 
 Lessons on macOS signing/notarization, release archives, and Homebrew tap
