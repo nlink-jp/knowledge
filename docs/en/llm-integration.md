@@ -1419,8 +1419,20 @@ weights, and in the second the error inverted a permission.
   model. **So did the other** — on the released binary, after the catalog was
   corrected, an installed `base` reported `mit` while the catalog reported
   `apache-2.0` in the same run. **Assume this asymmetry is the default for the
-  class**: correcting a catalog is finished only when the correction reaches the
-  surface that reads installed entries — the field a user reads is the one to test.
+  class.** But that is only **stage two**. A correction can stop at three stages,
+  each checked differently: (1) the tap formula — read a file; (2) the installed
+  binary — ask `--version`; (3) **the running process** — which answers only when
+  you call it. Measured 2026-09-21: with (1) and (2) both current, nine resident
+  MCP processes still held `/opt/homebrew/Cellar/<tool>/0.4.3/bin/<tool>`, a
+  directory brew had already removed, and answered with values from three
+  releases earlier (`lsof -p <pid> | awk '$4=="txt"'`). **An upgrade does not
+  replace a running process.**
+  For the marker, **a field the release added beats a word it removed**: a value
+  can coincide with the correct one, a field cannot exist early. Here the absence
+  of `weights_repo` identified the response as pre-0.4.5 outright, while reading
+  the licence alone would have meant deciding whether that `mit` was stale or
+  simply right — the same trap that let the original defect through. The field a
+  user reads is the one to test.
 - Where two statements genuinely exist (an HF card and a Civitai listing for the
   same weights), report the stricter and name both rather than picking one.
 
