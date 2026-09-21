@@ -1530,6 +1530,7 @@ cause is the host's, not the status item's:
 | Cmd-Tab, Space change | closes itself | stays open, out of sight, until you handle it |
 | Arrow, placement, material | done for you | yours to manage |
 | A menu inside the panel | the first click activates the app and ends the menu's tracking | no activation, so menus work |
+| The item's highlight while open | kept by the OS (dark for a frame or three if `show` outlasts the release) | cannot be lit with public API (next section) |
 
 So: **a panel that contains a pop-up menu has to be a non-activating `NSPanel`** — with a
 popover the first click inside it activates the accessory app, and that ends the tracking of
@@ -1540,6 +1541,42 @@ What a change of host does *not* buy is the rapid re-click: measured on a shippe
 uses a non-activating panel, the re-click opened it 4 times out of 5 at 60–100 ms and 5 of 5
 at 130 ms and beyond — the same numbers as the popover apps above, because that residual comes
 from the status item's two events, not from the host.
+
+## A menu bar item's highlight while its panel is open is decided by the container — your own panel cannot be lit with public API
+
+**Symptom:** among menu bar apps that look nearly the same, the two built on a non-activating `NSPanel`
+never showed their item pressed while the panel was open (the highlight went at the release), and one
+built on a popover blinked each time it opened. The other two popover apps and three SwiftUI
+`MenuBarExtra` apps kept it. Reported by the user, who had looked closely.
+
+**Measured (macOS 27.0, 2026-09-21; only the item's rectangle filmed with `SCStream` at 60 fps, judged by
+the median brightness of its background):**
+
+- Another process draws the item (`NSSceneStatusItem`). The open-panel highlight is requested through
+  **private** AppKit machinery — by `show` for a popover, by SwiftUI for `MenuBarExtra` (callers traced
+  with lldb). An app using `MenuBarExtra` itself uses public API only; the private part is inside the
+  framework, and Apple stands behind it.
+- `NSButton.highlight(_:)` and `isHighlighted` do not reach the screen. Called synchronously in the action,
+  the button resets them right after; called later, the in-process value stays true while the screen stays
+  dark (five ways, three tries each, all dark).
+- Even with a popover, the item's action arrives **before the release** (about 30 ms after the press). The
+  menu bar drops the pressed highlight at the release and lights the popover's only once `show` is done, so
+  a `show` that outlasts the release leaves the item dark in between. The app that blinked built a face that
+  is hidden on opening (its settings) inside every `show`: 92–94 ms. Neither its chart nor animation was the
+  cause.
+
+**How to apply:**
+
+- Weigh this highlight when choosing the container. Your own panel cannot reproduce it with public API.
+  The private call a popover makes works from a panel too, but it gives up any guarantee, so do not use it.
+  The public way is to put the panel in a container whose highlight the OS keeps — a popover or
+  `MenuBarExtra` — and decide by measuring whether the reason you left that container still holds.
+- With a popover, finish `show` before the button comes up: build whatever is hidden on opening on the
+  run-loop turn after `show` returns (`DispatchQueue.main.async`). SwiftUI's `.task` runs inside `show` and
+  cannot defer it. The first open after launch stays slow (first-time loading); building the panel once
+  off screen at launch did not remove that.
+- Judge on the screen. The in-process `isHighlighted` sits below the defect and cannot pass a fix. Film the
+  item's rectangle only, so no other app's content is captured.
 
 ## At write time, neither CFPreferences nor the plist says whether a preference was saved
 
