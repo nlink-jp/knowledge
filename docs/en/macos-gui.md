@@ -1577,6 +1577,19 @@ the median brightness of its background):**
   off screen at launch did not remove that.
 - Judge on the screen. The in-process `isHighlighted` sits below the defect and cannot pass a fix. Film the
   item's rectangle only, so no other app's content is captured.
+- Moving from a panel of your own to `MenuBarExtra(.window)` changes the container's behaviour (measured in
+  net-meter, macOS 27.0):
+  - A pop-up menu opened in the panel right after a LaunchServices launch stays open (3 of 3); a popover
+    control ended it 88–97 ms in (2 of 2) — the defect that drives apps off the popover is not there.
+  - Another app coming forward without a click (⌘Tab) leaves the window open, and there is no public way to
+    close it from code.
+  - The label's `accessibilityLabel` becomes the item's AXTitle and an `accessibilityValue` is dropped: put
+    what should be spoken into the label's string.
+  - SwiftUI's lifecycle installs a main menu, so while the panel has the keyboard ⌘C works and ⌘Q quits the
+    app. Remove the latter with `CommandGroup(replacing: .appTermination) {}` if it should not.
+  - The label's `colorScheme` follows the menu bar's own appearance, not the system's (`dark` under a
+    `VibrantDark` menu bar on an `Aqua` system). The content is built on the first open and kept, so push
+    nothing to it while it is closed.
 
 ## At write time, neither CFPreferences nor the plist says whether a preference was saved
 
