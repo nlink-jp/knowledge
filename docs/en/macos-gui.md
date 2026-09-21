@@ -1473,6 +1473,51 @@ first's bounds.** Checking view frames can never see this.
   all it does. **Elimination and observation are different tools**; switch to observing
   the real thing sooner than feels natural.
 
+## A menu bar panel's own state is the only state you can read at click time
+
+**Symptom:** clicking a menu bar item again, right after its panel closed, did nothing — and
+clicking repeatedly kept it shut. Reported from use, on three separate apps that shared the
+same shape.
+
+**Measured (macOS 27.0, 2026-09-21, synthetic HID clicks with every event logged):**
+
+- `NSPopover.isShown` stays **true for about half a second** after `performClose` *and* after
+  `close()`, until `popoverDidClose`. Deciding from it turns a re-click inside that half
+  second into another close: on the release builds the re-click opened the panel **0 times out
+  of 10** at every gap tried, from 60 ms to 350 ms.
+- `popoverDidClose` for one close arrives **after a show that followed it**, so the delegate
+  callback cannot be believed on its own either.
+- The panel window's `isVisible` flips false within milliseconds of a close — but it is also
+  false between a `show` and the moment the panel appears, because AppKit queues a show that
+  starts during a close animation behind it (about 0.4 s).
+- One click on the item produces **two events, either of which can be missing**: a global
+  mouse-down monitor sees it first, the button's action arrives 23–41 ms later, and of eight
+  well-separated clicks eight were monitored and five produced an action — the missing ones
+  being clicks that closed the panel.
+- A panel **shown from the monitor** (on the mouse-down or the mouse-up) is dismissed by AppKit
+  inside the same click, every time. Only the button's action can open it.
+
+**How to apply:**
+- Keep the fact in your own value — "is the panel up" — set when you show and when you close,
+  and read nothing of AppKit's to decide. Reconcile with `popoverDidClose` by counting the
+  closes you asked for and consuming their late reports; a report you did not cause is the one
+  that carries news (a `.transient` dismissal, the Escape key).
+- Give the monitor the dismissing and the action the opening. Suppress an action that arrives
+  within ~0.1 s of the monitor closing the panel for a click on the item: it is that click's
+  second event. **Do not pair the two events by order** — with one of them missing, "the
+  action of the click that just closed the panel" and "the action of the click meant to open
+  it" are the same event, and an ordering rule swallows clicks.
+- Expect a residual and measure it rather than claiming none: at a 60–100 ms gap the panel
+  ended up closed once in ten, because the dismissed click's action can arrive after the
+  window. Two clicks that fast are one gesture; a longer window brings back the defect.
+- Verify at the layer the user touches. A synthetic-click harness is a few dozen lines —
+  `CGEvent` posted at `.cghidEventTap`, the item's frame printed by the app itself, panel
+  visibility from `CGWindowList` with `.optionOnScreenOnly` — and it reproduced the defect
+  deterministically on the release build, which is what made the fix checkable. Pure tests of
+  the decision state machine pass either way: they observe a layer below the defect.
+- Fix every sibling in the same change. The third app had the same defect with a different
+  mechanism, and nobody had reported it.
+
 ## At write time, neither CFPreferences nor the plist says whether a preference was saved
 
 **Corrected twice on 2026-09-21.** This entry first prescribed a two-state record and a

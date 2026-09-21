@@ -2,6 +2,12 @@
 
 ## 2026-09-21
 
+- **macos-gui** (ja + en): a menu bar panel's own state is the only state you can read at click
+  time. `NSPopover.isShown` lags a close by half a second, `popoverDidClose` arrives after a
+  show that followed it, and the window's `isVisible` is false while a queued show waits — so
+  a re-click read as "the panel is open" closed it again and users saw nothing happen (0 of 10
+  on three shipped apps). One click also yields two events, either of which can be missing, so
+  they must not be paired by order. Includes the synthetic-click harness that reproduced it.
 - **macos-gui** (corrected twice, ja + en): the entry added earlier today about
   `CFPreferencesSynchronize` was designed against a failure nobody had measured, and its first
   correction trusted a measurement of a throwaway domain. Measured on macOS 27.0: an unsaved

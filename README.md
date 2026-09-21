@@ -25,7 +25,7 @@ Documents are consumed by reading `main` — there are no releases.
 | Document | Contents |
 |---|---|
 | [release-engineering](docs/en/release-engineering.md) | Signing, notarization, Homebrew tap, release archives, versioning, licence notices |
-| [macos-gui](docs/en/macos-gui.md) | SwiftUI/AppKit traps, menu-bar apps, macOS 27 feasibility and spacing validation, the linked SDK deciding an app's appearance, dumping the layer tree when views look right, Wails, neither CFPreferences nor the plist telling at write time whether a preference was saved (measure a failure on the real target before designing for it) |
+| [macos-gui](docs/en/macos-gui.md) | a menu bar panel's state is yours to keep (isShown lags a close), SwiftUI/AppKit traps, menu-bar apps, macOS 27 feasibility and spacing validation, the linked SDK deciding an app's appearance, dumping the layer tree when views look right, Wails, neither CFPreferences nor the plist telling at write time whether a preference was saved (measure a failure on the real target before designing for it) |
 | [web-ui](docs/en/web-ui.md) | CSS/layout traps in WebView frontends and self-contained HTML reports |
 | [mcp-server-design](docs/en/mcp-server-design.md) | MCP protocol limits, OAuth discovery limits, stdio hygiene, structured errors, LLM-facing tool design, offset paging with a document id, per-call file output roots |
 | [llm-integration](docs/en/llm-integration.md) | Gemini/genai SDK, output validation, drift, tokens, dedup, pipelines, agent tool exclusion, choosing a judge model by generation not thinking level, a local server's prefix cache vs the system prompt, retry bounds from replayed requests, where a local model acts on standing directives (first user message, not the system prompt) |
