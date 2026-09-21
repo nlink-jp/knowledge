@@ -1518,6 +1518,29 @@ same shape.
 - Fix every sibling in the same change. The third app had the same defect with a different
   mechanism, and nobody had reported it.
 
+**Which host to choose.** The readings above are `NSPopover`'s, and much of the work they
+cause is the host's, not the status item's:
+
+| | `NSPopover` | non-activating `NSPanel` |
+|---|---|---|
+| Is it up? | `isShown` lags a close by ~0.5 s | the window tells the truth at once (keep your own boolean anyway) |
+| Reopening during a close | queued behind the animation, ~0.4 s | immediate |
+| Opening from the monitor | dismissed inside the same click | works, so one channel can do everything |
+| Outside clicks | `.transient` misses clicks that take no activation | yours to watch — which you were doing anyway |
+| Cmd-Tab, Space change | closes itself | stays open, out of sight, until you handle it |
+| Arrow, placement, material | done for you | yours to manage |
+| A menu inside the panel | the first click activates the app and ends the menu's tracking | no activation, so menus work |
+
+So: **a panel that contains a pop-up menu has to be a non-activating `NSPanel`** — with a
+popover the first click inside it activates the accessory app, and that ends the tracking of
+the very menu the click opened (measured: 78 ms). Segmented controls and toggles track nothing
+and are safe in a popover.
+
+What a change of host does *not* buy is the rapid re-click: measured on a shipped app that
+uses a non-activating panel, the re-click opened it 4 times out of 5 at 60–100 ms and 5 of 5
+at 130 ms and beyond — the same numbers as the popover apps above, because that residual comes
+from the status item's two events, not from the host.
+
 ## At write time, neither CFPreferences nor the plist says whether a preference was saved
 
 **Corrected twice on 2026-09-21.** This entry first prescribed a two-state record and a

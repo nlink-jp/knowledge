@@ -7,7 +7,9 @@
   show that followed it, and the window's `isVisible` is false while a queued show waits — so
   a re-click read as "the panel is open" closed it again and users saw nothing happen (0 of 10
   on three shipped apps). One click also yields two events, either of which can be missing, so
-  they must not be paired by order. Includes the synthetic-click harness that reproduced it.
+  they must not be paired by order. Includes the synthetic-click harness that reproduced it,
+  and which host to choose: a panel with a pop-up menu inside it has to be a non-activating
+  NSPanel, while the rapid re-click residual is the same on either host (measured).
 - **macos-gui** (corrected twice, ja + en): the entry added earlier today about
   `CFPreferencesSynchronize` was designed against a failure nobody had measured, and its first
   correction trusted a measurement of a throwaway domain. Measured on macOS 27.0: an unsaved
