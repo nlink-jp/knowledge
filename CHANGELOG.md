@@ -2,6 +2,19 @@
 
 ## 2026-09-21
 
+- **llm-integration** (ja + en): two ways a model licence shipped wrong, and the
+  guard that catches both. One catalog read the terms off the conversion repo it
+  downloads from; another read them off the base model the weights were trained
+  from and therefore told users commercial use was permitted, while the weights
+  were their publisher's non-commercial licence. Adds that a publisher's family
+  is not uniform (large-v3-turbo is MIT while its siblings are Apache-2.0; one
+  repo can hold a non-commercial checkpoint beside re-hosted Apache-2.0 parts),
+  that both catalogs' default model happened to be the correct entry so
+  spot-checks passed, that the provenance belongs in a field pinned by a test
+  against the entry count, that a correction has to be shown to reach an
+  already-installed model, and that two genuine statements mean reporting the
+  stricter and naming both.
+
 - **release-engineering** (ja + en): the marker gate does not cover the recipe that
   follows it. In repos whose `verify-release` predates the template's, the last
   block chained unzip, the packaged binary's `--version` and `spctl` and ended the

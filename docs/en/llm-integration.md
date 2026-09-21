@@ -1393,6 +1393,33 @@ protected material. Applying the rule strictly meant **not adopting either.**
 **Undeclared is not a licence** — it is not grounds to err permissive, and not
 grounds to put something in a default catalog.
 
+**Two ways this shipped wrong, and the guard that catches both (2026-09-21).**
+One catalog took two entries' terms from the conversion repo it downloads from
+(`ggerganov/whisper.cpp`, `license: mit`) and reported terms that were not the
+weights'. Another took an entry's terms from the model it was trained *from* —
+NVIDIA's Open Model License for the base — and therefore told users commercial
+use was permitted, while the weights being downloaded were their publisher's
+non-commercial licence. Both read the licence off something that was not the
+weights, and in the second the error inverted a permission.
+
+- **A publisher's family is not uniform.** `openai/whisper-large-v3-turbo` is
+  MIT while `whisper-large-v3` and `whisper-base` are Apache-2.0; one repo can
+  hold a non-commercial checkpoint beside Apache-2.0 components someone
+  re-hosted. Read the card for the *file*, not for the owner.
+- **Both catalogs' default model happened to be the correct entry**, which is
+  why a spot-check passed. Check every entry or none.
+- **Record the provenance as data**, not in a comment: a field naming the card
+  each licence was read from, and a test pinning the (entry → source) pair and
+  comparing the entry count, so a model cannot be added without stating where
+  its terms came from. `cardData.license` / `license_name` from
+  `https://huggingface.co/api/models/<repo>` gives the whole table in one pass.
+- **Check that a correction reaches an installed model.** One tool recorded the
+  licence at install time and consulted the catalog only when that was empty, so
+  corrected terms would never have been shown to anyone who already had the
+  model — the field a user reads is the one to test.
+- Where two statements genuinely exist (an HF card and a Civitai listing for the
+  same weights), report the stricter and name both rather than picking one.
+
 ---
 
 ## Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work
