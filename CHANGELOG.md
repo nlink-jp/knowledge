@@ -2,6 +2,16 @@
 
 ## 2026-09-21
 
+- **release-engineering** (ja + en): the marker gate does not cover the recipe that
+  follows it. In repos whose `verify-release` predates the template's, the last
+  block chained unzip, the packaged binary's `--version` and `spctl` and ended the
+  single statement in `|| true`, so a zip that did not unpack passed — found in
+  two repos while releasing them. The entry now says to judge each step on its
+  own, to require the packaged binary's `--version` to contain the tag (a zip from
+  another tag clears both notarization gates and is caught only there), and to
+  prove it by control, since check-org compares the vendored scripts and not the
+  Makefile recipe.
+
 - **development-process** (ja + en): a pair-parity check does not resolve references. Comparing
   eleven moved-and-translated records to their counterparts reported eleven matches, while the
   links *into* those pairs stayed broken — and a sweep across the organization found 55 dead

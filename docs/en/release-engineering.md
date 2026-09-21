@@ -45,6 +45,20 @@ failures stacked.
    marker fails until re-notarized). check-org check10 byte-compares
    the vendored copies against the canonical to catch drift (including
    slack-router's build-tools/ layout).
+7. **The marker gate does not cover the recipe that follows it.** In
+   repos whose `verify-release` was written before the template's, the
+   last block chained `unzip && binary --version && spctl | head -2`
+   and ended the single statement in `|| true` — so the escape applied
+   to the unzip and the `--version` too, and a zip that did not unpack
+   passed. Judge each step on its own (`if ! …; then rc=1; elif …`),
+   end the block with `exit $rc`, and allow `|| true` on the
+   informational spctl line only. Also require the packaged binary's
+   `--version` to **contain the tag**: a zip left over from another tag
+   clears both notarization gates and is caught only here. Prove it by
+   control — with a fresh marker, an empty file named as the release
+   zip must exit non-zero. check-org's check10 compares the *vendored
+   scripts*, not the Makefile recipe, so this class has to be fixed per
+   repo, at the latest as the first step of that repo's next release.
 
 
 Lessons on macOS signing/notarization, release archives, and Homebrew tap

@@ -36,6 +36,18 @@
    再ビルドされた zip は再 notarize しない限り落ちる）。vendored コピーは
    check-org check10 が byte 比較で drift を検出する（slack-router の
    build-tools/ 配置も対象）。
+7. **マーカーゲートは、その後ろのレシピを守らない。** テンプレより先に
+   `verify-release` を書いたリポでは、最後のブロックが
+   `unzip && binary --version && spctl | head -2` を連鎖させ、その 1 文の末尾に
+   `|| true` を置いていた。エスケープは unzip と `--version` にも掛かるので、
+   **展開できない zip が合格する**。各工程を単独で判定し
+   （`if ! …; then rc=1; elif …`）、ブロックは `exit $rc` で終え、`|| true` は
+   情報表示の spctl 行だけに許す。加えて、同梱バイナリの `--version` が
+   **タグを含むこと**を要求する —— 別タグのビルドが残った zip は notarize 系の
+   2 ゲートを通過し、ここでしか捕まらない。証明は対照で: 新しいマーカーを添えた
+   「空ファイルをリリース zip 名にしたもの」が非ゼロで落ちること。check-org の
+   check10 が比べるのは *vendored スクリプト*であって Makefile のレシピではないため、
+   この種類はリポごとに直す —— 遅くともそのリポの次のリリースの最初の工程として。
 
 
 macOS の署名・notarization、リリースアーカイブ、Homebrew tap 配布に関する知見集。
