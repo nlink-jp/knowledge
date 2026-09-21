@@ -140,3 +140,18 @@ $(ORT_ZIP):
 **副産物:** ハッシュを集める過程で、カタログの 2 エントリが**バイト単位で同一**だと判明した
 （第三者ミラーが作者版と同じ中身を別バージョン名で配っていた）。しかもそれが既定だった。
 **既定で入るものは上流の作者から取る。** ハッシュ収集は棚卸しとしても効く。
+
+## リポジトリ内のモジュールキャッシュは、再帰的な書き換えに巻き込まれる — `go mod verify` で見つけ、`go clean -modcache` で作り直す
+
+**症状:** 文書しか変えていないのに `make test` が `no required module provides package github.com/spf13/cobra` で失敗した。
+`go.mod` には書いてあり、キャッシュにも実体がある（2026-09-22、scat）。
+
+**原因:** Makefile が `GOMODCACHE` をリポジトリ内の `.cache/go-mod` に向けていた（サンドボックス対策）。ワークスペースに
+再帰的な整形がかかった過去の事故で、その中の依存ソースまで書き換えられていた。`go mod verify` が
+`dir has been modified` と名指しした（`cobra`・`x/sys`）。`.cache/` は git 管理外なので、差分にも出ない。
+
+**どう適用するか:**
+- 説明のつかないモジュール解決の失敗は、まず `GOMODCACHE=<その場所> go mod verify`。
+- 作り直しは `GOMODCACHE=<その場所> go clean -modcache`。キャッシュは読み取り専用で作られるので `rm -rf`
+  （`make clean` の中身がそれでも）は `Directory not empty` で途中止まりになる。
+- キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。

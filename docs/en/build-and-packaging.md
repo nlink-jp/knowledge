@@ -149,3 +149,19 @@ Then:
 **byte-identical files** — a third-party mirror redistributing the authors' build
 under a different version number — and that it was the *default*. **Take defaults
 from the upstream authors.** Hash collection doubles as an inventory.
+
+## A module cache inside the repository gets caught by recursive rewrites — find it with `go mod verify`, rebuild with `go clean -modcache`
+
+**Symptom:** a docs-only change failed `make test` with `no required module provides package github.com/spf13/cobra`,
+though `go.mod` required it and the cache held it (2026-09-22, scat).
+
+**Cause:** the Makefile pointed `GOMODCACHE` at `.cache/go-mod` inside the repository (a sandbox workaround). A
+past accident that ran a recursive formatter over the workspace had rewritten the dependency sources in it.
+`go mod verify` named them: `dir has been modified` (`cobra`, `x/sys`). `.cache/` is ignored by git, so no diff
+showed it.
+
+**How to apply:**
+- For a module-resolution failure that makes no sense, run `GOMODCACHE=<that path> go mod verify` first.
+- Rebuild with `GOMODCACHE=<that path> go clean -modcache`. The cache is created read-only, so `rm -rf` (even
+  inside `make clean`) stops half-way with `Directory not empty`.
+- If the cache lives in the repository, make sure formatters and bulk replacements cannot reach it.
