@@ -1683,3 +1683,32 @@ nested inside another workspace's `/work`, the workspace directory could be the 
   use from `os` and `path/filepath`, resolving import aliases. A deny-list keyed on the
   identifier `os` passed `import stdos "os"`, `os.Chmod` and `filepath.Walk`. Give the check a
   positive control that contains each bypass.
+
+## A credential may follow a redirect only within the domain the request started in
+
+**Symptom:** a Slack file download re-attached the `Authorization` header in `CheckRedirect`,
+because the header is genuinely needed: Go's `http.Client` re-sends it to the same host or a
+subdomain but **not to a sibling host** (`isDomainOrSubdomain`), and the download target answers
+an unauthenticated request with an HTML sign-in page at status 200 — so removing the
+re-attachment saves a web page under the file's name, and a linter finding against the
+re-attachment (gosec G119) reads as a false positive. The defect was the scope: the token was
+re-attached to **whatever host the redirect named**, for ten hops, and a redirect target is
+chosen by the server, not by the client.
+
+**How to apply:**
+- Re-attach a credential only within the registrable domain of the **originally requested** URL
+  (`via[0]`), never the previous hop, so a chain cannot walk it out one hop at a time. Never
+  onto a downgraded scheme.
+- Approximating a registrable domain without a public-suffix list is acceptable if it errs
+  **narrow**: too narrow withholds the credential and fails loudly, too wide leaks it. Take the
+  last two labels, a third when the last is two characters and the one before it is three or
+  fewer (`co.uk`, `co.jp`, `com.au`), and treat an IP literal as owning only itself.
+- Withholding it silently is the original bug wearing a different hat. Status alone cannot tell
+  a file from a refusal, so when a hop was withheld and the reply is `text/html`, fail and
+  **name the host** — the next reader cannot otherwise distinguish this from an outage.
+- Keep the linter finding and justify it in place, naming the tests that cover both halves: the
+  transfer that needs the credential, and the one that must not receive it. A silenced finding
+  with no reason is removed by the next reader.
+- A cross-host redirect is testable without DNS: give the transport a `DialContext` that dials
+  one listener for every hostname. To `http.Client` it is a real cross-host redirect (it strips
+  the header); to the test it is one server.

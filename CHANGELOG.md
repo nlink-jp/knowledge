@@ -2,6 +2,23 @@
 
 ## 2026-09-21
 
+- **development-process** (ja + en): a pair-parity check does not resolve references. Comparing
+  eleven moved-and-translated records to their counterparts reported eleven matches, while the
+  links *into* those pairs stayed broken — and a sweep across the organization found 55 dead
+  links in 6 repositories, four of them in changelogs, where the link is the only route from a
+  release note to the record. Says to resolve each link from the linking document's own
+  directory, to report "N of M resolved", to assert that each exemption (code spans, external
+  schemes, anchors, vendored copies) is silent, to fix a label that spells a path along with its
+  target, and to wire the check into the organization gate the same day.
+- **security** (ja + en): a credential may follow a redirect only within the domain the request
+  started in. Go re-sends Authorization to the same host or a subdomain but not to a sibling, and
+  the target answers an unauthenticated request with an HTML sign-in page at status 200 — so the
+  re-attachment is necessary and the linter finding against it reads as a false positive; the
+  defect is that it was re-attached to whatever host the redirect named, for ten hops. Covers
+  judging against the originally requested URL, approximating a registrable domain so that it
+  errs narrow, failing by name rather than withholding silently, justifying the finding in place
+  with the tests that cover both halves, and testing a cross-host redirect without DNS.
+
 - **macos-gui** (ja + en): a menu bar panel's own state is the only state you can read at click
   time. `NSPopover.isShown` lags a close by half a second, `popoverDidClose` arrives after a
   show that followed it, and the window's `isVisible` is false while a queued show waits — so

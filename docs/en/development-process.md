@@ -1276,3 +1276,27 @@ with instructions to break it rather than to describe it, and re-review the *fix
 original. Judge convergence by severity across rounds (regression → pre-existing path reachable
 by retry → wording), not by the count of findings. Triage every finding against the code before
 acting; write down the ones you decline and why.
+
+## A pair-parity check does not resolve references — follow the links, from the document's own directory
+
+**Symptom:** eleven records were moved and translated, and a structure comparison of each pair
+(headings, table rows, code fences) reported eleven matches and no mismatches. The release
+shipped with four changelog links to `docs/ja/adr/NNNN-slug.md` when the files are `.ja.md`, a
+README sending English readers to the Japanese copy, and a config comment still naming a path
+from two moves earlier. A sweep across the whole organization then found **55 dead links in 6
+repositories** — 46 in one repo, whose feature lists broke on the first link of the paragraph,
+and four in changelogs, where the link is the only route from a release note to the record.
+Every one of those repositories passed its pair check.
+
+**Why:** a parity check looks *inside* a pair. A reference is a path *into* it, held in a third
+file the check never opens, and an extension or one directory level is invisible to the eye that
+just compared two documents it wrote.
+
+**How to apply:** resolve the references mechanically, and by cd'ing to the linking document's
+own directory so `../` behaves as it does for a reader following it. Report "N of M resolved",
+not "fixed". Exempt what is shown rather than offered — fenced blocks, inline spans, external
+schemes, absolute paths, anchors, vendored copies — and assert each exemption is silent in a
+test, so the exemptions cannot quietly become "nothing is checked". Repair a label that spells a
+path along with the target it points at: a label that lies is the next broken link. Then wire it
+into the organization gate the same day — the class recurs on every move, and nobody re-runs a
+one-off script (see *A lesson nobody is held to is a note*).
