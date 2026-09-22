@@ -1793,3 +1793,32 @@ a list only waits for the next one.
   the findings' severity falling (high → high → medium → low), was the sign of convergence. It held
   again for pathguard: five holes → one high and three medium → one medium → an incomplete fix →
   none. When two findings share a cause, fix the cause (the anchor closed four spellings at once).
+
+## file:// in browser automation is not closed by checking arguments — arguments, the interception, and the entrance to reads
+
+**Symptom:** An MCP server driving Chrome over CDP (chrome-pilot-mcp) opened `file://` by default, so
+`navigate_page file:///<home>/.ssh/id_rsa` followed by `take_snapshot` read the file (2026-09-22). Measured with
+headless Chrome, more ways read it: JavaScript in an opened local page navigating to another local file;
+`view-source:file://` (the argument check passed it as an unknown scheme); a tab opened with `window.open` from a local
+page (it finished loading before it was attached, and selecting it and taking a snapshot read the file). Chrome
+itself stops navigation to `file://` from http, `data:` and `about:blank`, `file://` iframes in http pages, and
+`fetch(file://…)`.
+
+**Why:** A load that starts inside a page never passes through a tool, so the arguments alone do not close it. CDP's
+`Fetch` interception, on the other hand, sees every `file://` load — the page, its CSS and images, navigation by
+JavaScript, `view-source:`, iframes. The belief that it sees network requests only was wrong when measured. With the
+pattern `file://*` no http request pauses, so it can stay on without costing web browsing anything. But the
+interception reaches only sessions that are attached.
+
+**How to apply:**
+- Keep one judgement (inside the call's `work_dir`, through pathguard's Local policy) and use it in three places: the
+  tool arguments; the `Fetch` interception (judged by the `work_dir`s granted to that tab); and the entrance of every
+  tool that uses a page (check the current URL before attaching, and put the tools that read records by id through
+  the same rule).
+- The interception's decision must not take the lock a tool call holds while it waits on CDP: a call waiting on the
+  load that was paused deadlocks against it (the mutant taking that lock hung the whole suite).
+- Judge `view-source:` by the URL inside it. Refuse a URL with control characters (Chrome drops tabs and newlines
+  before it parses).
+- Leave the remaining details (a race of a few round trips, what a page logs about itself, a parsing difference the
+  interception already stops) as accepted residuals, written in the ADR with reasons, instead of adding code. The fix
+  that tried to close everything had grown by 194 lines and bought little.
