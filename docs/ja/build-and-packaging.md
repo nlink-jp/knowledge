@@ -157,16 +157,23 @@ $(ORT_ZIP):
 - キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
 
 
-### macOSで作るLinux配布tarにもAppleDoubleを混ぜない
+### macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE` だけでは消えない
 
 **事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
 `LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。
 ビルド・署名・公証は成功していたが、archiveの収録名を検査して初めて見つかった。
 
-**なぜ:** macOSのtarは拡張属性をAppleDoubleの補助エントリとして保存する。
-ソースツリーやstagingに通常ファイルだけを置いても、archive内も同じとは限らない。
+**なぜ:** macOSのtarは拡張属性を2つの形でarchiveへ持ち込み、1つの設定は片方しか止めない。
+`COPYFILE_DISABLE=1` はAppleDoubleの補助エントリ（`._name`）を抑えるが、bsdtarは属性を
+pax headerとしても書く — `LIBARCHIVE.xattr.*` と `SCHILY.xattr.*` で、`tar -tzf` の一覧には出ず、
+GNU tarは展開時に未知のキーワードとして警告する。翌日、同じプロジェクトで実測した（2026-09-23）:
+`COPYFILE_DISABLE=1` の修正を出した後のarchiveにも `com.apple.provenance` が残り、
+作業ツリーが同期フォルダーの下にあるため `com.dropbox.attrs` も入っていた。
+stagingに通常ファイルだけを置いてもarchive内が同じとは限らず、直したはずの設定も証拠にならない。
 
-**適用方法:** macOSからLinux向けtarを作るときは `COPYFILE_DISABLE=1 make package`
-のようにpackaging環境へ明示し、作成後のentry一覧が配布契約（binary・README・license等）と
-完全一致するか確認する。修正後の再作成で補助entryが消えることを実測した。
-署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。
+**適用方法:** `tar` に `--no-xattrs` を渡す（bsdtar・GNU tarのどちらも受け付ける）。
+AppleDouble対策として `COPYFILE_DISABLE=1` も残す。そのうえで**設定ではなくarchiveを検査する**:
+リリースの関門でentry一覧を出し、配布契約（binary・README・license）と完全一致することを要求し、
+`._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、展開したストリームを `LIBARCHIVE.xattr` /
+`SCHILY.xattr` でgrepする。どの関門でも落ちない断定を書いたことが、最初の修正が
+効いたと信じられた理由である。署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。

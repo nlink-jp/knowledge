@@ -167,20 +167,29 @@ showed it.
 - If the cache lives in the repository, make sure formatters and bulk replacements cannot reach it.
 
 
-### Keep AppleDouble out of Linux release tarballs built on macOS
+### Keep macOS file metadata out of Linux release tarballs — `COPYFILE_DISABLE` is not enough
 
 **Symptom:** A four-platform Go CLI release (2026-09-22) built with macOS
 `tar -czf` contained `._LICENSE`, `._README.md` and `._<binary>` alongside the
 intended license, README and binary. Build, signing and notarization had passed;
 only inspection of archive entry names exposed the extra files.
 
-**Why:** macOS tar can preserve extended attributes as AppleDouble entries.
-A staging directory containing only ordinary files does not prove the archive
-will contain the same set.
+**Why:** macOS tar carries extended attributes into the archive in two
+different shapes, and one setting stops only the first. `COPYFILE_DISABLE=1`
+suppresses the AppleDouble entries (`._name`), but bsdtar still writes each
+attribute as a pax header — `LIBARCHIVE.xattr.*` and `SCHILY.xattr.*`, which
+`tar -tzf` does not list and GNU tar reports as unknown keywords on extraction.
+Measured the next day on the same project (2026-09-23): after the
+`COPYFILE_DISABLE=1` fix shipped, the archives still carried
+`com.apple.provenance` and, because the tree sits in a synced folder,
+`com.dropbox.attrs`. A staging directory of ordinary files does not prove the
+archive holds the same set, and neither does the flag that was supposed to fix it.
 
-**How to apply:** Set the packaging environment explicitly, for example
-`COPYFILE_DISABLE=1 make package`, when producing Linux tarballs on macOS.
-Inspect the resulting entry names for exact equality with the distribution
-contract (binary, README, license, etc.). Rebuilding with this setting removed
-the auxiliary entries in the measured release. Signature/notarization checks
-and archive-content checks are independent; neither substitutes for the other.
+**How to apply:** Pass `--no-xattrs` to `tar` (both bsdtar and GNU tar accept
+it); keep `COPYFILE_DISABLE=1` for the AppleDouble path. Then **check the
+archive, not the flag**: make the release gate list the entries and require
+exact equality with the distribution contract (binary, README, license), refuse
+any `._*`, `PaxHeader` or `__MACOSX` entry, and grep the decompressed stream for
+`LIBARCHIVE.xattr` / `SCHILY.xattr`. A packaging claim that nobody's gate can
+fail is how the first fix shipped believed. Signature/notarization checks and
+archive-content checks are independent; neither substitutes for the other.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-23
+
+- **build-and-packaging** (ja + en): correction — `COPYFILE_DISABLE=1` does not
+  keep macOS extended attributes out of a Linux tarball; bsdtar still writes
+  them as pax headers, which the entry listing does not show. Use
+  `tar --no-xattrs` and gate on the archive's actual contents.
+
 ## 2026-09-22
 
 - **build-and-packaging** (ja + en): prevent AppleDouble entries in Linux
