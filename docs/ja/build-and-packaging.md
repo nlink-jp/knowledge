@@ -157,7 +157,7 @@ $(ORT_ZIP):
 - キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
 
 
-### macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE` だけでは消えない
+### macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE=1` と `--no-xattrs` の両方が要る
 
 **事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
 `LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。
@@ -170,10 +170,18 @@ GNU tarは展開時に未知のキーワードとして警告する。翌日、�
 `COPYFILE_DISABLE=1` の修正を出した後のarchiveにも `com.apple.provenance` が残り、
 作業ツリーが同期フォルダーの下にあるため `com.dropbox.attrs` も入っていた。
 stagingに通常ファイルだけを置いてもarchive内が同じとは限らず、直したはずの設定も証拠にならない。
+逆も成り立つ: `COPYFILE_DISABLE=1` なしの `--no-xattrs` はpax headerを落とすが、`._` エントリは書く。
+GNU tar 1.35で展開した結果（2026-09-23）: どちらもなし — 警告と余分な `._` ファイル。
+`COPYFILE_DISABLE=1` のみ — 警告。`--no-xattrs` のみ — 警告なし、余分な `._` ファイルあり。両方 — 正常。
 
-**適用方法:** `tar` に `--no-xattrs` を渡す（bsdtar・GNU tarのどちらも受け付ける）。
-AppleDouble対策として `COPYFILE_DISABLE=1` も残す。そのうえで**設定ではなくarchiveを検査する**:
+**適用方法:** `COPYFILE_DISABLE=1 tar --no-xattrs` でarchiveを作る — 2つの形を1つずつ止める
+（`--no-xattrs` はbsdtar・GNU tarのどちらも受け付ける）。そのうえで**設定ではなくarchiveを検査する**:
 リリースの関門でentry一覧を出し、配布契約（binary・README・license）と完全一致することを要求し、
 `._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、展開したストリームを `LIBARCHIVE.xattr` /
-`SCHILY.xattr` でgrepする。どの関門でも落ちない断定を書いたことが、最初の修正が
+`SCHILY.xattr` でgrepする。一覧は `tar --options 'tar:!mac-ext' -tzf` で出す: macOSのbsdtarは
+一覧表示のとき `._` エントリを対応するentryへ畳み込むため、素の `tar -tzf` はきれいな一覧を返し、
+その上の `._` 検査は決して落ちない。並べた一覧はCロケールで比べる（`LC_ALL=C sort`）。
+UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定の期待文字列は正しいarchiveを拒否する。
+関門は形ごとのfixture（`--no-xattrs` のみのものを含む）で実証し、fixtureは畳み込まない読み手
+（Pythonの `tarfile`）で先に読み返す。どの関門でも落ちない断定を書いたことが、最初の修正が
 効いたと信じられた理由である。署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。

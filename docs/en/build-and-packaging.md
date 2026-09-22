@@ -167,7 +167,7 @@ showed it.
 - If the cache lives in the repository, make sure formatters and bulk replacements cannot reach it.
 
 
-### Keep macOS file metadata out of Linux release tarballs — `COPYFILE_DISABLE` is not enough
+### Keep macOS file metadata out of Linux release tarballs — it takes both `COPYFILE_DISABLE=1` and `--no-xattrs`
 
 **Symptom:** A four-platform Go CLI release (2026-09-22) built with macOS
 `tar -czf` contained `._LICENSE`, `._README.md` and `._<binary>` alongside the
@@ -184,12 +184,23 @@ Measured the next day on the same project (2026-09-23): after the
 `com.apple.provenance` and, because the tree sits in a synced folder,
 `com.dropbox.attrs`. A staging directory of ordinary files does not prove the
 archive holds the same set, and neither does the flag that was supposed to fix it.
+The converse holds too: `--no-xattrs` without `COPYFILE_DISABLE=1` drops the pax
+headers but still writes the `._` members. Extracted with GNU tar 1.35 (2026-09-23):
+neither setting — warnings and stray `._` files; `COPYFILE_DISABLE=1` alone —
+warnings; `--no-xattrs` alone — silent, with stray `._` files; both — clean.
 
-**How to apply:** Pass `--no-xattrs` to `tar` (both bsdtar and GNU tar accept
-it); keep `COPYFILE_DISABLE=1` for the AppleDouble path. Then **check the
-archive, not the flag**: make the release gate list the entries and require
-exact equality with the distribution contract (binary, README, license), refuse
-any `._*`, `PaxHeader` or `__MACOSX` entry, and grep the decompressed stream for
-`LIBARCHIVE.xattr` / `SCHILY.xattr`. A packaging claim that nobody's gate can
-fail is how the first fix shipped believed. Signature/notarization checks and
+**How to apply:** Archive with `COPYFILE_DISABLE=1 tar --no-xattrs` — each
+setting stops one of the two shapes (both bsdtar and GNU tar accept
+`--no-xattrs`). Then **check the archive, not the flag**: make the release gate
+list the entries and require exact equality with the distribution contract
+(binary, README, license), refuse any `._*`, `PaxHeader` or `__MACOSX` entry,
+and grep the decompressed stream for `LIBARCHIVE.xattr` / `SCHILY.xattr`. List
+with `tar --options 'tar:!mac-ext' -tzf`: macOS bsdtar folds `._` members into
+the entry they describe when it lists, so a plain `tar -tzf` shows a clean list
+and a `._` check over it can never fire. Compare the sorted list in the C locale
+(`LC_ALL=C sort`); under a UTF-8 locale `abuse-lookup` sorts before `LICENSE`,
+and a literal expected string refuses a correct archive. Prove the gate with a
+fixture per shape, the `--no-xattrs`-only one included, read back first with a
+reader that does not fold (Python's `tarfile`). A packaging claim that nobody's
+gate can fail is how the first fix shipped believed. Signature/notarization checks and
 archive-content checks are independent; neither substitutes for the other.
