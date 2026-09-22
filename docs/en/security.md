@@ -1781,6 +1781,44 @@ a list only waits for the next one.
 - Pass the path as named along with the resolved one. The resolved end alone has lost the fact that a
   chain of links went through a credential directory (`screenshots/` → `~/.config/gcloud/sub/hop` → an
   ordinary directory inside the work folder).
+- A refusal names the path only as the caller gave it. The place differs when an entry on the way is a
+  link (`~/.ssh/config` into a sync folder, a dotfiles-linked `~/.aws`), so echoing it (a
+  `details.resolved`) tells a dangling link from no entry and says where the link leads; for a loop it
+  names a hop the caller never gave. Two servers carried this through their first existence fix
+  (2026-09-22).
+- A workspace can hold places on the floor. `<work_dir>/<workspace_id>` passing the directory check says
+  nothing about what lies inside it: a `.env`, the server's own directory (`work_dir=~/.local`,
+  `workspace_id=share`), the file a link in `~/.ssh` leads to when the workspace is in that sync folder.
+  Three media servers read caller-named workspace files through an `os.Root` with no floor, and a casting
+  table's parse error returned the file's keys (`unknown keys: [SECRET]`). Judge in the one place every
+  read goes through — the workspace's read methods — not at the call sites: a first fix judged the two
+  paths a caller names and missed a third read, a server-named file (`wav/<id>.wav`) that a planted link
+  redirected. The root still keeps the read inside.
+- A program that opens a path has its own name syntax. ffmpeg reads `%d` in an image name as a numbered
+  sequence (some builds read glob characters as a match), so a regular file named `p%d.png` passes every
+  check while ffmpeg opens `p0.png`, `p1.png`, … that nobody judged. Refuse such names, and verify each
+  input again immediately before the program opens it: a render can take minutes, and a page swapped for
+  a link in between was handed over.
+- A hard link to a file inside a credential directory is never refused: a directory is compared by its
+  own identity, not by its files'. Identity catches only a hard link to a file that is itself a place
+  (`~/.netrc`), and only while it exists; a `.env` is a name rule and does not see one either.
+- The last of `Forms` is not always the end. The forms are de-duplicated, so when a chain of links comes
+  back to a spelling already met, the end is an earlier form and the last element is a middle hop. Every
+  form is judged, so nothing unjudged is opened, but a place taken from the tail can be the wrong file;
+  the end has to come from the walk itself.
+- A `..` that climbs out through an entry of a credential directory is judged where it lands. Cleaned
+  forms lose the directories a walk passes through, so `~/.ssh/ENTRY/../../x` — or a planted link to that
+  spelling — is not refused, and the answer can show whether ENTRY is a link and where it leads. The
+  directories a walk enters belong to the judgement too.
+- The work-directory argument is an oracle of its own when validation asks "does it exist" before "is it
+  refused" (`work_dir=~/.aws`: refused if present, not found if absent). Fixing every file argument
+  leaves it.
+- Measure with pairs rather than by reading: call the tool with one path while a file is there, remove
+  the file, call again, and compare the whole answer. All seven remaining consumers of pathguard were
+  measured this way on 2026-09-22, and every one of them leaked. Redirecting `HOME` does not keep such a test off the real credential directories:
+  pathguard also builds the floor of the account's home from the user database (`user.Current`, which
+  ignores `HOME` on darwin even with `CGO_ENABLED=0`) and lists its credential directories;
+  `go test -tags osusergo` makes the account home follow `HOME` (measured 2026-09-22).
 - Write through an `os.Root`, **opened at the start of the call and held**; reopening by path later
   follows whatever was swapped in. Check where the directory would be before creating anything, and
   after, that the directory the root reaches is the one the path names; refuse when either cannot be
