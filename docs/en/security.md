@@ -1762,10 +1762,15 @@ a list only waits for the next one.
   environment. A fix that made every place absolute moved the user's Chrome under the working directory
   when `$HOME` was relative, and stopped protecting the real one. Build the user's places from absolute
   homes only (`$HOME` when absolute, and the account's home from the user database).
-- Judge before resolving, and answer in a way that does not reveal existence. When "no such file" and
-  "refused" are different answers, the answer says which secrets exist. Judge the path as named first
-  (pathguard follows the links itself and needs no existing file), and outside the root answer "outside"
-  before saying whether the file is there.
+- Answer in a way that does not reveal existence. When "no such file" and "refused" are different
+  answers, the answer says which secrets exist. Fix one order: resolve → floor → containment → whatever
+  depends on what exists (is it a directory, a regular file, is something already there). Put a path that
+  does not resolve to the floor too (pathguard follows the links itself and needs no existing file), place
+  it by its deepest existing ancestor, and answer "outside" when that lies outside the root, before ever
+  saying "missing". Fixing one function leaves the other: after the fix for uploads, downloads still ran
+  their is-a-directory check before the floor, so an existing credential file was "missing" and a missing
+  one "refused". Test pairs of existing and missing paths in both directions and assert the answers are
+  equal.
 - Pass the path as named along with the resolved one. The resolved end alone has lost the fact that a
   chain of links went through a credential directory (`screenshots/` → `~/.config/gcloud/sub/hop` → an
   ordinary directory inside the work folder).
