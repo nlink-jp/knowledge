@@ -249,3 +249,22 @@ left operand makes the whole `&&` list fail and the shell exits there. Condition
 is exempt from `set -e`, which makes `if`/`else` the only form that is safe to write.
 The same trap sits after `while`, `until` and `case`. Whenever you want to keep a
 condition's status, keep it inside the branch.
+
+## `! grep -q` reads a grep error as "no match" — pass a pattern that starts with `-` through `-e`
+
+**Symptom:** A test checked that no trace of the old form was left in a converted file:
+`! grep -qF '--version && \' file`. The test also passed when the conversion rewrote nothing.
+
+**Why:** The pattern starts with `-`, so grep reads it as an **option**. It rejects the unknown
+option, prints its usage and exits 2. grep's status has three values (0 match, 1 no match,
+2 error). `!` folds them into two and turns 2 into true, as if nothing had matched. A negated
+check falls toward passing whenever the check itself did not run.
+
+**How to apply:**
+- Always pass the pattern with `-e` (`grep -qF -e "$pat" file`), both for patterns that start
+  with `-` and for patterns that come from a variable.
+- To check that something is absent, don't stop at `!`. Require 1 explicitly:
+  `rc=0; grep -qF -e "$pat" file || rc=$?; [ "$rc" -eq 1 ]`. A 2 then fails, and the form is
+  safe under `set -e`.
+- Break a negated check on purpose once and watch it fail. Here the only sign was grep's usage
+  text mixed into the test output. Anyone reading only the pass/fail count saw a pass.

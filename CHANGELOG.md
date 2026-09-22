@@ -8,6 +8,10 @@
   Makefile carried that string. Take a control sample with the marker outside
   the target too.
 
+- **shell-scripting** (ja + en): `! grep -q` reads grep's error status 2 as
+  "no match". A pattern starting with `-` is parsed as an option. Pass
+  patterns with `-e` and require status 1 explicitly.
+
 - **build-and-packaging** (ja + en): correction — `COPYFILE_DISABLE=1` does not
   keep macOS extended attributes out of a Linux tarball; bsdtar still writes
   them as pax headers, which the entry listing does not show. Use
