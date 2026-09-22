@@ -2,6 +2,11 @@
 
 ## 2026-09-23
 
+- **build-and-packaging** (ja + en): correction — check a Linux tarball's
+  xattrs in its pax headers (Python's `tarfile`), not by grepping the
+  decompressed stream. The grep also matches file text, and a bundled
+  CHANGELOG that named the keywords got a clean archive refused.
+
 - **testing** (ja + en): a check that judges by a marker must look for it only
   inside what the marker describes. A whole-file grep for the closed release
   gate's `exit $$rc` passed an open gate because another target of the same

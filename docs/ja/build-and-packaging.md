@@ -177,8 +177,10 @@ GNU tar 1.35で展開した結果（2026-09-23）: どちらもなし — 警告
 **適用方法:** `COPYFILE_DISABLE=1 tar --no-xattrs` でarchiveを作る — 2つの形を1つずつ止める
 （`--no-xattrs` はbsdtar・GNU tarのどちらも受け付ける）。そのうえで**設定ではなくarchiveを検査する**:
 リリースの関門でentry一覧を出し、配布契約（binary・README・license）と完全一致することを要求し、
-`._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、展開したストリームを `LIBARCHIVE.xattr` /
-`SCHILY.xattr` でgrepする。一覧は `tar --options 'tar:!mac-ext' -tzf` で出す: macOSのbsdtarは
+`._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、各entryの**pax header**に `LIBARCHIVE.xattr.` /
+`SCHILY.xattr.` で始まるキーが無いことを確かめる（Pythonの `tarfile` の `pax_headers`）。
+展開したストリームをgrepしてはいけない: ファイルの本文にも一致する。同梱したCHANGELOGがこの
+キーワードを書いていたため、きれいなarchiveがリリースの関門で拒否された（2026-09-23）。一覧は `tar --options 'tar:!mac-ext' -tzf` で出す: macOSのbsdtarは
 一覧表示のとき `._` エントリを対応するentryへ畳み込むため、素の `tar -tzf` はきれいな一覧を返し、
 その上の `._` 検査は決して落ちない。並べた一覧はCロケールで比べる（`LC_ALL=C sort`）。
 UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定の期待文字列は正しいarchiveを拒否する。

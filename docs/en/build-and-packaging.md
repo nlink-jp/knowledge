@@ -194,7 +194,11 @@ setting stops one of the two shapes (both bsdtar and GNU tar accept
 `--no-xattrs`). Then **check the archive, not the flag**: make the release gate
 list the entries and require exact equality with the distribution contract
 (binary, README, license), refuse any `._*`, `PaxHeader` or `__MACOSX` entry,
-and grep the decompressed stream for `LIBARCHIVE.xattr` / `SCHILY.xattr`. List
+and check that no entry's **pax headers** hold a key starting with
+`LIBARCHIVE.xattr.` / `SCHILY.xattr.` (`pax_headers` in Python's `tarfile`).
+Do not grep the decompressed stream: it matches file text too. A bundled
+CHANGELOG that named the keywords got a clean archive refused at the release
+gate (2026-09-23). List
 with `tar --options 'tar:!mac-ext' -tzf`: macOS bsdtar folds `._` members into
 the entry they describe when it lists, so a plain `tar -tzf` shows a clean list
 and a `._` check over it can never fire. Compare the sorted list in the C locale
