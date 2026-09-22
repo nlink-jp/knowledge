@@ -155,3 +155,18 @@ $(ORT_ZIP):
 - 作り直しは `GOMODCACHE=<その場所> go clean -modcache`。キャッシュは読み取り専用で作られるので `rm -rf`
   （`make clean` の中身がそれでも）は `Directory not empty` で途中止まりになる。
 - キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
+
+
+### macOSで作るLinux配布tarにもAppleDoubleを混ぜない
+
+**事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
+`LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。
+ビルド・署名・公証は成功していたが、archiveの収録名を検査して初めて見つかった。
+
+**なぜ:** macOSのtarは拡張属性をAppleDoubleの補助エントリとして保存する。
+ソースツリーやstagingに通常ファイルだけを置いても、archive内も同じとは限らない。
+
+**適用方法:** macOSからLinux向けtarを作るときは `COPYFILE_DISABLE=1 make package`
+のようにpackaging環境へ明示し、作成後のentry一覧が配布契約（binary・README・license等）と
+完全一致するか確認する。修正後の再作成で補助entryが消えることを実測した。
+署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。

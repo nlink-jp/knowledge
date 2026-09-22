@@ -2,6 +2,9 @@
 
 ## 2026-09-22
 
+- **build-and-packaging** (ja + en): prevent AppleDouble entries in Linux
+  release tarballs built on macOS and verify the exact archive contents.
+
 - **security** (ja + en): live Slack HTML/JSON round trips exposed text/plain
   metadata and force-download responses; verify attachment identity and full
   size instead of trusting MIME or a sniffed prefix alone.
