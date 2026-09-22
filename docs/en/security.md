@@ -1860,3 +1860,36 @@ interception reaches only sessions that are attached.
 - Leave the remaining details (a race of a few round trips, what a page logs about itself, a parsing difference the
   interception already stops) as accepted residuals, written in the ADR with reasons, instead of adding code. The fix
   that tried to close everything had grown by 194 lines and bought little.
+
+## ffmpeg is an interpreter — pin every input's format, and keep what it writes and reads back out of every writable place but your own
+
+**Symptom:** Two MCP servers render media with ffmpeg over files in a caller-writable workspace (2026-09-22,
+ffmpeg 9.0.2). A page "audio" file named `.wav` whose contents were `ffconcat version 1.0` / `file 'k'` — `k` an
+in-workspace link leading outside — put the outside file into the output: ffmpeg picks a format from the contents,
+not the name, and followed a list nobody judged. A caller writing into the workspace during a render rewrote the
+server's own concat list and made an outside file the output in 10 of 10 runs; a link planted where ffmpeg wrote a
+segment had its target overwritten. The first fix moved those files into a private directory under `$TMPDIR` with an
+unguessable name — and gem-agent's and lagent's write lanes can write `$TMPDIR`, where a process of the same user lists
+names, so a sandboxed writer overwrote the render there too. Separately, an image ffmpeg cannot decode (a GIF or a
+truncated PNG named `.png`) made it fail on every looped frame and never end, stderr growing without bound.
+
+**Why:** ffmpeg's inputs are programs as much as data: a list, a playlist, an image pattern (`%d`) each make it open
+further files. Anything it writes and then reads back is an input too, and a directory someone else can write is a
+channel into it — its startup takes tens of milliseconds, so "needs precise timing" was the wrong premise for
+accepting that residual (measured, not assumed, is what overturned it). An unguessable name is no barrier to a writer
+that can list the directory.
+
+**How to apply:**
+- Pin each caller-supplied input: images `-f image2 -pattern_type none` with the decoder named (`-c:v png|mjpeg`);
+  audio and ffprobe `-format_whitelist <audio formats only>`; `-protocol_whitelist file`. In a concat list you write,
+  put `option format_whitelist wav` (or your formats) on every entry and pass `-xerror`, so a refused entry fails the
+  job instead of cutting it short. Never write a path with a control character into a list.
+- Decode what you can in your own code first (Go's `image.Decode` for PNG/JPEG, after `image.DecodeConfig` has
+  bounded the declared size — a 130 KB PNG decoded to 122 MB) and refuse the rest as a manifest error; let the decoded format, not the extension, name ffmpeg's decoder.
+- Make everything ffmpeg writes and reads back — segments, lists, chapters, the output until it is finished — in a
+  per-job directory under the user cache directory (`os.UserCacheDir()`), which the runtimes' write lanes do not
+  cover; not `$TMPDIR` or `/private/tmp`, which they do. Prune entries older than a day (a killed job cannot clean up).
+  Place only the finished file in the workspace, through an `os.Root`: unlink what sits at the temporary name, create
+  it `O_EXCL`, rename over the final name.
+- Tests replace the private root (a package variable set in `TestMain`) and set `$HOME` to a temporary directory for
+  packages that render through the tool layer, so a test run leaves nothing in the real cache.
