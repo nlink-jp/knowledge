@@ -365,17 +365,31 @@ payloads (previous entry), and that is exactly where this bites.
   cannot name "the project": past a hundred repositories the only prefixes that
   cover all of them are their common parent directory and `~`, and `~` admits
   the very files the list exists to keep out. What a server owes is a floor —
-  credential and agent-control directories (`~/.ssh`,
-  `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/Library/Keychains`, the agent
-  runtimes' own config directories, any `.env`). Coarse containment of the
-  process is the runtime's job, at a different timescale: the sandbox is chosen
-  at spawn, `work_dir` arrives per call.
-- **Check the blacklist on both spellings of the path and of every entry.**
-  Resolving symlinks before comparing is not enough, and neither is skipping
-  the resolution: on a machine where `~/.ssh` is itself a symlink into a synced
-  folder, resolving the candidate makes it stop matching the literal entry.
-  Compare the path as given *and* resolved against each entry as given *and*
-  resolved.
+  the credential and agent-control places, and any `.env`. Coarse containment
+  of the process is the runtime's job, at a different timescale: the sandbox is
+  chosen at spawn, `work_dir` arrives per call.
+- **Write neither the floor's list nor its comparison yourself — use
+  `nlink-jp/pathguard`** (organization ADR-022). The list is one, the same as
+  the agent runtimes' sandboxes use; places are compared by identity and by
+  names folded the way the disk folds them, and every hop of a chain of links
+  is judged. The nine per-server copies all compared strings and let `~/.SSH`
+  through, and lacked `~/.kube`, `~/.config/gh`, `~/.netrc` and more from the
+  runtimes' list. A server keeps a thin adapter only: reading `_meta`, naming
+  its own places, mapping errors onto its error type. The comparison itself is
+  in `security.md`, "Compare places by identity, not by name".
+- **Judge a file that leaves the machine as a different question.** A read or
+  write here (Local) and an upload that leaves (Outbound) have different
+  bounds: once a file leaves, "the caller could have read it itself" is no
+  bound, and a secret's name (`id_rsa`, `*service-account*.json`) or a path
+  through a credential directory's name is refused outside the home and inside
+  `work_dir` too.
+- **Validating `work_dir` does not validate the directory you write in.**
+  `<work_dir>/<workspace_id>` is `~/.config/gh` for `work_dir=~/.config` and
+  `workspace_id=gh`, and none of the nine servers looked at it (one mounts that
+  directory into a container as `/work`, credentials and all). Judge the
+  derived directory at the point of use (pathguard's `CheckBeneath`), and make
+  the workspace manager take that check as a **required** constructor argument,
+  so a tool added later cannot reach a workspace unjudged.
 - **Echo the resolved directory in the result.** The caller sent a spelling; the
   server used a resolved one, and every path it returns is built from that.
 - Treat "can the caller open the path I returned?" as **part of the success
@@ -683,6 +697,11 @@ effort and varies quality.
 Porting means changing the import path, swapping sentinel code constants, and
 deleting unused features (e.g. RawResult). Only the tool-handler layer and the
 upstream client are new code.
+
+**Path judgement is not part of the skeleton.** `work_dir` resolution and
+validation and the floor's list used to be ported as `internal/mcp/workdir`;
+nine copies drifted apart with the same defects in each. Depend on
+`nlink-jp/pathguard` instead (organization ADR-022).
 
 **Check, package by package, which sibling is the newest.** The tool closest in purpose was
 taken whole as the source of the port; its config loader turned out to be a generation old

@@ -1756,6 +1756,19 @@ a list only waits for the next one.
   every prefix and is quadratic.
 - An empty refusal string meaning "allowed" is a fail-open waiting for a place without words: fill in
   default words, and refuse everything when a place has no absolute path.
+- Resolve each place the way whoever uses it resolves it. This process's own directory under a relative
+  `TMPDIR` or `$HOME` may be made absolute from its working directory — that is where this process keeps
+  it. The user's own browser profile is different: the browser does not follow this process's
+  environment. A fix that made every place absolute moved the user's Chrome under the working directory
+  when `$HOME` was relative, and stopped protecting the real one. Build the user's places from absolute
+  homes only (`$HOME` when absolute, and the account's home from the user database).
+- Judge before resolving, and answer in a way that does not reveal existence. When "no such file" and
+  "refused" are different answers, the answer says which secrets exist. Judge the path as named first
+  (pathguard follows the links itself and needs no existing file), and outside the root answer "outside"
+  before saying whether the file is there.
+- Pass the path as named along with the resolved one. The resolved end alone has lost the fact that a
+  chain of links went through a credential directory (`screenshots/` → `~/.config/gcloud/sub/hop` → an
+  ordinary directory inside the work folder).
 - Write through an `os.Root`, **opened at the start of the call and held**; reopening by path later
   follows whatever was swapped in. Check where the directory would be before creating anything, and
   after, that the directory the root reaches is the one the path names; refuse when either cannot be
