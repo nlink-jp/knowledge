@@ -1769,8 +1769,15 @@ a list only waits for the next one.
   it by its deepest existing ancestor, and answer "outside" when that lies outside the root, before ever
   saying "missing". Fixing one function leaves the other: after the fix for uploads, downloads still ran
   their is-a-directory check before the floor, so an existing credential file was "missing" and a missing
-  one "refused". Test pairs of existing and missing paths in both directions and assert the answers are
-  equal.
+  one "refused".
+- Do not give a path that does not resolve a branch of its own. Each fix to that branch left another pair
+  apart (a dangling link revealing what exists outside; the refusal naming the path as named in one case
+  and resolved in the other; the directory check skipped). Place **every** path first — the last of
+  pathguard's forms (the end of `Forms`: every link followed, a dangling one by its target, and for a path
+  that exists what `EvalSymlinks` returns) — run the floor, containment and the directory check on that
+  place along one code path, and ask whether anything exists only afterwards. Test pairs of existing and
+  missing paths in both directions, planted links included, and compare the whole answer (reason, path,
+  message), not only the code.
 - Pass the path as named along with the resolved one. The resolved end alone has lost the fact that a
   chain of links went through a credential directory (`screenshots/` → `~/.config/gcloud/sub/hop` → an
   ordinary directory inside the work folder).
