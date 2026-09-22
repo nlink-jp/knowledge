@@ -1539,3 +1539,36 @@ slot does not come back until the connection ends.
 - Measure whether the other side answers, and keep the result in the gate's record (`cancel-ack none`).
 - If the release procedure requires a gate pass on the exact commit, the release commit that adds the
   change log needs its own run — count it when planning.
+
+## A check that judges by a marker must look for it only inside what the marker describes
+
+**Symptom:** After the release gate's fail-open form (`|| true` at the end of an `&&` chain)
+was removed from every repository, a check was added to catch it coming back. It passed a
+Makefile with a `verify-release` target whenever the closed form's marker, `exit $$rc`, was
+present. A repository created afterwards still carried the old form and passed. The marker sat
+in a **different target** of the same Makefile: the e2e target keeps the test suite's status
+with `exit $$rc`. The bulk-conversion tool used the same test, read the file as already
+converted, and `--apply` rewrote nothing. The control taken when the check was introduced
+(revert one repository to the old form and see it named) used a repository with no such marker
+in another target, so it could not show the hole.
+
+**Why:** A marker only stands in for the state of its target. The one thing that ties the two
+together is where you look for the marker. Grepping the whole file breaks that tie: the same
+string anywhere unrelated is enough to pass, and the target is never read. The error only ever
+lands on the passing side, so all anyone sees is a run of green results. When the check and the
+fixing tool share one test, both go blind at once.
+
+**How to apply:**
+- Look for the marker only inside what it describes. For a Makefile recipe, that is the
+  tab-indented lines after the rule line, plus their continuation lines. Don't stop at blank or
+  comment lines, since make doesn't end the recipe there either. Put the extraction in one
+  function so the check and the tool read the recipe the same way.
+- Include a control sample that also has the marker **outside** the target. With the marker in
+  one place only, a whole-file grep and a scoped test cannot be told apart.
+- After narrowing the scope, compare old and new verdicts across the whole org and confirm that
+  the only change is the case you found (here 1 of 90). Also confirm the tests catch mutants
+  that end the extraction early (stopping at a blank line, ignoring continuations): narrowing
+  too far is a new miss.
+- Write down the hole a marker-based test still has: another block **inside** the scope that
+  uses the same marker can still hide the form. If the form itself can be tested directly (here,
+  `|| true` closing an `&&` chain), that test is stronger.

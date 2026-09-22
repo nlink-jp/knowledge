@@ -2,6 +2,12 @@
 
 ## 2026-09-23
 
+- **testing** (ja + en): a check that judges by a marker must look for it only
+  inside what the marker describes. A whole-file grep for the closed release
+  gate's `exit $$rc` passed an open gate because another target of the same
+  Makefile carried that string. Take a control sample with the marker outside
+  the target too.
+
 - **build-and-packaging** (ja + en): correction — `COPYFILE_DISABLE=1` does not
   keep macOS extended attributes out of a Linux tarball; bsdtar still writes
   them as pax headers, which the entry listing does not show. Use
