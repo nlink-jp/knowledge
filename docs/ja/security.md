@@ -1612,3 +1612,16 @@ HTTP statusだけで成功と判定するのも、本文の形だけで失敗と
 - ファイルへの認証が必要なサービスでは、トークンを送ったことを認証成功の証拠にしない。
   scope不足でもHTTP 200のログインHTMLが返ることがある。
 - エラーHTML/JSONと正規HTML/JSONを対にしてテストし、既存ファイル保持とmetadata保持も確認する。
+
+**実Slackでの追試（2026-09-22）:** 上記の合成テストが成功していても、実ボットの往復では
+正規HTMLとJSONを誤拒否した。Slackは両方のmetadataを `text/plain` とし、HTTP応答は
+`application/force-download`、`Content-Disposition: attachment` で元のバイトを返していた。
+認証済みSlack host、Content-Dispositionのファイル名一致、既知の記録サイズを条件にMIME差を許容し、
+binary・HTML・JSONのupload→thread/history→downloadで元バイトとの完全一致を確認した。
+既知のログインHTML・外部hostへの資格情報転送・名前やサイズの不一致は引き続き拒む。
+
+- MIMEや拡張子の一条件を緩めるのではなく、転送先・添付のidentity・全体サイズを合わせて判定する。
+- sniffした先頭4096バイトはファイル全体ではない。JSON objectと後続空白ならprefixだけでもJSON解析が
+  成功するため、信頼済み添付のサイズ比較はコピー完了後の実バイト数で行う。
+- 成功済みunit testの想定を実サービスも満たすとは限らない。完成の前に実バイナリで往復し、
+  warningが出た場合や保存ファイルが欠けた場合もE2E失敗として扱う。

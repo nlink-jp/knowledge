@@ -1914,3 +1914,21 @@ the body alone as evidence of failure is sufficient.
   authentication. Missing scopes can still produce login HTML at HTTP 200.
 - Pair error HTML/JSON tests with legitimate HTML/JSON tests, and verify retention
   of both existing destination files and export metadata on failure.
+
+**Live Slack follow-up (2026-09-22):** Even with those synthetic tests passing,
+a real bot round trip rejected legitimate HTML and JSON. Slack classified both
+as `text/plain` in metadata and returned the original bytes with HTTP
+`application/force-download` and `Content-Disposition: attachment`. Accepting this
+MIME difference only for an authenticated Slack host, a matching disposition
+filename and a known recorded size restored exact upload→thread/history→download
+byte equality for binary, HTML and JSON. Known login HTML, credential forwarding
+to foreign hosts, and mismatched filenames or sizes remain rejected.
+
+- Combine destination, attachment identity and full size; do not merely loosen a
+  MIME or filename-extension condition.
+- A sniffed 4096-byte prefix is not the whole file. A JSON object followed by
+  whitespace can parse successfully from that prefix, so compare a trusted
+  attachment's recorded size against the bytes copied after the transfer ends.
+- Passing unit tests do not prove the real service matches their assumptions.
+  Run the actual binary through the round trip before completion, and treat
+  warnings or missing downloaded files as E2E failures.

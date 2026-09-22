@@ -2,6 +2,10 @@
 
 ## 2026-09-22
 
+- **security** (ja + en): live Slack HTML/JSON round trips exposed text/plain
+  metadata and force-download responses; verify attachment identity and full
+  size instead of trusting MIME or a sniffed prefix alone.
+
 - **config-and-io** (ja + en): preserve exclusive bounds when converting to
   coarser timestamp precision; floor start and ceil end only when needed.
 - **security** (ja + en): error-shaped JSON can be an actual attachment; compare
