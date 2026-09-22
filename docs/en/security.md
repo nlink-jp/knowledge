@@ -1893,3 +1893,24 @@ that can list the directory.
   it `O_EXCL`, rename over the final name.
 - Tests replace the private root (a package variable set in `TestMain`) and set `$HOME` to a temporary directory for
   packages that render through the tool layer, so a test run leaves nothing in the real cache.
+
+### An error-shaped response can be the user's actual file
+
+**Symptom:** scat's file-download renewal (2026-09) rejected an HTTP 200 body
+`{"ok":false,"error":"missing_scope"}` as an API error. But a JSON attachment of
+a Slack error log legitimately contained exactly that data. After independent
+review, synthetic download tests verified the false rejection and its correction.
+This was not an additional live Slack measurement.
+
+**Why:** protocol control responses and arbitrary user data can share a
+representation. Neither the status alone as evidence of success nor the shape of
+the body alone as evidence of failure is sufficient.
+
+**How to apply:**
+- Compare expected file metadata, MIME and size with the response. When the JSON
+  attachment type and recorded size match, an error-shaped body can be saved as
+  the file. If ambiguous, warn and leave the destination unchanged.
+- For authenticated file services, sending a token is not evidence of successful
+  authentication. Missing scopes can still produce login HTML at HTTP 200.
+- Pair error HTML/JSON tests with legitimate HTML/JSON tests, and verify retention
+  of both existing destination files and export metadata on failure.

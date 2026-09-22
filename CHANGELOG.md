@@ -2,6 +2,11 @@
 
 ## 2026-09-22
 
+- **config-and-io** (ja + en): preserve exclusive bounds when converting to
+  coarser timestamp precision; floor start and ceil end only when needed.
+- **security** (ja + en): error-shaped JSON can be an actual attachment; compare
+  metadata and size, and pair refusal tests with legitimate file cases.
+
 - **security** (ja + en): the identity entry, extended from building
   `nlink-jp/pathguard` — anchor a place that does not exist yet by identity too
   (its parent's spellings are unbounded), fold names by Unicode as APFS does,

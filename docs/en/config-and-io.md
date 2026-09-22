@@ -952,3 +952,25 @@ harmless when recorded and decides outcomes the day a feature refuses or filters
   registration records a fact.
 - Validate values the user supplies: unvalidated free text is treated as a fact the moment it is compared.
 - Put the mark in the listing (`arch_trusted`) so a front-end can filter by the same rule.
+
+### Exclusive time bounds need different rounding directions when precision becomes coarser
+
+**Symptom:** during scat's Slack-only renewal (2026-09), RFC3339 fractions were
+converted to microsecond API bounds. Flooring an end time ending in `.123456789`
+to `.123456` and sending it as an exclusive upper bound dropped the message at
+`.123456`, even though that message preceded the original end. Independent review
+found this; synthetic regression tests verified it. This is not a new live-service observation.
+
+**Why:** the input precision differs from the grid on which data exists. Keeping
+exclusive comparisons while flooring both ends is correct at the lower bound,
+but narrows the selected set at the upper bound.
+
+**How to apply:**
+- To select microsecond-grid values with `start < value < end`, floor start and
+  ceil end only when necessary. Leave values already on the grid unchanged.
+- Test immediately before, on and after each boundary, including an upper fraction
+  `.999999999` carrying into the next second.
+- Do not convert timestamp identifiers to float64; handle seconds and fractions
+  as integers.
+- Whether the interval selects parents or every message is a separate contract;
+  a rounding correction must not silently change that meaning.
