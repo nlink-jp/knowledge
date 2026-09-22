@@ -5,6 +5,22 @@ cannot reach. Each entry follows **symptom → why → how to apply**.
 
 ---
 
+## Disable Go's successful test cache when rechecking changed execution restrictions
+
+**Symptom:** While validating a security paper, Seatbelt enforcement tests skipped under a restricted
+environment. A rerun with local HTTP listeners permitted passed overall, but previously successful
+packages replayed their cached skips. Running `go test -count=1 -json ./...` removed 16 skipped tests
+in each of the two runtimes and exercised their enforcement tests successfully (2026-09-22).
+
+**Why:** A package that succeeds with skipped tests can be cached. Changes to execution restrictions
+outside the process do not necessarily invalidate Go's cache. Reusing results for unchanged code is
+different from measuring the current environment.
+
+**How to apply:** After changing sandbox restrictions, permissions, or external process conditions,
+use `-count=1` for tests intended to measure those conditions. Inspect test-level pass and skip events
+and their reasons in JSON output; exit status zero alone does not establish a live enforcement check.
+Distinguish counts that include subtests from independent checks and from unexecuted live suites.
+
 ## All-green unit tests still need real-data E2E and real-binary simulation
 
 **Symptom (three kinds of real cases):**
