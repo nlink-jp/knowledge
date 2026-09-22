@@ -2,6 +2,13 @@
 
 ## 2026-09-22
 
+- **security** (ja + en): the identity entry, extended from building
+  `nlink-jp/pathguard` — anchor a place that does not exist yet by identity too
+  (its parent's spellings are unbounded), fold names by Unicode as APFS does,
+  stat every ancestor (`/.vol/<dev>` does not stat, `/.vol/<dev>/<ino>` does),
+  cap every form a link hop produces, and never let an empty refusal mean
+  "allowed". The earlier advice to rely on the name comparison for a missing
+  place was wrong and is replaced.
 - **security** (ja + en): compare places by identity, not by name — APFS is
   case-insensitive, and four reviews of chrome-pilot-mcp's confinement found the
   same class each time (case variants, a planted temporary name, a swapped work

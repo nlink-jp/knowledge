@@ -1722,17 +1722,40 @@ a path passed the server-directory check; `.ENV` passed the `.env` rule and `~/.
 list. APFS is case-insensitive by default, so one directory has many names, and a string comparison
 passes every spelling it was not written for. A hard link planted at a predictable temporary name, a
 work directory swapped during a recording, and a dangling link containing `..` got past name-only
-checks the same way.
+checks the same way. Building the shared module (`nlink-jp/pathguard`, the same day) took four more
+reviews: a place that did not exist yet was still compared by name, and any other spelling of its
+existing parent — the firmlink `/System/Volumes/Data/…`, `/.nofollow/…`, `/.vol/<dev>/<ino>/…`, a linked
+`~/.config` — created the real `~/.aws/credentials`. `strings.ToLower` let `id_rſa` open `id_rsa`. And
+one 97-byte path through a planted link cost 21 s per check.
 
 **Why:** Deciding "is this inside that place" by name needs an answer for every spelling — case,
 symlinks, normalisation, hard links all reach the same object under another name. Adding spellings to
 a list only waits for the next one.
 
 **How to apply:**
-- Compare a place that exists with `os.SameFile`: `Stat` the path and each existing directory above it;
-  if any is the protected place, the path is inside. Keep the name comparison, case-folded, as the
-  second opinion for a place that does not exist yet (it over-refuses on a case-sensitive disk, which a
-  floor may do).
+- Use `nlink-jp/pathguard` rather than writing the comparison again; what follows is what it does.
+- Anchor every place by identity, **including one that does not exist yet**: its deepest existing
+  ancestor-or-self plus the folded names below it. A path matches when one of its own existing ancestors
+  is the same file (`os.SameFile`) and its remaining names begin with the place's. The spellings of an
+  existing parent are unbounded; comparing a missing place by name alone lets every one of them through.
+  Keep a folded name comparison as well, for filesystems whose inode numbers cannot be trusted — both,
+  every time.
+- Fold names the way the disk does. APFS folds by Unicode, not ASCII: `ſ` is `s`, the Kelvin sign is `k`,
+  `ﬆ`/`ﬅ` are `st`, `ß` is `ss` (measured over every code point: these and the other Latin ligatures are
+  the only characters it equates with ASCII letters). `strings.ToLower` and `strings.EqualFold` never
+  expand a ligature. Use the smallest member of each rune's `unicode.SimpleFold` orbit, after the
+  one-to-many folds.
+- Stat **every** ancestor; do not stop at the first missing one. Existence is not monotone on darwin:
+  `/.vol/<dev>` does not stat while `/.vol/<dev>/<ino>` does.
+- Protect where a credential directory's links lead, dangling targets included (a missing target is
+  just a missing place), but skip a target that is the directory or above it — a link to `/` would
+  otherwise refuse everything.
+- The caller controls the path, so bound the work: cap every form, including the longer ones link hops
+  produce (a long relative target grows the path on every hop), refuse before looking at anything once a
+  path does not resolve, and walk ancestors as substrings — repeated `filepath.Dir`/`Join` re-cleans
+  every prefix and is quadratic.
+- An empty refusal string meaning "allowed" is a fail-open waiting for a place without words: fill in
+  default words, and refuse everything when a place has no absolute path.
 - Write through an `os.Root`, **opened at the start of the call and held**; reopening by path later
   follows whatever was swapped in. Check where the directory would be before creating anything, and
   after, that the directory the root reaches is the one the path names; refuse when either cannot be
@@ -1742,4 +1765,6 @@ a list only waits for the next one.
   planted at a predictable temporary name is written through. Do not derive the temporary name from the
   final one: a long name would no longer fit.
 - The place of each fix was the place of the next defect. An independent review after every fix, with
-  the findings' severity falling (high → high → medium → low), was the sign of convergence.
+  the findings' severity falling (high → high → medium → low), was the sign of convergence. It held
+  again for pathguard: five holes → one high and three medium → one medium → an incomplete fix →
+  none. When two findings share a cause, fix the cause (the anchor closed four spellings at once).
