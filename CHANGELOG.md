@@ -2,6 +2,34 @@
 
 ## 2026-09-23
 
+- **shell-scripting** (ja + en): tell "the input could not be fetched" apart
+  from an empty answer. `$(cmd 2>/dev/null || true)` folds a failed lookup into
+  a legitimate empty result, a silenced fetch leaves a stale ref, and
+  `gh repo list --limit` truncates without a word; a health check passed on all
+  three. Judge the input once where it is fetched, report it as NOT checked,
+  and verify by injecting the fault into the real target.
+
+- **shell-scripting** (ja + en): `git rev-parse` without `--verify` prints a
+  missing ref's name to stdout and exits 128, so a `|| echo fallback` branch
+  never runs and an assignment ends the script under `set -e`. Read refs with
+  `--verify --quiet`.
+
+- **shell-scripting** (ja + en): GNU xargs runs the command once with no
+  argument on empty input; macOS xargs does not and drops empty `-0` items.
+  With `git -C ""` that runs in the caller's directory. Guard in the called
+  code and test it directly, not through the local xargs.
+
+- **development-process** (ja + en): an umbrella's `git fetch` also fetches
+  submodules whose pointer moved (`on-demand`), so fetching an umbrella and its
+  submodules in parallel writes one repository from two processes. Pass
+  `--no-recurse-submodules`; the test needs `protocol.file.allow=always` or it
+  cannot fail.
+
+- **development-process** (ja + en): "slow because sequential" — measure by
+  section first. Two thirds of a 2:39 run were per-item network round trips;
+  one listing call replaced most of them, the rest were parallelized, and the
+  run took 0:53.
+
 - **build-and-packaging** (ja + en): correction — check a Linux tarball's
   xattrs in its pax headers (Python's `tarfile`), not by grepping the
   decompressed stream. The grep also matches file text, and a bundled

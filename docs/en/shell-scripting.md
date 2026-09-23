@@ -126,6 +126,47 @@ composed, they manufacture a green result out of zero checks.
   `cd /absolute/path &&`. But discipline slips somewhere eventually,
   which is why the script-side mechanism is the real wall.
 
+## Tell "the input could not be fetched" apart from an empty answer
+
+**Symptom:** While speeding up an organization-wide health check, three fail-opens of the same
+shape turned up.
+
+- The tap currency check read each repository's latest release with
+  `$(gh release view … 2>/dev/null || true)` and skipped an empty answer as "no visible release,
+  so no drift". Run with gh unable to authenticate, it skipped all 92 entries and printed
+  `[OK] 92 entr(ies) point at their latest release` and "all checks passed".
+- A failed fetch was silenced with `2>/dev/null`. With one repository's fetch made to fail, the
+  check compared against the stale `origin/main` of the last fetch that worked and printed
+  `[OK] up to date`.
+- The organization's repository list came from `gh repo list --limit 300`. gh stops at the limit
+  without a word, and a repository cut off the end reads as unreleased and unarchived.
+
+On top of that, the passing line counted entries it had not compared (it said 92; it compared 91).
+
+**Why:** `$(cmd 2>/dev/null || true)` folds "failed" into "empty", and empty is also a legitimate
+answer (no release, no drift), so the failure takes the passing path. A stale ref has the same
+shape: the input that could not be fetched survives as a plausible "value from last time". The
+previous entry closed the case where a target is not found; a target that exists but whose input
+cannot be fetched is a different path.
+
+**How to apply:**
+- Judge an external input once, where it is fetched. Absent command, failed call, empty result,
+  or a result exactly as long as its limit (possibly truncated) makes it unusable; empty it so
+  nothing can read part of it.
+- Report an unusable input once, as NOT checked, and count it as INCOMPLETE. A consuming check
+  never prints a passing line without its input.
+- A passing line that states a count counts only what was actually compared; say separately what
+  was not.
+- Record failures of a preparatory step such as a fetch, and report that target's comparison as
+  NOT checked. Never compare against a stale ref.
+- Verify before and after the fix by injecting the fault into the real target. gh fails with an
+  invalid token (a bogus `GH_TOKEN`). To fail one repository's fetch only, point that one URL at
+  an unreachable proxy (`GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.<repo-url>.proxy
+  GIT_CONFIG_VALUE_0=http://127.0.0.1:9`); neither the repository nor any config file is touched.
+- "The output is the same as before" does not prove a rebuilt check equivalent when the check
+  prints its passing line even without input: it prints the same line when it compares nothing.
+  Compare the old and new answers item by item.
+
 ## `|| true` at the end of an `&&` chain forgives the whole chain, not the last command
 
 **Symptom:** A release check was written like this:
@@ -268,3 +309,46 @@ check falls toward passing whenever the check itself did not run.
   safe under `set -e`.
 - Break a negated check on purpose once and watch it fail. Here the only sign was grep's usage
   text mixed into the test output. Anyone reading only the pass/fail count saw a pass.
+
+## `git rev-parse` prints a missing ref's name to stdout — read refs with `--verify --quiet`
+
+**Symptom:** A submodule-pointer check read
+`latest=$(git -C "$sub" rev-parse origin/main 2>/dev/null || echo unknown)` and had a branch that
+warned "could not fetch" on `unknown`. That branch never ran. Without `origin/main`, `latest` held
+two lines, `origin/main` and `unknown`, and the check failed "out of sync", showing those two lines
+as the latest commit. Another check in the same script read
+`remote=$(git rev-parse origin/main 2>/dev/null || git rev-parse origin/master 2>/dev/null)`; with
+neither ref present, `set -e` ended the whole script on the spot, before its summary line.
+
+**Why:** Without `--verify`, `git rev-parse` writes an argument it cannot resolve to stdout as is,
+reports the error on stderr, and exits 128. `2>/dev/null` removes only the error; the name lands in
+`$(...)`. The status of an assignment `x=$(…)` is the status of the command substitution, so when
+the right side of `||` fails too, `set -e` fires.
+
+**How to apply:**
+- Read a ref's value with `git rev-parse --verify --quiet "$ref^{commit}"`: nothing on stdout, and
+  status 1, when it does not exist.
+- Close the assignment so it cannot fail (try the candidates in order inside a function, then
+  `return 0`), and have the caller handle empty as "no such ref" explicitly.
+- A branch on a fallback value such as `|| echo unknown` assumes the left side prints nothing when
+  it fails. Measure that assumption once, in a repository without the ref.
+
+## xargs implementations differ on empty input — combined with `git -C ""`, the work runs where the caller is
+
+**Symptom:** A list of repositories was piped to `xargs -0 -n 1 -P 8 sh -c 'git -C "$1" fetch …' _`
+to fetch them in parallel. Checking what happens when the list holds an empty line, or is empty,
+gave different answers per xargs implementation.
+
+**Why:** GNU xargs runs the command once, with no argument, even when its input is empty
+(documented; `-r` stops it). macOS xargs does not, and drops empty items under `-0` (measured). And
+`git -C ""` leaves the current directory as it is, as documented, so an empty argument fetches in
+the caller's repository. Tried on macOS, that path never happens.
+
+**How to apply:**
+- Refuse an empty argument in what xargs calls (`[ -n "$1" ] || exit 0`); that works under any
+  xargs.
+- The guard cannot be tested through xargs, because macOS xargs never hands it an empty argument.
+  Keep the called code in a variable and call `sh -c "$worker" _ ""` and `sh -c "$worker" _`
+  directly: reproduce what GNU xargs can pass without going through the local xargs.
+- Check that removing the guard fails the test. The first test, written through xargs, still passed
+  on macOS with the guard removed.

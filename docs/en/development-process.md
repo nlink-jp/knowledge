@@ -260,6 +260,29 @@ no loyalty, so "it was already like that" is not a reason to let it pass.
 - A field added to a contract but never rendered: grep for its consumers in
   the commit that adds it — the author is the one most likely to miss it.
 
+### "It is slow because it is sequential" — measure by section; when the wait is round trips, batch before you parallelize
+
+**Symptom:** An organization-wide health check took 2:39, and the explanation on hand was "it does
+everything sequentially". Measured with a copy that stamped the time at each check, CPU use was
+42%, and two thirds of the time was network round trips made one at a time (116 fetches, about a
+minute; 92 release lookups, about 40 s).
+
+**Why:** "Sequential" network round trips and sequential local work call for different remedies.
+Most of the per-item lookups asked for facts that one listing call returns for every item at
+once. Parallelizing the local work as well would have meant rebuilding the output order and the
+tallies for a small gain.
+
+**How to apply:**
+- Before changing anything, measure time and CPU use per section. Stamping a copy of the script
+  and running it on the same input leaves the original untouched.
+- Replace per-item lookups with one listing when the listing answers them. Before switching, compare
+  the old and new answers item by item on real data (here, all 92 agreed).
+- Parallelize what can only be fetched per item (the fetches), and check what else writes the same
+  resource once it runs in parallel (see "An umbrella's `git fetch` writes into its submodules
+  too").
+- Result: 2:39 → 0:53. What remains is local work at 84% CPU, and the parallelization that would
+  need a rebuild was left out.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates
@@ -968,6 +991,32 @@ into it almost every time.
   and a force-push, which commit hygiene alone does not justify. Record it and
   do better next time.
 
+
+### An umbrella's `git fetch` writes into its submodules too — fetch in parallel with `--no-recurse-submodules`
+
+**Symptom:** An umbrella and all of its submodules were to be fetched 8 at a time. Checked with
+local stand-in repositories, the umbrella's fetch also fetched every submodule whose pointer moved
+in the umbrella commits it brought in. With that submodule's own fetch running in another process
+at the same moment, two processes write one repository.
+
+**Why:** `fetch.recurseSubmodules` defaults to `on-demand`: a superproject's fetch also fetches the
+submodules whose recorded commit changed. A submodule's repository lives under the umbrella's
+`.git/modules/`, and both fetches write there.
+
+**How to apply:**
+- When every repository is listed and fetched in parallel, pass `--no-recurse-submodules` to each
+  fetch so it writes its own repository only. Nothing is missed: each submodule is fetched by its
+  own entry.
+- The test can be deterministic: advance a submodule in a stand-in origin, record the new commit in
+  the umbrella's origin, fetch the umbrella alone, and check that the submodule's `origin/main`
+  did not move.
+- Set `protocol.file.allow=always` for that test (through `GIT_CONFIG_COUNT` /
+  `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` when the script calls plain git). By default the
+  file protocol is refused through a submodule, the recursive fetch fails for that reason alone,
+  and the test passes even without the flag.
+- The recursion happens only when the fetched umbrella commits move a pointer, so an ordinary run
+  does not reproduce the race. Build the situation in stand-in repositories rather than waiting
+  for it in the real ones.
 
 ### A report is not a control — when the remedy for a hazard is "print it at startup", suspect an indulgence
 
