@@ -105,3 +105,23 @@ arduino-cli 1.5.1).
   `compiler.cpp.extra_flags`, which `platform.txt` leaves empty for the user.
 - Do not assume it worked: confirm the version is in the binary with
   `strings <.bin> | grep <version>`.
+
+## On macOS, flash and read an M5Stack BASIC v2.7 at 230400 baud
+
+**Symptom:** The Arduino `m5stack_core` board definition's default upload speed
+is its first menu entry, 1500000 baud. With the BASIC v2.7's USB serial chip
+(WCH CH9102F, `1a86:55d4`, macOS's own driver, through a Thunderbolt hub),
+esptool stopped part-way at 921600 baud with `The chip stopped responding` and
+at 460800 baud with `Invalid head of packet`. At 230400 baud a 4 MB read and a
+firmware write both completed with matching hashes (measured 2026-09-24 with
+esptool 5.2.0, on this one setup).
+
+**How to apply:**
+- State the speed in the Makefile, e.g.
+  `arduino-cli upload --board-options UploadSpeed=230400`, instead of relying on
+  the default. Raise it only after measuring.
+- Before overwriting a device's firmware, take a copy with `esptool read-flash`.
+  Read the partition table first with `read-flash 0x8000 0xC00` (decode it with
+  `gen_esp32part.py`) and copy only the range in use — the first 4 MB for the
+  standard 4 MB layout — which is much faster. The copy includes NVS, which can
+  hold Wi-Fi settings; handle it accordingly.

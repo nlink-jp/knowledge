@@ -95,3 +95,20 @@ arduino-cli ではなくコア側のフックだから。
 - `build.extra_flags` はボード定義が使っているので上書きしない。`platform.txt` が
   利用者向けに空で用意している `compiler.cpp.extra_flags` を使う。
 - 効いたかは推測せず、`strings <.bin> | grep <版数>` で埋め込まれたことを確かめる。
+
+## M5Stack BASIC v2.7 への書き込み・読み出しは、macOS では 230400 baud に落とす
+
+**事象:** Arduino の `m5stack_core` ボード定義は、書き込み速度の既定値がメニュー先頭の
+1500000 baud になっている。BASIC v2.7 の USB シリアル（WCH CH9102F、`1a86:55d4`、
+macOS 標準ドライバ、Thunderbolt ハブ経由）で esptool を使うと、921600 baud では
+`The chip stopped responding`、460800 baud では `Invalid head of packet` で途中停止した。
+230400 baud では 4MB の読み出しも書き込みも通り、ハッシュ照合も一致した
+（2026-09-24、esptool 5.2.0 で実測。この 1 構成での結果）。
+
+**適用方法:**
+- Makefile で `arduino-cli upload --board-options UploadSpeed=230400` のように速度を
+  明示し、既定値に任せない。上げるのは実測してから。
+- 書き込みでファームウェアを上書きする前に、`esptool read-flash` で控えを取る。
+  まず `read-flash 0x8000 0xC00` でパーティション表を読み（`gen_esp32part.py` で
+  読める）、使われている範囲だけを控えると速い（標準の 4MB 構成なら先頭 4MB）。
+  控えには NVS（Wi-Fi 設定などが入り得る）も含まれるので、扱いに注意する。

@@ -13,6 +13,11 @@
   of an argument. Pass a string macro through `--build-property` with the whole
   flag single-quoted (`'-DFW_VERSION="v1"'`) and confirm it in the binary.
 
+- **embedded** (ja + en): the M5Stack BASIC v2.7's CH9102F lost sync at 921600
+  and 460800 baud on macOS; 230400 worked for a 4 MB read and a write. State the
+  upload speed instead of taking the board's 1500000 default, and copy the flash
+  range in use before overwriting a device.
+
 ## 2026-09-23
 
 - **shell-scripting** (ja + en): tell "the input could not be fetched" apart
