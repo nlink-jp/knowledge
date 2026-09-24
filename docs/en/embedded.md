@@ -375,3 +375,40 @@ that was fixed, transfers fell to about 0.2 KB/s.
   faster than the link otherwise pile up — the screen fell 8 minutes behind.
 - Have the host read the status after 1.5 s without a notification, so a held
   back notification costs nothing.
+
+## A BLE keyboard's PnP ID: macOS takes a new one on reconnection and keys the keyboard type by it
+
+**Symptom:** On an ESP32 BLE keyboard (Arduino-ESP32 3.3.8's bundled BLE
+library), the PnP ID was changed from a placeholder to real values. Flashed with
+the bond kept and reconnected, macOS 27.0 used the new vendor and product IDs
+without pairing again, took the device for a new keyboard and opened the
+Keyboard Setup Assistant.
+
+**Why:**
+- macOS read the PnP ID (Device Information, 0x2A50) again on reconnection, not
+  only at pairing: System Information and the HID device in the IORegistry showed
+  the new values right after it (one observation, after a reflash).
+- The keyboard type (ANSI, ISO, JIS) is recorded per product ID, vendor ID and
+  HID country code in `/Library/Preferences/com.apple.keyboardtype.plist` (keys
+  `product-vendor-country`, in decimal). A new combination is asked about again.
+- The bundled `BLEHIDDevice::pnp()` packs the IDs big-endian; macOS reads them
+  little-endian, so passing the IDs as they are swaps their bytes. The
+  `pnp(0x02, 0xe502, 0xa111, 0x0210)` many ESP32 keyboards use is pre-swapped
+  and, read back, puts Espressif's Bluetooth company identifier 0x02E5 under the
+  USB-IF source. Devices carrying the same value share one keyboard-type setting.
+
+**How to apply:**
+- Write the seven PnP ID bytes to the characteristic directly, in the order the
+  Mac reads them (little-endian), instead of calling `pnp()`. Pin the bytes in a
+  test and check that swapping them makes it fail.
+- Without a company identifier of your own, use source 0x01 (Bluetooth SIG) with
+  the chip maker's identifier (Espressif: 0x02E5; check the SIG's list) and a
+  product ID of your own. pid.codes requires a device with a USB interface, so it
+  does not fit a Bluetooth-only one; test IDs (pid.codes 1209/0001 and the like)
+  are not for devices others use.
+- Changing the PnP ID makes the user choose the keyboard type again. A device
+  with three buttons cannot press the keys the assistant asks for: tell users to
+  skip that step and choose the type.
+- The new value was seen taken once, for the PnP ID, on macOS 27.0. The report map and
+  the GATT layout may still be kept from pairing: treat changing them as needing
+  a new pairing.

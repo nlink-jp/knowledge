@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-25
+
+- **embedded** (ja + en): macOS 27.0 took a BLE keyboard's new PnP ID on
+  reconnection and keys the keyboard type by product, vendor and country code;
+  write the PnP ID bytes directly (`BLEHIDDevice::pnp()` packs big-endian), and
+  which vendor namespace fits a Bluetooth-only device.
+
 ## 2026-09-24 (late night)
 
 - **embedded** (ja + en): writes without response from macOS 27 to an ESP32
