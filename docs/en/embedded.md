@@ -420,18 +420,20 @@ Keyboard Setup Assistant.
 enough to read and 50 % was quite bright: there was no dark end.
 
 **Why:** On this board M5GFX drives the backlight pin (GPIO32) at 44.1 kHz with
-9 bits and no offset (`_set_pwm_backlight(GPIO_NUM_32, 7, 44100)`). At 1 % a
-pulse lasts about 0.2 µs; the backlight evidently does not follow pulses that
-short and shines far brighter than the duty. Moved to 1 kHz and 14 bits, the
-same channel dimmed with the duty.
+9 bits and no offset (`_set_pwm_backlight(GPIO_NUM_32, 7, 44100)`). Moved to
+1 kHz and 14 bits, the same channel reached a dark end. Pulse width is not the
+explanation (1 % is a 0.18 µs pulse at 44.1 kHz; one count at 1 kHz is 0.06 µs,
+and that looked dim). A likely cause, not measured: each pulse lights the
+backlight a little longer than its width, and at 44 times the pulse rate that
+extra adds up.
 
 **How to apply:**
 - Right after `M5.begin()`, move the channel M5GFX attached with
   `ledcChangeFrequency(32, 1000, 14)` (Arduino-ESP32 3.x public API: no second
   channel, no change to M5GFX). Write it with `ledcWrite(32, duty)` from then on,
   and never call `M5.Display.setBrightness()` again: it writes 9-bit duties.
-- Use a duty of `(percent/100)^2.2` of full (16383), at least one count for any
-  nonzero percent. On the device (2026-09-25, one unit, one person's judgement)
+- Use a duty of `(percent/100)^2.2` of full (16383), rounded (1 % is one
+  count). On the device (2026-09-25, one unit, one person's judgement)
   1 % was barely visible, the steps looked about even, and there was no flicker
   and no sound.
 - A curve alone at 44.1 kHz does not help: below 1 % there is one step left.
