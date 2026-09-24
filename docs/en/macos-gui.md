@@ -1630,3 +1630,20 @@ saved one. They agree again within seconds (success) or about a minute (failure)
   values aside, restores them on every exit path, and verifies the restore.
 - When reviews keep finding the same class of defect in successive fixes, stop patching and
   test the premise.
+
+## A CGBitmapContext's memory starts with the top row — only its coordinate origin is the bottom-left
+
+**Symptom:** Text drawn with CoreText into an 8-bit grayscale bitmap and turned
+into pixels for a device's screen came out upside down in every cell. The rows
+had been reversed on the belief that the first row in memory is the image's
+bottom.
+
+**Why:** `CGContext(data:width:height:...)` draws with its origin at the
+bottom-left, but its memory starts with the image's top row. No reversal was
+needed. A test that only checked that glyph pixels existed missed it; the device
+showed it.
+
+**How to apply:**
+- Read the bitmap's memory without reversing rows: the first row is the top.
+- Pin the orientation in a test, e.g. "T" has its widest inked row first and "L"
+  its widest last.

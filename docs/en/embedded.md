@@ -281,9 +281,10 @@ calls it.
 
 **How to apply:**
 - Make every CCCD require encryption to write
-  (`ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE_ENC_MITM`). Whether macOS still sets
-  up the keyboard with the HID CCCDs closed is not yet measured; measure it before
-  relying on it.
+  (`ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE_ENC_MITM`). With the HID CCCDs closed
+  too, macOS 27.0 paired, set up the keyboard and received keyboard and consumer
+  reports (measured 2026-09-24; the library's comment that HID enumeration needs
+  them open did not hold on macOS).
 - When erasing a bond, always call `deleteAllPersistedValues()` too.
 
 ## Bluedroid deletes the bond of a peer whose pairing or encryption fails
@@ -320,3 +321,57 @@ cannot return an ATT error.
   such as a status notification, not through the ATT response.
 - For a readable and writable characteristic, have the main loop set the value
   back to the stored content after each write, before reporting the outcome.
+
+## Writes without response from macOS to an ESP32 (Bluedroid) are lost at lengths that leave a 1-byte last fragment
+
+**Symptom:** Sending data from CoreBluetooth on macOS 27 to an ESP32 held as a
+BLE keyboard (Arduino-ESP32 3.3.8, Bluedroid) with writes without response,
+writes of certain lengths never reached the device's `onWrite`, every time. The
+Mac's bluetoothd logged them as sent. No error appeared anywhere.
+
+**Why:** Sending every length from 14 to 252 and from 488 to 500 once, only 84,
+174, 245 and 496 bytes never arrived; the content did not matter (filler bytes
+were used). Each is a length whose L2CAP packet (length + 7) splits into 90- or
+251-byte fragments with a 1-byte last fragment (91 = 90 + 1, 181 = 180 + 1,
+252 = 251 + 1, 503 = 502 + 1). Our reading is that the path fragments at both
+90 and 251 bytes somewhere and a 1-byte last fragment is lost; which side drops
+it was not established.
+
+**How to apply:**
+- Keep writes to 244 bytes (one 251-byte packet with the ATT and L2CAP headers).
+- That still meets the 90-byte fragments, so avoid lengths where (length + 7)
+  mod 90 or mod 251 is 1: send one byte less and carry the rest over.
+- Fragmentation may differ between Macs and links. When writes stall, remember
+  the length of the first write the device never consumed and avoid it from then
+  on (have the device report how many bytes it has consumed).
+- It looks like "it stalls sometimes", so recognising a length rule takes time:
+  log the length of the stalled write, and confirm by sending each length once.
+
+## When a BLE device notifies its status, hold back on a full transmit queue, and keep going for a while after receiving
+
+**Symptom:** With an ESP32 notifying its status every 15 ms while receiving,
+macOS dropped the link every 1.5–2.5 minutes (reason 0x13 on the device). Once
+that was fixed, transfers fell to about 0.2 KB/s.
+
+**Why:**
+- The device kept notifying while it merely waited mid-operation. Its transmit
+  queue filled (`esp_ble_get_cur_sendable_packets_num()` at 0,
+  `ESP_GATTS_CONGEST_EVT`, failed sends) until it could not send the response to
+  a read from the Mac; macOS dropped the link exactly 30 s after that read (the
+  ATT transaction timeout). With a request waiting for its response, the Mac also
+  held back the writes after it.
+- Notifying only on change let the device sleep between writes (macOS sets a
+  slave latency of 22). A 512-byte write spans several packets, so the first
+  write after a pause took about 1.1 s to reach a sleeping device.
+
+**How to apply:**
+- Send no notification while few transmit buffers are free (fewer than 3): always
+  leave room for responses.
+- Notify every 15 ms while receiving and for 2 s after the last bytes, to keep
+  the device listening; after that, only on change. A screen updated every
+  second then keeps it awake.
+- On the host, compose the next update only once the device has consumed the
+  last one (wait for nothing outstanding, then send the latest state). Updates
+  faster than the link otherwise pile up — the screen fell 8 minutes behind.
+- Have the host read the status after 1.5 s without a notification, so a held
+  back notification costs nothing.

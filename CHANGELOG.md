@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-24 (late night)
+
+- **embedded** (ja + en): writes without response from macOS 27 to an ESP32
+  (Bluedroid) are lost at lengths that leave a 1-byte last L2CAP fragment (84,
+  174, 245, 496 measured) — cap at 244, avoid those, learn others from stalls.
+- **embedded** (ja + en): a status-notifying BLE device must hold back on a full
+  transmit queue (or macOS drops the link after a 30 s ATT timeout) and keep
+  notifying for a while after receiving (or it sleeps between writes); the host
+  composes the next update only when the last is consumed.
+- **embedded** (ja + en): the CCCD entry now records that macOS sets up the
+  keyboard with the HID CCCDs requiring encryption.
+- **macos-gui** (ja + en): a CGBitmapContext's memory starts with the top row.
+
 ## 2026-09-24 (night)
 
 - **embedded** (ja + en): the Arduino-ESP32 BLE library's `notify()` sends to
