@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-24 (night)
+
+- **embedded** (ja + en): the Arduino-ESP32 BLE library's `notify()` sends to
+  every connected peer without checking encryption — send private reports to the
+  bonded, encrypted connection by id.
+- **embedded** (ja + en): the library stores every CCCD write in NVS from any
+  peer; make CCCD writes require encryption, and erase stored subscriptions with
+  the bond.
+- **embedded** (ja + en): Bluedroid deletes the bond of a peer whose pairing or
+  encryption fails (from `libbt.a`'s disassembly) — never open pairing because a
+  bond is missing.
+- **embedded** (ja + en): the library stores a written value before `onWrite` and
+  always accepts writes — report outcomes elsewhere and restore the value.
+- **embedded** (ja + en): the GATT-layout entry now covers handles, a separate
+  layout version, and storing that version even when no bond existed.
+- **security** (ja + en): open a trust window for a recorded act, not for missing
+  state.
+
 ## 2026-09-24 (evening)
 
 - **embedded** (ja + en): a BLE HID keyboard on macOS must make its HID reads

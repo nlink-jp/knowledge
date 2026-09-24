@@ -214,8 +214,20 @@ Since the device's stack never sent it, what macOS would do with one is unknown.
 - Fix the custom service's layout per release, like the HID descriptor. A change
   is breaking and requires re-pairing (remove the device on the Mac and erase the
   device's bond).
-- Have the device report a protocol version and let the app detect a mismatch
-  and tell the user to pair again.
+- Fix the whole attribute table, handles included, not just the UUIDs. The
+  bundled library stores subscriptions (CCCDs) in NVS by peer and handle, so a
+  core update or a refactor that shifts handles is enough for a mismatch. Create
+  the services in a fixed order with fixed handle reservations, print the table
+  at boot, and compare it on the device with a pinned copy.
+- Keep a *layout version* apart from the protocol version, since they break
+  differently. The app checks the UUIDs and properties of the characteristics it
+  sees as well as the version in Info (a stale cache can land a read on another
+  attribute).
+- On the device, store the layout version beside the bond; at boot, if it
+  differs — **or is missing** — erase every bond, then store the version. Store
+  it even when there was no bond: otherwise a fresh device erases its first bond
+  on its second boot. Removal completes asynchronously; wait for the list to
+  empty.
 
 ## With Arduino-ESP32 and BLE only, release the Classic controller memory first
 
@@ -232,3 +244,79 @@ and BLE).
   running. Free heap rose by 21,036 B (after advertising: 92,084 → 113,120 B).
 - Holding a full-screen compressed image (67 KB) in RAM still took free heap
   down to 22,748 B. Decode large payloads as they arrive.
+
+## The Arduino-ESP32 BLE library's `notify()` sends to every connected peer, without checking encryption
+
+**Symptom:** With a BLE keyboard (HID over GATT) that sends input reports with
+`notify()`, a button pressed while an unpaired peer is connected can send the
+key to that peer too.
+
+**Why:** In Arduino-ESP32 3.3.8, `BLECharacteristic::notify()` calls
+`esp_ble_gatts_send_indicate` for everyone in `getPeerDevices()`, without
+checking each peer's encryption or subscription (read in the source). Requiring
+encryption to read a characteristic does not apply to its notifications. Whether
+the stack itself holds them back on an unencrypted link was not checked.
+
+**How to apply:**
+- Send anything private (key reports) with `esp_ble_gatts_send_indicate` to the
+  connection encrypted with the bond, by its connection id, not with `notify()`.
+- Count a connection as encrypted from a successful authentication-complete
+  event for the bonded address until it disconnects. The library restarts
+  advertising only after a disconnect, so there is one connection at a time.
+
+## The Arduino-ESP32 BLE library stores every CCCD write in NVS, whoever wrote it
+
+**Symptom:** A peer that never pairs still adds NVS entries by writing a
+subscription (CCCD).
+
+**Why:** In 3.3.8, `BLEDescriptor` calls `BLE2902::persistValue()` on every
+write to a 0x2902 descriptor. Its comment says "for bonded devices", but it
+checks neither bonding nor encryption. The key is the last 2 bytes of the peer's
+address plus the handle (read in the source). `BLEHIDDevice` makes the input
+report and battery CCCDs writable without encryption. A peer that reconnects
+with new addresses can fill the NVS that holds the bonds and the app's settings
+(an inference, not tried on a device). The stored subscriptions also survive a
+bond erase: `BLE2902::deleteAllPersistedValues()` exists, but the library never
+calls it.
+
+**How to apply:**
+- Make every CCCD require encryption to write
+  (`ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE_ENC_MITM`). Whether macOS still sets
+  up the keyboard with the HID CCCDs closed is not yet measured; measure it before
+  relying on it.
+- When erasing a bond, always call `deleteAllPersistedValues()` too.
+
+## Bluedroid deletes the bond of a peer whose pairing or encryption fails
+
+**Symptom:** Even on a bonded device, a failed pairing or encryption with a
+peer can remove that peer's bond.
+
+**Why:** The authentication-complete handler in the `libbt.a` bundled with
+Arduino-ESP32 3.3.8 removes the peer's bond when the failure reason is anything
+but "pairing not supported" (read from its disassembly, not from source). A
+nearby device that stages a failing pairing with the bonded Mac's address could
+make the device drop the bond (an inference).
+
+**How to apply:**
+- Never accept pairing because a bond is missing. Open a pairing window only for
+  a cause recorded by a user's act (a flag in NVS), and clear it when a pairing
+  completes (security: "Open a trust window for a recorded act, not for missing
+  state").
+- Refuse pairing through the security callback (`onSecurityRequest()` returns
+  false). That fails as "pairing not supported", which keeps the existing bond.
+
+## The Arduino-ESP32 BLE library stores a written value before `onWrite`, and always accepts the write
+
+**Symptom:** After an invalid value is written to a readable and writable
+characteristic, a read returns the written value even though the device refused
+it and stored nothing.
+
+**Why:** In 3.3.8, `BLECharacteristic` calls `setValue()` in the Bluetooth task,
+then `onWrite`, then always answers success (read in the source). `onWrite`
+cannot return an ATT error.
+
+**How to apply:**
+- Report a write's outcome (accepted or refused) through another characteristic,
+  such as a status notification, not through the ATT response.
+- For a readable and writable characteristic, have the main loop set the value
+  back to the stored content after each write, before reporting the outcome.

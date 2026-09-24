@@ -755,6 +755,25 @@ function directly, (3) `--force` had no confirmation.
   without isolation. Mechanize "look at the target before deleting" and "never
   delete what you didn't create".
 
+### Open a trust window for a recorded act, not for missing state
+
+**Symptom:** A BLE device was designed to accept pairing when it boots with no
+bond. But its stack deletes the bond of a peer whose pairing fails. If a nearby
+device provokes that, the next ordinary restart opens a pairing window that
+nobody asked for.
+
+**Why:** "No state" is true after the user's act and equally after an attacker
+deleted the state. A window whose condition is missing state can be opened by
+whoever can delete that state.
+
+**How to apply:**
+- Open a window that extends trust (pairing, first-run setup, recovery mode)
+  only for a flag that records the intended act (a physical-button reset, an
+  unfinished first-run marker), and clear it once the purpose is served.
+- When the state goes missing, open no window; point to the proper act (such as
+  the physical button). An attacker then gets no further than denial of service.
+- Give the window a time limit.
+
 ---
 
 ## When you add a safety check, look at what the existing state looks like
