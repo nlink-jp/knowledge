@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-24
+
+- **embedded** (ja + en): with the esp32:esp32 Arduino core, `arduino-cli
+  compile --output-dir` also copies the binaries, map, sdkconfig and
+  `build.options.json` — with the build machine's absolute paths — into
+  `<sketch>/build/<fqbn>/` inside the source tree, through the core's `savehex`
+  hooks. Build with `--build-path` under `dist/` instead, and fail the build if
+  that folder appears.
+
+- **embedded** (ja + en): arduino-cli treats a quote as special only at the start
+  of an argument. Pass a string macro through `--build-property` with the whole
+  flag single-quoted (`'-DFW_VERSION="v1"'`) and confirm it in the binary.
+
 ## 2026-09-23
 
 - **shell-scripting** (ja + en): tell "the input could not be fetched" apart

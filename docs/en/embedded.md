@@ -56,3 +56,52 @@ driver.
 **How to apply:** Don't use M5Module-GNSS. Use M5Unified's built-in `M5.Imu`
 (BMI270); read BMM150 via BMI270's AUX register passthrough over Wire; use
 BMP280 with its standalone library.
+
+## With the ESP32 Arduino core, `--output-dir` writes build output with absolute paths into the sketch folder
+
+**Symptom:** Building a sketch for the esp32:esp32 core (measured on 3.3.8) with
+`arduino-cli compile --output-dir <dir>` also creates `<sketch>/build/<fqbn>/`,
+separate from `<dir>`, and copies the `.bin`, `.elf`, `.map`, `sdkconfig`,
+`build.options.json` and more into it. The `.map` and `build.options.json` hold
+the build machine's absolute paths (its home directory). The sketch folder is in
+the source tree, so `git add` took them straight into a commit (caught before
+push by a home-directory check).
+
+**Why:** `recipe.hooks.savehex.postsavehex.*` in the core's `platform.txt` copy
+the output into `{sketch_path}/build/` every time binaries are exported.
+arduino-cli's `sketch.always_export_binaries` set to `false` does not stop it —
+the copy is made by the core's hooks, not by arduino-cli.
+
+**How to apply:**
+- Do not use `--output-dir` or `-e`. Make the build directory itself the
+  artifact directory with `--build-path <absolute path under dist>`; nothing is
+  exported, so the hooks never run. Flash with
+  `arduino-cli upload --input-dir <the same path>`.
+- Put a check in the Makefile that fails the build when `<sketch>/build` exists.
+  Stop it being created rather than hiding it in `.gitignore` (which also keeps
+  to the convention that `dist/` is the only place for build output).
+
+## To pass a string macro through arduino-cli's `--build-property`, wrap the whole flag in single quotes
+
+**Symptom:** Embedding a version in the firmware,
+- `compiler.cpp.extra_flags=-DFW_VERSION=\"v1\"` reaches gcc with the
+  backslashes and fails with `stray '\' in program`;
+- `compiler.cpp.extra_flags=-DFW_VERSION='"v1"'` reaches it with the single
+  quotes, `'"v1"'` becomes a multi-character constant (an `int`), and the build
+  fails with `invalid conversion from 'int' to 'const char*'`.
+
+**Why:** arduino-cli splits the recipe string into arguments itself. A quote is
+special **only as the first character of an argument**, where it groups
+everything up to the matching quote into one argument. Quotes and backslashes in
+the middle of an argument are passed on as they are (measured with
+arduino-cli 1.5.1).
+
+**How to apply:**
+- Wrap the whole flag in single quotes. In a Makefile:
+  `--build-property "compiler.cpp.extra_flags='-DFW_VERSION=\"$(VERSION)\"'"`
+  (inside the shell's double quotes `\"` becomes `"`, so arduino-cli receives
+  `'-DFW_VERSION="v1"'`).
+- Leave `build.extra_flags` alone — the board definitions use it. Use
+  `compiler.cpp.extra_flags`, which `platform.txt` leaves empty for the user.
+- Do not assume it worked: confirm the version is in the binary with
+  `strings <.bin> | grep <version>`.

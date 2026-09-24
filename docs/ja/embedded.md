@@ -51,3 +51,47 @@ IMU ドライバとシンボル競合して `M5.begin()` がハングする。�
 **適用方法:** M5Module-GNSS は使わない。IMU は M5Unified 内蔵の `M5.Imu`（BMI270）を使い、
 BMM150 は BMI270 の AUX レジスタパススルーで Wire 直接読み取り、BMP280 は独立ライブラリで
 使う。
+
+## ESP32 Arduino コアで `--output-dir` を使うと、スケッチのフォルダに絶対パス入りのビルド生成物が書かれる
+
+**事象:** `arduino-cli compile --output-dir <dir>` で esp32:esp32 コア（3.3.8 で実測）の
+スケッチをビルドすると、指定した `<dir>` とは別に `<スケッチ>/build/<fqbn>/` ができ、
+`.bin`・`.elf`・`.map`・`sdkconfig`・`build.options.json` などがコピーされる。`.map` と
+`build.options.json` にはビルド機の絶対パス（ホームディレクトリ）が入っている。
+スケッチのフォルダはソースツリーの中なので、`git add` でそのままコミットに入った
+（push 前にホームディレクトリ検査で発覚）。
+
+**なぜ:** コアの `platform.txt` にある `recipe.hooks.savehex.postsavehex.*` が、バイナリを
+書き出す（エクスポートする）たびに `{sketch_path}/build/` へコピーする。arduino-cli の
+`sketch.always_export_binaries` が `false` でも止まらない — コピーしているのは
+arduino-cli ではなくコア側のフックだから。
+
+**適用方法:**
+- `--output-dir` や `-e` を使わず、`--build-path <dist 配下の絶対パス>` でビルド
+  ディレクトリそのものを成果物置き場にする。書き出しをしないのでフックは走らない。
+  書き込みは `arduino-cli upload --input-dir <同じパス>`。
+- ビルド後に `<スケッチ>/build` が存在したら失敗させる検査を Makefile に置く。
+  `.gitignore` に足して隠すのではなく、作らない側で止める（成果物の置き場は `dist/` だけ、
+  という規約とも合う）。
+
+## arduino-cli の `--build-property` で文字列マクロを渡すときは、フラグ全体を単引用符で囲む
+
+**事象:** 版数をファームウェアに埋め込もうとして、
+- `compiler.cpp.extra_flags=-DFW_VERSION=\"v1\"` はバックスラッシュごと gcc に届き
+  `stray '\' in program` になる。
+- `compiler.cpp.extra_flags=-DFW_VERSION='"v1"'` は単引用符ごと届き、`'"v1"'` が
+  複数文字の文字定数（`int`）になって `invalid conversion from 'int' to 'const char*'`
+  になる。
+
+**なぜ:** arduino-cli はレシピの文字列を自前で引数に分割する。引用符が特別なのは
+**引数の先頭にあるときだけ**で、対応する引用符までを 1 つの引数にまとめる。引数の途中の
+引用符とバックスラッシュは、そのまま渡される（arduino-cli 1.5.1 で実測）。
+
+**適用方法:**
+- フラグ全体を単引用符で囲む。Makefile なら
+  `--build-property "compiler.cpp.extra_flags='-DFW_VERSION=\"$(VERSION)\"'"`
+  （シェルの二重引用符の中で `\"` が `"` になり、arduino-cli には
+  `'-DFW_VERSION="v1"'` が届く）。
+- `build.extra_flags` はボード定義が使っているので上書きしない。`platform.txt` が
+  利用者向けに空で用意している `compiler.cpp.extra_flags` を使う。
+- 効いたかは推測せず、`strings <.bin> | grep <版数>` で埋め込まれたことを確かめる。
