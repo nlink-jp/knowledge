@@ -2,6 +2,9 @@
 
 ## 2026-09-25
 
+- **embedded** (ja + en): the M5Stack BASIC's backlight does not dim at M5GFX's
+  44.1 kHz PWM (1 % stays bright); retune the channel to 1 kHz, 14 bits and use
+  a 2.2 power curve.
 - **embedded** (ja + en): macOS 27.0 took a BLE keyboard's new PnP ID on
   reconnection and keys the keyboard type by product, vendor and country code;
   write the PnP ID bytes directly (`BLEHIDDevice::pnp()` packs big-endian), and

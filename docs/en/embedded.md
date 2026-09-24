@@ -412,3 +412,29 @@ Keyboard Setup Assistant.
 - The new value was seen taken once, for the PnP ID, on macOS 27.0. The report map and
   the GATT layout may still be kept from pairing: treat changing them as needing
   a new pairing.
+
+## The M5Stack BASIC's backlight does not dim at 44.1 kHz PWM — use 1 kHz, 14 bits and a 2.2 power curve
+
+**Symptom:** Lowering the brightness with M5Unified/M5GFX's
+`M5.Display.setBrightness()` on a BASIC v2.7, 1 % (2 of 255) was still bright
+enough to read and 50 % was quite bright: there was no dark end.
+
+**Why:** On this board M5GFX drives the backlight pin (GPIO32) at 44.1 kHz with
+9 bits and no offset (`_set_pwm_backlight(GPIO_NUM_32, 7, 44100)`). At 1 % a
+pulse lasts about 0.2 µs; the backlight evidently does not follow pulses that
+short and shines far brighter than the duty. Moved to 1 kHz and 14 bits, the
+same channel dimmed with the duty.
+
+**How to apply:**
+- Right after `M5.begin()`, move the channel M5GFX attached with
+  `ledcChangeFrequency(32, 1000, 14)` (Arduino-ESP32 3.x public API: no second
+  channel, no change to M5GFX). Write it with `ledcWrite(32, duty)` from then on,
+  and never call `M5.Display.setBrightness()` again: it writes 9-bit duties.
+- Use a duty of `(percent/100)^2.2` of full (16383), at least one count for any
+  nonzero percent. On the device (2026-09-25, one unit, one person's judgement)
+  1 % was barely visible, the steps looked about even, and there was no flicker
+  and no sound.
+- A curve alone at 44.1 kHz does not help: below 1 % there is one step left.
+  Suspect the frequency first.
+- Check the board (`M5.getBoard()`) and `ledcChangeFrequency`'s return value,
+  and fall back to M5GFX's linear mapping when either fails.
