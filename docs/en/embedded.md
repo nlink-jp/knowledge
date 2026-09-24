@@ -101,6 +101,9 @@ arduino-cli 1.5.1).
   `--build-property "compiler.cpp.extra_flags='-DFW_VERSION=\"$(VERSION)\"'"`
   (inside the shell's double quotes `\"` becomes `"`, so arduino-cli receives
   `'-DFW_VERSION="v1"'`).
+- **With several flags, quote each one.** `'-DA=0 -DB=0'` arrives as a single
+  argument, and `A` was defined as `0 -DB=0` (measured). Write `'-DA=0' '-DB=0'`;
+  in a Makefile, `$(foreach d,$(DEFINES),'$(d)')`.
 - Leave `build.extra_flags` alone — the board definitions use it. Use
   `compiler.cpp.extra_flags`, which `platform.txt` leaves empty for the user.
 - Do not assume it worked: confirm the version is in the binary with
@@ -125,3 +128,107 @@ esptool 5.2.0, on this one setup).
   `gen_esp32part.py`) and copy only the range in use — the first 4 MB for the
   standard 4 MB layout — which is much faster. The copy includes NVS, which can
   hold Wi-Fi settings; handle it accordingly.
+
+## To be a BLE keyboard (HID over GATT) on macOS, make the HID reads require encryption
+
+**Symptom:** An ESP32 HID keyboard (the BLE library bundled with Arduino-ESP32
+3.3.8), paired with Passkey Entry. On macOS 27.0 the pairing succeeded and the
+device showed as a connected keyboard, but no key did anything. It was not in
+macOS's list of input devices (`hidutil list`), and after a reboot of the device
+the Mac did not reconnect on its own.
+
+**Why:** `BTLEServer`, macOS's BLE HID host, reads the report map and the rest
+as soon as it connects. If they are readable without encryption, it finishes
+while the user is still typing the passkey, logs "Not creating HID device as the
+link is not encrypted", times the service out 30 s later without retrying, and
+drops the device from its auto-connect list. Read it with
+`/usr/bin/log show --predicate 'process == "BTLEServer"'`.
+
+**How to apply:**
+- Give the HID service's report map (0x2A4B), HID information (0x2A4A) and
+  protocol mode (0x2A4E) the permission `ESP_GATT_PERM_READ_ENC_MITM`. The first
+  read then fails for insufficient authentication, macOS pairs first, and it
+  built the HID device one second after pairing (2 of 2).
+- A device that already failed must be removed in the Mac's Bluetooth settings,
+  its own bond erased, and paired again.
+- Once the HID device existed, a reboot of the device was followed by an
+  automatic reconnection and re-encryption within 1–2 s.
+
+## macOS sets the link of a BLE HID device itself — writes to the peripheral go faster when it notifies while receiving
+
+**Symptom:** Sending data from an app with write-without-response to an ESP32
+that macOS 27.0 held as a BLE keyboard gave about 0.28 KB/s.
+
+**Why:** macOS sets an HID device's link to a 15 ms interval, slave latency 22
+and data length 90. When the device asked for other values, macOS put them back
+within a second (5 times; once, right after a first pairing, it kept latency 0).
+At latency 22 the device listens only about every 345 ms. With the receiving
+device notifying every connection interval (15 ms), the rate was 4.1–4.2 KB/s
+(every 30 ms: 2.5, every 60 ms: 1.6). Our reading — not a cited clause of the
+specification — is that a peripheral skips connection events only while it has
+nothing to send.
+
+**How to apply:**
+- Do not rely on requests to change the link; budget at latency 22.
+- While receiving a lot, have the device notify a status characteristic every
+  15 ms, subscribed to by the host.
+- Confirm completion by the notification and by a read: the final notification
+  was missed (3 of 10).
+- Do not let the host queue a lot of writes. With about 30 s of writes queued, a
+  read got no answer and the link dropped about 30.5 s later — hypothesis: the
+  30 s ATT transaction timeout. Send in small amounts, paced by the device's
+  notifications.
+- When measuring, log the link parameters from the moment of connection and
+  measure with a device that asks for nothing. A change of parameters that goes
+  unnoticed makes the results unexplainable (it happened in the first attempt).
+
+## A CoreBluetooth app can use a custom service of a BLE device the system holds as a keyboard
+
+**Symptom:** macOS itself holds the device's BLE connection as an HID keyboard;
+an app needed to read and write a custom GATT service on the same device.
+
+**Why:** `retrieveConnectedPeripherals(withServices: [custom service UUID])`
+returned the system-connected device. After `connect`, the app shared the
+system's link and read and wrote the MITM-encrypted custom characteristics (42 of
+42, macOS 27.0). The HID service (0x1812) is hidden from apps:
+`withServices: [0x1812]` returns nothing.
+
+**How to apply:**
+- Look it up by the custom service's UUID, not 0x1812.
+- The pairing happened for HID, so the app causes no second pairing; it needs
+  only the Bluetooth permission. That permission is per app, so run the code as
+  an .app, not as a bare CLI binary.
+
+## A bonded Mac remembers the GATT layout — Bluedroid did not send Service Changed
+
+**Symptom:** A firmware update added a notify property to a custom
+characteristic; the bonded Mac still saw the old layout (read only).
+
+**Why:** The Mac uses the layout it learned rather than rediscovering on every
+connection. The device tried to send Service Changed, but Bluedroid in
+Arduino-ESP32 3.3.8 refused to send it with status 0x82 (8 of 8). Our reading is
+that its AUTO mode sends it only for services added or removed while connected.
+Since the device's stack never sent it, what macOS would do with one is unknown.
+
+**How to apply:**
+- Fix the custom service's layout per release, like the HID descriptor. A change
+  is breaking and requires re-pairing (remove the device on the Mac and erase the
+  device's bond).
+- Have the device report a protocol version and let the app detect a mismatch
+  and tell the user to pair again.
+
+## With Arduino-ESP32 and BLE only, release the Classic controller memory first
+
+**Symptom:** On an ESP32 without PSRAM (M5Stack BASIC v2.7), BLE HID, a custom
+service and screen drawing together leave little heap.
+
+**Why:** The prebuilt ESP32 configuration of Arduino-ESP32 3.3.8 enables Classic
+Bluetooth, and `BLEDevice::init()` starts the controller in BTDM mode (Classic
+and BLE).
+
+**How to apply:**
+- Before `BLEDevice::init()`, call `esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT)`
+  and `btStartMode(BT_MODE_BLE)`; `BLEDevice::init()` uses the controller already
+  running. Free heap rose by 21,036 B (after advertising: 92,084 → 113,120 B).
+- Holding a full-screen compressed image (67 KB) in RAM still took free heap
+  down to 22,748 B. Decode large payloads as they arrive.

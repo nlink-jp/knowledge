@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-24 (evening)
+
+- **embedded** (ja + en): a BLE HID keyboard on macOS must make its HID reads
+  require encryption, or macOS's HID host gives up while the passkey is typed and
+  never retries.
+- **embedded** (ja + en): macOS sets an HID device's link to 15 ms / latency 22 /
+  data length 90 and reverts requests; writes to the peripheral reach ~4 KB/s only
+  while it notifies every connection interval. Keep the host's write queue short.
+- **embedded** (ja + en): a CoreBluetooth app can use a custom GATT service of a
+  device the system holds as a keyboard (`retrieveConnectedPeripherals` by the
+  custom UUID; 0x1812 is hidden).
+- **embedded** (ja + en): a bonded Mac keeps the GATT layout; Bluedroid refused to
+  send Service Changed (0x82) — fix the layout per release.
+- **embedded** (ja + en): with Arduino-ESP32 and BLE only, release the Classic
+  controller memory before `BLEDevice::init()` (+21 KB of heap).
+- **embedded** (ja + en): arduino-cli build properties — quote each `-D` flag
+  separately.
+- **shell-scripting** (ja + en): zsh's builtin `log` shadows `/usr/bin/log`; an app
+  started with `open` runs from `/`, so pass absolute paths.
+
 ## 2026-09-24
 
 - **embedded** (ja + en): with the esp32:esp32 Arduino core, `arduino-cli

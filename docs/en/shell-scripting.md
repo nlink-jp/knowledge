@@ -352,3 +352,31 @@ the caller's repository. Tried on macOS, that path never happens.
   directly: reproduce what GNU xargs can pass without going through the local xargs.
 - Check that removing the guard fails the test. The first test, written through xargs, still passed
   on macOS with the guard removed.
+
+## In zsh, `log` is a builtin — read the macOS log with `/usr/bin/log`
+
+**Symptom:** `log show --last 5m ...` in zsh failed with
+`log:1: too many arguments`. Where the error was easy to miss (output piped into
+grep), it looked like "no matching entries".
+
+**Why:** zsh has a builtin `log` (for login watching), and a builtin wins over
+`/usr/bin/log` on the PATH.
+
+**How to apply:**
+- Write `/usr/bin/log show ...` with the absolute path.
+- Believe a result of zero entries only after the same command finds entries in
+  a window known to have them (a positive control).
+
+## An app started with `open` runs from `/` — a relative path in its arguments reads nothing
+
+**Symptom:** A relative path passed to an `.app` with
+`open -W ... MyApp.app --args draw dist/payload.bin` could not be read, and the
+app "sent" an empty payload (4 times).
+
+**Why:** `open` launches through LaunchServices; the app's working directory is
+`/`, not the calling shell's.
+
+**How to apply:**
+- Make paths absolute in the caller before passing them with `--args`
+  (`"$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"`).
+- In the app, stop with an error when what it read is empty instead of carrying on.
