@@ -283,6 +283,86 @@ tallies for a small gain.
 - Result: 2:39 → 0:53. What remains is local work at 84% CPU, and the parallelization that would
   need a rebuild was left out.
 
+### Development that uses an API or a standard reads its documentation first — what conjecture fills in is where it breaks
+
+**Symptom:** A Bluetooth sub-display (m5-notify-deck) was withdrawn after two
+days in which its Bluetooth behaviour did not converge: listed by the Mac while
+refusing to pair, asking for a PIN the device never showed, reconnecting right
+after Disconnect. Its pairing refusal had "passed" the release gate and had
+never once worked.
+
+**Why (measured facts, and their reading):**
+- Pairing and advertising were designed without reading the Bluetooth
+  specifications (Core GAP and SMP, HOGP, HIDS) or Apple's guidelines. The
+  specifications were fetched and set against each state 30 hours in; the
+  deviations showed within hours.
+- The refusal method was a conjecture from reading the library source and the
+  stack's disassembly. Logging the events on the device showed that the
+  library's default asks every connecting central to pair and that the refusal
+  callback was never called (measured; details in embedded.md).
+- The gate counted as a pass an observation that another mechanism (the PIN not
+  displayed, the 10 s drop) produced as well — the very case of testing.md's
+  "A gate that cannot name the layer it observes" and "When two defences cover
+  one failure". The entries existed and were not consulted.
+
+**How to apply:**
+- A design that uses an API, a protocol or a standard reads its documentation
+  first (specification, API reference, platform guidelines) and writes down
+  what it relies on. No design or implementation on conjecture.
+- What the documentation does not say, or whether an implementation behaves as
+  documented (a library's defaults, a stack's callbacks, an OS's reactions), is
+  observed on the device with the events logged before it is relied on. What
+  reading the source yields is a hypothesis.
+- Anything that talks to an OS as a device or a protocol endpoint writes its
+  state machine (state × event → what the OS and the user see) with the
+  specifications' support first. Taking on a role the OS manages, such as a
+  keyboard, lists the OS behaviour that comes with it and decides whether the
+  main purpose needs it.
+
+### Stop on-device iteration at the second fix and return to the design — do not make the user the test harness
+
+**Symptom:** In the same project, each round of flashing, a manual check by the
+user and a patch added a mechanism (a pairing flag, a 10 s drop, a quiet state,
+nameless advertising, switching IO capabilities). The user toggled Bluetooth,
+re-paired and drove two Macs many times, and ended up worn out by the
+complexity.
+
+**Why:** Symptoms on a device look different every time, so "three of a kind →
+fix the class" never fired. There was no stop condition.
+
+**How to apply:**
+- When a behaviour seen on the device (connection, pairing, reconnection, …)
+  needs a second fix in the same area, stop and return to the state machine and
+  the specification.
+- Treat a test that has the user repeat manual steps as a sign of a design
+  problem in itself.
+
+### Changing a borrowed machine's state needs the change and its removal stated first — "harmless" is not a reason to leave it
+
+**Symptom:** At the same project's withdrawal, the development Mac held Launch
+Services registrations, Bluetooth permissions (TCC) and a keyboard-type record,
+and the test machine (a MacBook Air used over ssh) held a signed app, its logs,
+its registration and its permission. None had been announced or recorded; the
+clean-up found them. The clean-up then failed on order — removing the
+registration before resetting the permission (`tccutil` resolves the bundle id
+through Launch Services) — an app placed in `/tmp` could not be resolved by its
+id at all, and an AppleScript lookup meant as a check (`path to application
+id`) launched the app (all measured).
+
+**Why:** What could be done and what may be done were not told apart. A record
+left behind can change behaviour for whatever later matches it, and a withdrawn
+project leaves no trail to diagnose it by (the user's point).
+
+**How to apply:**
+- Trying files, `/tmp` included, is fine. Anything that changes a setting,
+  registers something or has a permission granted (launching an app, TCC,
+  defaults, login items, pairings) is announced first with a removal method
+  checked to work.
+- Record it when made; remove it at the end of the test and verify it is gone.
+  For a macOS app: the permission, then the Launch Services registration, then
+  the files.
+- "The effect is limited" is not a reason to leave something.
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates

@@ -27,6 +27,11 @@ CHANGELOG.md
 - **Sanitization gate (mandatory before push)**: no environment-specific values —
   GCP project IDs, SA emails, tokens, hostnames, internal IPs, absolute local
   paths, personal names. Use placeholders (`<your-xxx>`, `<TEAM_ID>`).
+- **Evidence per claim**: each claim says how it is known — measured (with the
+  environment), read in a source (which), or inferred. A behaviour that was not
+  observed is never written as an instruction ([ADR-023](https://github.com/nlink-jp/.github/blob/main/adr/023-documentation-not-conjecture.md):
+  an inferred BLE pairing-refusal method was published as a how-to and had to
+  be corrected).
 - Typed commits: `docs:` for content, `chore:` for housekeeping.
 
 ## Gotchas

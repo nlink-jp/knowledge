@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-25 (night)
+
+- **development-process** (ja + en): read the API's or standard's documentation
+  before designing, and observe what it leaves open; stop on-device iteration at
+  the second fix; changing a borrowed machine's state needs the change and a
+  working removal stated first (from the m5-notify-deck withdrawal, ADR-023).
+- AGENTS.md: each claim in an entry says how it is known.
+
 ## 2026-09-25 (evening)
 
 - **embedded** (ja + en): corrected — refusing pairing through
