@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-25 (evening)
+
+- **embedded** (ja + en): corrected — refusing pairing through
+  `onSecurityRequest()` does not work with the Arduino-ESP32 BLE library's
+  defaults; new entry: the library sends a Security Request to every connecting
+  central (`setForceAuthentication(false)` to stop it), with what was and was not
+  measured.
+- **embedded** (ja + en): what the Bluetooth specs and Apple's guidelines require
+  of a BLE HID peripheral in each state, to tabulate before building one.
+
 ## 2026-09-25
 
 - **embedded** (ja + en): the M5Stack BASIC's backlight does not dim at M5GFX's

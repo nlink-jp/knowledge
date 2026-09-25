@@ -299,12 +299,15 @@ nearby device that stages a failing pairing with the bonded Mac's address could
 make the device drop the bond (an inference).
 
 **How to apply:**
-- Never accept pairing because a bond is missing. Open a pairing window only for
-  a cause recorded by a user's act (a flag in NVS), and clear it when a pairing
-  completes (security: "Open a trust window for a recorded act, not for missing
-  state").
-- Refuse pairing through the security callback (`onSecurityRequest()` returns
-  false). That fails as "pairing not supported", which keeps the existing bond.
+- Never accept pairing because a bond is missing. Accept it only in a mode the
+  user entered by an act (holding a button at boot, as an ordinary keyboard's
+  pairing mode) (security: "Open a trust window for a recorded act, not for
+  missing state").
+- **(Corrected 2026-09-25.)** This entry used to say: refuse through the security
+  callback (`onSecurityRequest()` returns false), which fails as "pairing not
+  supported" and keeps the bond. With the library's defaults that callback is
+  never called (next entry; measured on the device). Refuse as the next entry
+  says.
 
 ## The Arduino-ESP32 BLE library stores a written value before `onWrite`, and always accepts the write
 
@@ -440,3 +443,79 @@ extra adds up.
   Suspect the frequency first.
 - Check the board (`M5.getBoard()`) and `ledcChangeFrequency`'s return value,
   and fall back to M5GFX's linear mapping when either fails.
+
+## The Arduino-ESP32 BLE library asks every connecting central to pair, by default
+
+**Symptom:** A peripheral built with Arduino-ESP32 3.3.8's BLE library (passkey
+display, MITM, Secure Connections) put a passkey prompt on any Mac that merely
+connected (an app reading a characteristic, Connect pressed in a list). Even
+while the device was not accepting pairing, it generated a passkey and carried
+on (not displayed, so nobody could enter it) until it dropped the link. The
+`onSecurityRequest()` written to refuse was never called.
+
+**Why:** `BLESecurity::m_forceSecurity` defaults to true (the source says: for
+backward compatibility, to change in v4.0.0). With security enabled through
+`setAuthenticationMode()`, the library calls `esp_ble_set_encryption()` on every
+`ESP_GATTS_CONNECT_EVT`: the peripheral sends a Security Request and the central
+starts pairing. Bluedroid accepts that pairing request without raising
+`ESP_GAP_BLE_SEC_REQ_EVT`, so the refusal callback is never asked (measured
+2026-09-25 by logging every security event through `setCustomGapHandler`: no
+security-request event, and a passkey notify outside the pairing window).
+
+**How to apply:**
+- On a peripheral, call `BLESecurity::setForceAuthentication(false)`. Apple's
+  guidelines say the same: an accessory should not request pairing until an ATT
+  request has been rejected with Insufficient Authentication (Accessory Design
+  Guidelines R31 §58.10). The central starts encryption and pairing.
+- The spec's refusal outside pairing mode is Pairing Failed "Pairing Not
+  Supported" (0x05) (Core 6.3 Vol 3 Part H §2.3). Whether `onSecurityRequest()`
+  returning false sends exactly that once forced security is off was **not
+  measured** (the project stopped). What was measured is a stop-gap: switch the
+  IO capability to NoInputNoOutput while not accepting pairing, with MITM and SC
+  required and `ESP_BLE_SM_ONLY_ACCEPT_SPECIFIED_SEC_AUTH` enabled — the pairing
+  fails at once (ESP reason 0x50) and no passkey is generated. It is not the
+  spec's refusal code.
+- Before trusting a design that rests on a callback, log every GAP security
+  event with `setCustomGapHandler` and see the callback actually fire.
+
+## Before building a BLE HID peripheral: what the specs require in each state
+
+**Symptom:** Pairing, refusal, reconnection and post-disconnect behaviour built
+up by trial on the device ended up unlike any ordinary Bluetooth device (listed
+by the Mac while refusing to pair, a passkey prompt with no passkey shown,
+reconnecting right after Disconnect), and the project did not converge
+(m5-notify-deck, stopped 2026-09-25).
+
+**Why:** The behaviour in each state (unpaired, pairing mode, bonded and
+disconnected, after a disconnect) is specified in some detail by the Bluetooth
+specifications and Apple's guidelines. It was not tabulated first; library
+defaults and home-grown mechanisms filled the gaps.
+
+**How to apply:** Write the state machine first and check every row against
+these requirements (confirmed in the documents themselves):
+- Pairing mode: LE **Limited** Discoverable flag, at most 180 s (Core 6.3 Vol 3
+  Part C §9.2.3.2; HOGP 1.0 §5.1.1); no filter while discoverable (§9.2.3.2);
+  advertise the HID Service UUID, name and appearance 0x03C1 (HOGP §3.1.3–3.1.5;
+  ADG §58.4, §58.13).
+- Otherwise: no discoverable flag (§9.2.2.2); answer a Pairing Request with
+  Pairing Not Supported (0x05) (SMP §2.3). Non-bondable is not refusal — it pairs
+  without storing a bond (§9.4.2.2).
+- The device requests neither pairing nor encryption (ADG §58.10). HOGP
+  recommends a Security Request (1.1 §7.1), which conflicts with Apple's
+  guidelines; with a Mac as host, follow Apple.
+- One side lost the keys: a peripheral without the key rejects encryption (LL
+  0x06 PIN or Key Missing) and the link stays up (Core 6.3 Vol 6 Part B
+  §5.1.3.1); whether to re-pair is the host's decision, with the user's
+  confirmation (Vol 3 Part C §10.3.2). Do not tell users on the peripheral's
+  screen to remove "the" device on the Mac — the peripheral cannot know which
+  entry is its own.
+- HID Information NormallyConnectable = 1 promises connectable advertising
+  whenever not connected (HIDS 1.0 §2.10; HOGP 1.1 §3.1.7); with 0, the radio is
+  off when idle and advertises only with data to send (HOGP Appendix A).
+- A device operating as a keyboard must have the Boot Keyboard input and output
+  reports (HIDS 1.0 Table 2.1).
+- HOGP 1.1 removed all of 1.0 §5 (discovery, reconnection, filter accept list,
+  disconnection); Apple's guidelines refer to 1.0.
+- Measured on macOS 27.0: a connectable advertiser carrying a name is listed in
+  Bluetooth settings even without a discoverable flag; a bonded BLE HID device
+  that is advertising is reconnected at once after Disconnect.
