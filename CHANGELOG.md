@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-26
+
+- **development-process** (ja + en): moving a tool between umbrellas — a
+  submodule's `git rm` also deletes gitignored data (move it first), a moved
+  pointer reads as "local modifications", and org scripts may name the old
+  path (from the lagent promotion to cli-series).
+
 ## 2026-09-25 (night)
 
 - **development-process** (ja + en): read the API's or standard's documentation

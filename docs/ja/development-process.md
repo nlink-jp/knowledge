@@ -890,6 +890,33 @@ git は gitlink を記録して受け入れるので、**日常の commit / push
   `git submodule status` が `+`/`-` を出さないこと、実際に `fetch` できること。
 
 
+### umbrella 間でツールを移すとき、submodule の `git rm` は gitignore 下の実データも消す
+
+**事象:** ツールを lab-series から cli-series へ昇格させる際、旧 umbrella で `git rm <sub>`
+する前に作業コピーを調べると、gitignore 下に 2.9 GB の計測結果（ベンチの `_results/`）と
+ビルド成果物があった。`git status` は clean、`main...origin/main` も一致で、push 済みの印は
+すべて揃っていた。また `git rm` は `the following file has local modifications` で止まったが、
+中身の変更ではなく、チェックアウトが umbrella に記録されたポインタより新しいコミットに
+いるだけだった。
+
+**なぜ:** clean か・push 済みかは追跡対象のファイルについての問いで、無視されたファイルには
+答えない。submodule の `git rm -f` は作業ツリーをディレクトリごと消し、無視されたファイルも
+一緒に消える（実測: 残した `dist/` はディレクトリごと消えた）。ポインタのずれは、`git rm` から
+は内容の変更と同じ文言で報告される。
+
+**適用方法:**
+- 旧 umbrella から外す前に `git -C <sub> status --short --ignored` で無視されたファイルを
+  数え、`du -sh` で大きさを見る。再生成できないもの（計測結果など）は、新 umbrella へ先に
+  追加したチェックアウトへ `mv` で移す（同一ボリュームなら改名で済む）。
+- `local modifications` で止まったら、`git diff <sub>` が `Subproject commit` の差分だけで
+  あることを確かめてから `-f` を付ける。それ以外が出たら止まる。
+- ディレクトリごとの削除になるので、残るものを列挙して人に確認してから行う。
+- 組織のスクリプトがツールを `<series>/<tool>` のパスで名指していないか grep する。
+  今回は org 検査スクリプトが旧パスを名指していた。見つからないパスは警告だけ出して比較を
+  飛ばす作りなので、移動後は検査が黙って止まるところだった（スクリプトを読んで確認。移動前に
+  直したので、実際の発火は観測していない）。
+
+
 ### umbrella で `git add -u` は submodule のポインタを黙って巻き込む
 
 **事象:** 全シリーズの CLAUDE.md と README から古いビルド指示を消す一括修正で、各 umbrella

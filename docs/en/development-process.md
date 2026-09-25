@@ -1043,6 +1043,35 @@ migration, which is the worst possible moment.
   `git submodule status` reports no `+`/`-`, and a real `fetch` works.
 
 
+### Moving a tool between umbrellas: a submodule's `git rm` also deletes gitignored data
+
+**Symptom:** Promoting a tool from lab-series to cli-series, a look at the working
+copy before `git rm <sub>` in the old umbrella found 2.9 GB of measurement results
+(the bench's `_results/`) and build outputs under gitignore. `git status` was clean
+and `main...origin/main` matched — every sign of "pushed" was there. `git rm` then
+stopped with `the following file has local modifications`, which was not a content
+change: the checkout was simply at a newer commit than the pointer the umbrella had
+recorded.
+
+**Why:** "Clean" and "pushed" are questions about tracked files; they say nothing
+about ignored ones. A submodule's `git rm -f` removes the whole working tree, ignored
+files included (measured: the `dist/` left behind went with the directory). And a
+moved pointer is reported by `git rm` in the same words as a content change.
+
+**How to apply:**
+- Before removing from the old umbrella, count the ignored files with
+  `git -C <sub> status --short --ignored` and size them with `du -sh`. Move anything
+  that cannot be regenerated (measurement results) with `mv` into the checkout
+  already added to the new umbrella — on the same volume that is a rename.
+- If `git rm` stops on `local modifications`, confirm that `git diff <sub>` shows only
+  the `Subproject commit` change before adding `-f`. Anything else: stop.
+- It is a whole-directory deletion; list what remains and have a person confirm it.
+- Grep the org's scripts for the tool named by its `<series>/<tool>` path. Here the
+  org check script named the old path, and it warns and skips the comparison for a
+  path it cannot find, so the check would have gone quiet after the move (known from
+  reading the script; fixed before the move, so the skip itself was not observed).
+
+
 ### `git add -u` in an umbrella silently sweeps up submodule pointers
 
 **Symptom:** A sweep removing a stale build instruction from every series'
