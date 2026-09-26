@@ -347,9 +347,15 @@ rm -rf $(STAGE) ; \
 **適用方法:**
 - 足場の段階でアイコンを入れる。元画像は描画スクリプトで作り（net-meter と同じ `scripts/gen-icon.swift` →
   `assets/AppIcon-1024.png` → `make-icns.sh`）、組み立ては元画像が無ければ失敗させる（警告で続けない）。
-- `verify-release` で、**利用者がダウンロードする zip の中**に `<App>.app/Contents/Resources/AppIcon.icns` があり、
-  `Info.plist` に `CFBundleIconFile` があることを確かめる（`unzip -l` と `unzip -p`）。アイコンを抜いた zip で検査が
-  落ちることも一度確かめる。
+- `verify-release` で、**利用者がダウンロードする zip の中**にアイコンがあることを確かめる。この組織では共通の
+  スクリプト（`.github` の `templates/verify-app-icon.sh`）を各 GUI リポジトリにそのまま置いて呼ぶ。判定は、
+  最上位の `.app` がちょうど 1 つ・`Info.plist` の `CFBundleIconFile`・`Contents/Resources/<そのファイル>` が項目名の
+  **完全一致**で存在・中身が icns（先頭 4 バイト）。部分一致だと、zip に混ざる AppleDouble の `._AppIcon.icns` を
+  アイコンと取り違える（公開中の 18 本の zip に実際に入っていた）。
+- 既存リポジトリを直すだけでは、新しく作るリポジトリに届かない（今回の欠落は新しいリポジトリで起きた）。
+  組織の健全性検査（check-org 検査 18）が、`.app` を作る Makefile の `verify-release` に呼び出しが無ければ落とす。
+- 検査は、通るべき状態と落ちるべき状態の両方で演習する（`scripts/exercise-app-icon-gate.sh`: 作り物の zip 10 状態と、
+  公開中の zip 19 本）。
 
 ## dist/ のバイナリ再署名は、そこから起動中の常駐プロセスを殺す
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-27 (app icon gate)
+
+- **release-engineering** (ja + en): the app-icon entry now points at the org's
+  shared `verify-app-icon.sh` (whole-entry match — AppleDouble `._AppIcon.icns`
+  would fool a substring match) and at check-org check 18, which is what reaches
+  repositories created later.
+
 ## 2026-09-27 (m5-system-panel v0.1.1)
 
 - **release-engineering** (ja + en): after a push to the tap a user's

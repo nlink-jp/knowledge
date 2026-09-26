@@ -406,9 +406,16 @@ Dock, so there is hardly a moment during development when the icon is seen.
 **How to apply:**
 - Add the icon at scaffold time. Draw the source with a script (as net-meter does: `scripts/gen-icon.swift` →
   `assets/AppIcon-1024.png` → `make-icns.sh`), and make the build fail when the source is missing (not a warning).
-- In `verify-release`, check that **the zip users download** contains `<App>.app/Contents/Resources/AppIcon.icns`
-  and that its `Info.plist` has `CFBundleIconFile` (`unzip -l` and `unzip -p`). Confirm once that a zip without the
-  icon fails the check.
+- In `verify-release`, check the icon in **the zip users download**. This organization vendors one script
+  (`templates/verify-app-icon.sh` in `.github`) verbatim into every GUI repository and calls it. It requires exactly
+  one top-level `.app`, a `CFBundleIconFile` in its `Info.plist`, `Contents/Resources/<that file>` as a **whole
+  entry name**, and icns content (the first four bytes). A substring match takes an AppleDouble `._AppIcon.icns` in
+  the zip for the icon (18 published zips actually carry one).
+- Fixing the existing repositories does not reach the ones created later (this omission happened in a new one). The
+  organization health check (check-org check 18) fails an `.app`-building Makefile whose `verify-release` lacks the
+  call.
+- Exercise the check with states that must pass as well as states that must fail
+  (`scripts/exercise-app-icon-gate.sh`: ten built zips, plus the 19 published ones).
 
 ## Re-signing a dist/ binary kills daemons running from it
 
