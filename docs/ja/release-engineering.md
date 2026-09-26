@@ -348,14 +348,39 @@ rm -rf $(STAGE) ; \
 - 足場の段階でアイコンを入れる。元画像は描画スクリプトで作り（net-meter と同じ `scripts/gen-icon.swift` →
   `assets/AppIcon-1024.png` → `make-icns.sh`）、組み立ては元画像が無ければ失敗させる（警告で続けない）。
 - `verify-release` で、**利用者がダウンロードする zip の中**にアイコンがあることを確かめる。この組織では共通の
-  スクリプト（`.github` の `templates/verify-app-icon.sh`）を各 GUI リポジトリにそのまま置いて呼ぶ。判定は、
+  スクリプト（`.github` の `templates/verify-app-zip.sh`。zip の AppleDouble も拒否する — 次の項目）を各 GUI リポジトリにそのまま置いて呼ぶ。判定は、
   最上位の `.app` がちょうど 1 つ・`Info.plist` の `CFBundleIconFile`・`Contents/Resources/<そのファイル>` が項目名の
   **完全一致**で存在・中身が icns（先頭 4 バイト）。部分一致だと、zip に混ざる AppleDouble の `._AppIcon.icns` を
   アイコンと取り違える（公開中の 18 本の zip に実際に入っていた）。
 - 既存リポジトリを直すだけでは、新しく作るリポジトリに届かない（今回の欠落は新しいリポジトリで起きた）。
   組織の健全性検査（check-org 検査 18）が、`.app` を作る Makefile の `verify-release` に呼び出しが無ければ落とす。
-- 検査は、通るべき状態と落ちるべき状態の両方で演習する（`scripts/exercise-app-icon-gate.sh`: 作り物の zip 10 状態と、
+- 検査は、通るべき状態と落ちるべき状態の両方で演習する（`scripts/exercise-app-zip-gate.sh`: 作り物の zip 12 状態と、
   公開中の zip 19 本）。
+
+## `ditto -c -k` は拡張属性を `._` 項目として zip に入れる — `unzip` で展開すると `.app` の封が壊れる
+
+**事象:** GUI の配布 zip を `/usr/bin/ditto -c -k --keepParent X.app X.zip` で作っていた。公開中の 19 本のうち 18 本に
+`._CodeResources`・`._Info.plist`・`._AppIcon.icns` などの `._*` 項目が 9〜21 個入っていた（中身は
+`com.apple.provenance` などの拡張属性）。この zip をコマンドラインの `/usr/bin/unzip` で展開すると `.app` の中に
+`._` ファイルができ、`codesign --verify --deep --strict` も `spctl --assess` も「a sealed resource is missing or invalid」で
+失敗した。Finder・`ditto -x -k`・Homebrew の展開では `._` が拡張属性に戻されるので問題は出ない。署名・公証・staple・
+Gatekeeper の検査（`ditto -x -k` で展開して行っていた）はすべて合格しており、誰も気付かなかった
+（2026-09-27、macOS 27.0、実測）。
+
+**なぜ:** ditto は既定で、拡張属性とリソースフォークを AppleDouble（`._` 項目）として zip に書く（`man ditto` の
+`--norsrc`・`--noextattr`）。`.app` の封は拡張属性ではなくファイル（`_CodeSignature/`、staple された ticket、各 Mach-O の中の
+署名）にあるので、`._` は不要なうえ、`unzip` ではファイルとして封の中に入り込む。
+
+**適用方法:**
+- 配布 zip は `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip` で作る。19 本すべてのアプリを
+  この形で zip し直し、普通の `unzip` で展開して `codesign --verify --deep --strict`・`stapler validate`・
+  `source=Notarized Developer ID` が保たれることを確かめた（実測。1 本は公証から通しで実施）。
+- 「バンドルの署名は拡張属性にある」という説明は `.app` には当てはまらない。この組織の規約もそう書いていて、
+  それが `ditto -c -k` を勧める理由になっていた。
+- リリース検査は、公開する zip に `._*` と `__MACOSX/` が無いことを確かめる（組織では `verify-app-zip.sh`、
+  作る側の行は check-org 検査 19）。展開の検査を `ditto -x -k` だけで行うと、この欠陥は見えない。
+- 同じ種類の問題は Linux の tar にもある（`COPYFILE_DISABLE=1` と `--no-xattrs`。build-and-packaging の項）。
+  Info-ZIP の `zip` で作った CLI の zip は、抜き取った 8 本とも `._` が 0 件だった。
 
 ## dist/ のバイナリ再署名は、そこから起動中の常駐プロセスを殺す
 

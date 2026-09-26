@@ -407,7 +407,7 @@ Dock, so there is hardly a moment during development when the icon is seen.
 - Add the icon at scaffold time. Draw the source with a script (as net-meter does: `scripts/gen-icon.swift` →
   `assets/AppIcon-1024.png` → `make-icns.sh`), and make the build fail when the source is missing (not a warning).
 - In `verify-release`, check the icon in **the zip users download**. This organization vendors one script
-  (`templates/verify-app-icon.sh` in `.github`) verbatim into every GUI repository and calls it. It requires exactly
+  (`templates/verify-app-zip.sh` in `.github`, which also refuses AppleDouble entries — next entry) verbatim into every GUI repository and calls it. It requires exactly
   one top-level `.app`, a `CFBundleIconFile` in its `Info.plist`, `Contents/Resources/<that file>` as a **whole
   entry name**, and icns content (the first four bytes). A substring match takes an AppleDouble `._AppIcon.icns` in
   the zip for the icon (18 published zips actually carry one).
@@ -415,7 +415,34 @@ Dock, so there is hardly a moment during development when the icon is seen.
   organization health check (check-org check 18) fails an `.app`-building Makefile whose `verify-release` lacks the
   call.
 - Exercise the check with states that must pass as well as states that must fail
-  (`scripts/exercise-app-icon-gate.sh`: ten built zips, plus the 19 published ones).
+  (`scripts/exercise-app-zip-gate.sh`: twelve built zips, plus the 19 published ones).
+
+## `ditto -c -k` stores extended attributes as `._` entries — unpacked with `unzip`, they break an `.app`'s seal
+
+**Symptom:** GUI release zips were made with `/usr/bin/ditto -c -k --keepParent X.app X.zip`. 18 of the 19 published
+ones carried 9 to 21 `._*` entries — `._CodeResources`, `._Info.plist`, `._AppIcon.icns` and so on, holding extended
+attributes such as `com.apple.provenance`. Unpacked with command-line `/usr/bin/unzip`, they land inside the `.app` as
+files, and both `codesign --verify --deep --strict` and `spctl --assess` failed with "a sealed resource is missing or
+invalid". Finder, `ditto -x -k` and Homebrew merge `._` entries back into attributes, so nothing showed there. The
+signing, notarization, staple and Gatekeeper checks (run on a `ditto -x -k` copy) all passed, and nobody noticed
+(2026-09-27, macOS 27.0, measured).
+
+**Why:** ditto writes extended attributes and resource forks into the zip as AppleDouble (`._`) entries by default
+(`--norsrc` and `--noextattr` in `man ditto`). An `.app`'s seal is files, not attributes (`_CodeSignature/`, the
+stapled ticket, the signature inside each Mach-O), so the entries are useless — and under `unzip` they become files
+inside the sealed bundle.
+
+**How to apply:**
+- Make release zips with `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip`. All 19 apps were
+  re-zipped this way, unpacked with a plain `unzip`, and kept `codesign --verify --deep --strict`, `stapler validate`
+  and `source=Notarized Developer ID` (measured; one of them end to end from notarization).
+- "Bundle signatures are stored in extended attributes" does not hold for an `.app`. This organization's conventions
+  said so, and it was the reason they recommended `ditto -c -k`.
+- Have the release gate check that the published zip has no `._*` and nothing under `__MACOSX/` (here:
+  `verify-app-zip.sh`, and check-org check 19 for the line that makes the zip). A gate that only unpacks with
+  `ditto -x -k` cannot see this defect.
+- Linux tarballs have the same class of problem (`COPYFILE_DISABLE=1` and `--no-xattrs`; see build-and-packaging).
+  CLI zips made with Info-ZIP `zip` had no `._` entries in all 8 sampled.
 
 ## Re-signing a dist/ binary kills daemons running from it
 

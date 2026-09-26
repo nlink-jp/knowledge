@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-27 (AppleDouble in GUI zips)
+
+- **release-engineering** (ja + en): `ditto -c -k` stores extended attributes
+  as `._` entries and a plain `unzip` then breaks the `.app`'s seal (18 of 19
+  GUI releases) — zip with `--norsrc --noextattr`, which keeps signature,
+  staple and Gatekeeper verdict (all 19 apps measured); the gate is now
+  `verify-app-zip.sh`.
+- **development-process** (ja + en): verification in temporary directories
+  also leaves Launch Services registrations; deleted paths can be unregistered.
+
 ## 2026-09-27 (app icon gate)
 
 - **release-engineering** (ja + en): the app-icon entry now points at the org's

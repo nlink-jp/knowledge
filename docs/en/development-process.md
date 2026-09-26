@@ -1491,6 +1491,9 @@ them was not isolated.
 - For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`
   everything it finds. **Count again after every build or release** (assembling alone registers, and removed entries
   can come back). Leave the copy the user installed (`/Applications` and the like).
+  Verifying `.app` copies unpacked in temporary directories (`codesign`, `stapler`, `spctl`) also left registrations
+  (2026-09-27, 19 of them). `lsregister -u` removes a path even after it is deleted; an `.app` whose directory had
+  been deleted was later found registered again.
 - To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
   `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
 - With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.
