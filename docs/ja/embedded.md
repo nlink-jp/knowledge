@@ -99,7 +99,9 @@ arduino-cli ではなくコア側のフックだから。
   `$(foreach d,$(DEFINES),'$(d)')` で並べる。
 - `build.extra_flags` はボード定義が使っているので上書きしない。`platform.txt` が
   利用者向けに空で用意している `compiler.cpp.extra_flags` を使う。
-- 効いたかは推測せず、`strings <.bin> | grep <版数>` で埋め込まれたことを確かめる。
+- 効いたかは推測せず、`strings <.bin> | grep -F <版数>` で埋め込まれたことを確かめる。**行全体の一致（`grep -x`）は
+  使わない**: 版数だけの文字列リテラルが、それで終わる長い文字列（例 `"<名前> <版数>"`）の末尾にリンカがまとめる
+  ことがあり、そのとき版数だけの行は `strings` の出力に現れない（2026-09-26、esp32 コア 3.3.8、実測）。
 
 ## M5Stack BASIC v2.7 への書き込み・読み出しは、macOS では 230400 baud に落とす
 
@@ -465,3 +467,79 @@ Bluetooth 機器と違う振る舞いになり（受け付けないのに Mac �
 - 鍵・パスワード・ナンスの種は、`WiFi.mode(...)` や周辺の Wi-Fi の探索で無線を起動した**後に**作る。
 - 無線を使わない機器で真の乱数が要るなら、文書の手順（`bootloader_random_enable()` と、ADC・I2S・無線を使う前の
   `bootloader_random_disable()`）に従う。
+
+## arduino-esp32 3.3.8 の mbedTLS には ChaCha20-Poly1305 が入っていない — 暗号の部品は sdkconfig と記号で確かめてから選ぶ
+
+**事象:** ESP32（M5Stack BASIC）とコンパニオンの間の暗号を ChaCha20-Poly1305 で設計したが、arduino-esp32 3.3.8 の
+ビルド済みライブラリでは使えなかった。`tools/esp32-libs/3.3.8/sdkconfig` は `CONFIG_MBEDTLS_CHACHA20_C` と
+`CONFIG_MBEDTLS_POLY1305_C` が無効で、`libmbedcrypto.a` にも `mbedtls_chachapoly_encrypt_and_tag` が無い。
+ヘッダ（`chachapoly.h`）はあるので、ヘッダを見ただけでは気づけない（2026-09-26、実測）。
+
+**なぜ:** Arduino 向けの ESP-IDF ライブラリは設定済みの sdkconfig で作られていて、スケッチからは組み込む部品を
+選べない。同じ版で `CONFIG_MBEDTLS_GCM_C`・`CONFIG_MBEDTLS_HARDWARE_AES`・`CONFIG_MBEDTLS_HKDF_C` は有効で、
+`mbedtls_gcm_*` は `port/include/gcm_alt.h` のマクロでハードウェア AES の `esp_aes_gcm_*` に置き換わる（実測）。
+
+**適用方法:**
+- 暗号（や他の mbedTLS の部品）を設計に書く前に、`sdkconfig` の `CONFIG_MBEDTLS_*` と、
+  `xtensa-esp32-elf-nm -g --defined-only libmbedcrypto.a` の記号の両方で、実体があることを確かめる。
+- 両側を一次提供物で揃えるなら AES-256-GCM（Mac は CryptoKit の `AES.GCM`）が使える。HKDF は
+  `mbedtls_hkdf_expand` が単独で呼べる（K が一様な鍵なら RFC 5869 §3.3 どおり Expand だけでよい）。
+- 部品の使い方は、NIST CAVP・RFC の既知解を実機のテストスケッチで照合する（ヘッダの名前の一致は動作の保証ではない）。
+
+## ESP32 の loop タスクのスタックは既定 8 KB — 溢れると「Double exception」になる。低水位を測って決める
+
+**事象:** 暗号の復号・行の解析を 1 行ごとに数 KB のスタックバッファで行うライブラリを実機のテストスケッチで動かしたら、
+`Guru Meditation Error: Core 1 panic'ed (Double exception)` で再起動を繰り返した。バックトレースは mbedTLS の
+メモリ確保と `_xt_alloca_exc` を指していた。テストごとに `uxTaskGetStackHighWaterMark(nullptr)` を出すと、落ちる直前の
+テストの前で残りが 2,028 B だった（2026-09-26、esp32 コア 3.3.8、実測）。
+
+**なぜ:** Arduino-ESP32 は `setup()`/`loop()` を 1 つのタスクで動かし、そのスタックは既定 8 KB
+（`CONFIG_ARDUINO_LOOP_STACK_SIZE=8192`）。スタックが尽きると、原因の場所ではなく次の例外の処理中に落ちるので、
+「Double exception」としか見えない。
+
+**適用方法:**
+- `SET_LOOP_TASK_STACK_SIZE(16 * 1024);` をスケッチのファイルの先頭で書くと、loop タスクのスタックを広げられる
+  （コアの `Arduino.h` にあるマクロ。弱いシンボル `getArduinoLoopTaskStackSize` を上書きする）。16 KB で残りの最小は
+  約 5 KB だった（実測）。
+- 推測で広げず、テストの各段階で `uxTaskGetStackHighWaterMark` を出して、どこで何バイト使うかを測る。
+- 大きな構造体（数 KB の記録用バッファなど）はローカル変数にせず、`static` かグローバルに置く。
+
+## `.ino` の中でテンプレートを書くと、Arduino の前処理が壊す
+
+**事象:** テスト用スケッチの `.ino` に配列の要素数を返すテンプレート関数を書いたら、`'N' was not declared in this scope`
+でコンパイルに失敗した（2026-09-26、arduino-cli 1.5.1、esp32 コア 3.3.8、実測）。
+
+**なぜ:** Arduino のビルドは `.ino` の関数の前方宣言を自動で作る。テンプレートの宣言はこの処理で正しく扱われない（推論。
+エラーの内容と、マクロに替えると通ったことからの判断）。
+
+**適用方法:** `.ino` ではテンプレートを使わない。要素数は `#define COUNT(a) (sizeof(a) / sizeof((a)[0]))` のような
+マクロにするか、テンプレートは `.cpp`・`.h` に置く。
+
+## M5Unified の既定では BASIC の起動時にスピーカーがポップする — 音を使わないなら `internal_spk = false`
+
+**事象:** 音を一切使わないファームウェアで、M5Stack BASIC の起動時（電源を入れたとき・書き込み後の再起動）に、ときどき
+スピーカーから「ポン」と鳴った。`M5.config()` の `internal_spk` を `false` にして `M5.begin(config)` すると、電源の入れ直し
+5 回で 1 回も鳴らなかった（2026-09-27、M5Unified 0.2.14、1 台、利用者が聞いて判断）。
+
+**なぜ:** M5Unified は BASIC でスピーカーを使う設定（既定）のとき、`begin()` の中でスピーカーの端子（GPIO25）を
+Low に駆動する（M5Unified.cpp の `board_M5Stack` のスピーカー設定。ソースで確認）。浮いていた端子の電圧が段差で
+変わるのが、アンプの入力に乗ると読める（推論）。
+
+**適用方法:**
+- 音を使わないファームウェアでは `auto c = M5.config(); c.internal_spk = false; M5.begin(c);` とする。
+- 鳴る頻度が「ときどき」の現象は、直したあとに回数を数えて確かめる（例: 電源の入れ直し 5 回）。
+
+## `arduino-cli monitor` は入力（stdin）が閉じるとすぐ終了する — 読み取りの道具は stdin を開けたまま持つ
+
+**事象:** 実機のテスト結果をシリアルから読むために、`arduino-cli monitor -p <port> --config baudrate=115200 --quiet` を
+スクリプトから起動したら、何も出力せずにすぐ終了した（`< /dev/null` でも同じ）。一度目は読めたのでタイミングの問題に
+見えた（2026-09-26、arduino-cli 1.5.1、実測）。
+
+**なぜ:** monitor は入力側が EOF になると終了する（観測から。ソースは読んでいない）。親の stdin が閉じていたり
+`/dev/null` だったりすると、起動直後に EOF になる。
+
+**適用方法:**
+- 子プロセスとして起動するなら stdin を開いたパイプにして（Python なら `stdin=subprocess.PIPE`）、決めた時間だけ読んで
+  から終了させる。
+- ポートを開くと ESP32 が再起動する（最初に ROM の起動メッセージが別の速度で出て文字化けする）。結果を一定間隔で
+  繰り返し出すテストにしておけば、いつ開いても読める。

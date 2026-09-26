@@ -1703,3 +1703,54 @@ it expires (inferred; the TTL was not measured).
   browser to update.
 - In the same observation, after wake the watchdog and re-browsing reconnected 1.6 s before
   `NSWorkspace.didWakeNotification` arrived (once). Do not design around waiting for the wake notification.
+
+## SwiftUI's SecureField beeps with a Japanese input source active — restrict a password field to Roman input sources
+
+**Symptom:** In a menu bar app's setup window, typing a Wi-Fi password into SwiftUI's `SecureField` with a Japanese input
+source active beeped on every key and entered nothing. The field still looked like Japanese input, and nothing on
+screen said why (2026-09-27, macOS 27.0, observed by the user).
+
+**Why:** Not investigated (and not guessed). The documented mechanism is the input context's
+`allowedInputSourceLocales`: set to `NSAllRomanInputSourcesLocaleIdentifier`, it restricts the allowed input sources to
+Roman ones while that context is active (NSTextInputContext reference).
+
+**How to apply:**
+- Wrap `NSSecureTextField` in an `NSViewRepresentable` and, in `becomeFirstResponder()`, set
+  `currentEditor()?.inputContext?.allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]` (the field
+  editor receives the keys, so it is its context). Focusing the field then switched the menu bar input indicator to
+  "A" and the password could be typed (measured once).
+- Say under the field what is accepted (a WPA2/WPA3 passphrase is 8–63 printable ASCII characters) and how many more
+  characters are needed. A disabled button alone does not tell the user why.
+
+## NWPathMonitor updates arrive far more often than the path changes — run side effects only when the value you watch changes
+
+**Symptom:** On each Wi-Fi path update (`NWPathMonitor(requiredInterfaceType: .wifi)`) the app tried to connect to that
+Wi-Fi's router, with up to three retries. Every update reset the retry count, so with the router unchanged it kept
+trying the home router about every 4 s (90 attempts in 6 minutes; 2026-09-27, macOS 27.0, measured in the unified log).
+
+**Why:** Path updates arrive without the router's address changing (which attribute triggered them was not
+investigated). Reading "an update arrived" as "the path changed" was the mistake.
+
+**How to apply:**
+- On an update, read the value you care about (here the interface and the router address) and do nothing if it is
+  the same as last time. After the fix: 3 attempts in 2 minutes (the first and its retries), then none (measured).
+- Do not let a retry limit depend on how often updates arrive; reset it only when the watched value changes.
+- Count your own connections in the unified log (`/usr/bin/log show --predicate 'process == "<name>" AND subsystem ==
+  "com.apple.network" AND category == "connection"'`, the `path:start` events) to see them by kind of destination.
+
+## A Developer ID app's keys go to the file-based keychain and never sync via iCloud — `…ThisDeviceOnly` belongs to the other implementation
+
+**Symptom:** A design used `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` to keep a key out of iCloud, but the
+implementation that attribute assumes (the data protection keychain) is not available to a non-sandboxed Developer ID
+app (read in the documentation).
+
+**Why:** macOS has two keychain implementations, file-based and data protection. iCloud Keychain exists only in the
+data protection keychain, whose access groups need entitlements authorised by a provisioning profile. SecItem without
+`kSecUseDataProtectionKeychain` targets the file-based keychain on macOS (TN3137 "On Mac keychain APIs and implementations").
+
+**How to apply:**
+- An app without a provisioning profile stores SecItem items in the file-based login keychain, which iCloud never
+  syncs; "do not sync" is met by that. Do not add `…ThisDeviceOnly` or `kSecAttrSynchronizable` (data protection attributes).
+- Confirm where an item went with `security find-generic-password -s <service> -a <account>` (no `-g`, so no value is
+  printed) and read `keychain: ".../login.keychain-db"`.
+- Unit-test the rules around the Keychain with an in-memory stand-in, so tests never write to the user's login keychain.

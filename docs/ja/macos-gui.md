@@ -1491,3 +1491,55 @@ macOS は**アプリがどの SDK に対してリンクされたか**を見て�
   つなぎ直してよい。
 - 同じ観測で、スリープから起きた後は、応答の見張りと再探索だけで、`NSWorkspace.didWakeNotification` より
   1.6 秒早くつながり直した（1 回）。起床の通知を待つ設計にしない。
+
+## SwiftUI の SecureField は日本語入力のまま警告音を鳴らす — パスワード欄は入力ソースをローマ字に限る
+
+**事象:** メニューバー常駐アプリの設定の窓で、SwiftUI の `SecureField` に Wi-Fi のパスワードを入れようとしたら、
+日本語入力が有効なときはキーを押すたびに警告音が鳴り、文字が入らなかった。欄は日本語入力のままに見え、なぜ入らないかが
+画面から分からなかった（2026-09-27、macOS 27.0、利用者の操作で観測）。
+
+**なぜ:** 理由は調べていない（推論もしない）。文書にある仕組みは、テキスト入力の文脈の
+`allowedInputSourceLocales` に `NSAllRomanInputSourcesLocaleIdentifier` を入れると、その文脈が有効な間は入力ソースが
+ローマ字のものに限られる、というもの（NSTextInputContext のリファレンス）。
+
+**適用方法:**
+- パスワード欄は `NSSecureTextField` を `NSViewRepresentable` で包み、`becomeFirstResponder()` の中で
+  `currentEditor()?.inputContext?.allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]` とする
+  （キーを受けるのはフィールドエディタなので、その入力文脈に設定する）。これで欄を選ぶとメニューバーの入力表示が
+  英字に切り替わり、入力できた（実測、1 回）。
+- 受け付ける文字（例: WPA2/WPA3 のパスフレーズは 8〜63 文字の表示可能な ASCII）と、あと何文字要るかを欄の下に出す。
+  ボタンを無効にするだけでは、利用者に理由が伝わらない。
+
+## NWPathMonitor の通知は経路の変化よりずっと多い — 副作用のある処理は、見ている値が変わったときだけ走らせる
+
+**事象:** Wi-Fi の経路が変わったら（`NWPathMonitor(requiredInterfaceType: .wifi)` の通知）、その Wi-Fi のルーターに
+接続を試し、3 回まで再試行する、という処理を書いた。通知のたびに再試行の数を 0 に戻していたので、ルーターが変わって
+いないのに、家のルーターへの接続を約 4 秒ごとに試し続けた（6 分で 90 回。2026-09-27、macOS 27.0、統合ログで実測）。
+
+**なぜ:** 経路の通知は、ルーターのアドレスが変わらなくても届く（どの属性の変化で届いたかは調べていない）。
+「通知が来た」を「経路が変わった」と読んだのが誤り。
+
+**適用方法:**
+- 通知では、関心のある値（ここではインターフェースとルーターのアドレス）を読み、前回と同じなら何もしない。
+  修正後は 2 分で 3 回（最初の試行と再試行）で止まった（実測）。
+- 回数の上限を「通知の頻度」に依存させない。上限を戻す条件は、値の変化にだけ結び付ける。
+- 自分の通信の回数は、統合ログ（`/usr/bin/log show --predicate 'process == "<名前>" AND subsystem ==
+  "com.apple.network" AND category == "connection"'`）で `path:start` を数えれば、行き先の種類ごとに分かる。
+
+## Developer ID のアプリの鍵は、ファイル型のキーチェーンに入り iCloud では同期されない — `…ThisDeviceOnly` は別の実装の属性
+
+**事象:** 「鍵を iCloud で同期させない」ために `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` を付ける設計を書いたが、
+サンドボックスなしの Developer ID のアプリでは、その属性の前提（データ保護キーチェーン）が使えなかった（文書で確認）。
+
+**なぜ:** macOS には、ファイル型のキーチェーンとデータ保護キーチェーンの 2 つの実装がある。iCloud キーチェーンは
+データ保護キーチェーンにしかない。データ保護キーチェーンのアクセスグループは、プロビジョニングプロファイルで認められた
+権限が要る。`kSecUseDataProtectionKeychain` を付けない SecItem は、macOS ではファイル型のキーチェーンを対象にする
+（TN3137 "On Mac keychain APIs and implementations"）。
+
+**適用方法:**
+- プロビジョニングプロファイルを持たないアプリの SecItem の項目は、ファイル型のログインキーチェーンに入り、iCloud では
+  同期されない。「同期させない」はこの仕組みで満たされる。`…ThisDeviceOnly` や `kSecAttrSynchronizable` を書き足さない
+  （データ保護キーチェーンの属性）。
+- 保存先の確認は `security find-generic-password -s <service> -a <account>`（`-g` を付けない＝値を出さない）で、
+  `keychain: ".../login.keychain-db"` を見る。
+- キーチェーンを使うコードの単体テストは、利用者のログインキーチェーンに書かないよう、メモリ上の代役で規則を試す。

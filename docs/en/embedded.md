@@ -110,7 +110,9 @@ arduino-cli 1.5.1).
 - Leave `build.extra_flags` alone — the board definitions use it. Use
   `compiler.cpp.extra_flags`, which `platform.txt` leaves empty for the user.
 - Do not assume it worked: confirm the version is in the binary with
-  `strings <.bin> | grep <version>`.
+  `strings <.bin> | grep -F <version>`. **Not a whole-line match (`grep -x`)**: the linker can merge a literal that
+  is only the version into the tail of a longer string ending with it (e.g. `"<name> <version>"`), and then no line
+  of `strings` output is the version alone (2026-09-26, esp32 core 3.3.8, measured).
 
 ## On macOS, flash and read an M5Stack BASIC v2.7 at 230400 baud
 
@@ -556,3 +558,79 @@ pseudo-random only (read in the documentation; the quality of the output was not
 - Generate keys, passwords and nonce seeds **after** the radio is up (`WiFi.mode(...)` or a scan).
 - A device that never enables the radio follows the documented procedure (`bootloader_random_enable()`, and
   `bootloader_random_disable()` before using ADC, I2S or the radio).
+
+## arduino-esp32 3.3.8's mbedTLS has no ChaCha20-Poly1305 — check sdkconfig and the symbols before choosing primitives
+
+**Symptom:** A design for an ESP32 (M5Stack BASIC) and a Mac companion specified ChaCha20-Poly1305, which the
+arduino-esp32 3.3.8 prebuilt libraries do not provide: `tools/esp32-libs/3.3.8/sdkconfig` has
+`CONFIG_MBEDTLS_CHACHA20_C` and `CONFIG_MBEDTLS_POLY1305_C` off, and `libmbedcrypto.a` defines no
+`mbedtls_chachapoly_encrypt_and_tag`. The header (`chachapoly.h`) is there, so looking at headers does not reveal it
+(2026-09-26, measured).
+
+**Why:** The ESP-IDF libraries for Arduino are built from a fixed sdkconfig; a sketch cannot choose what is compiled in.
+In the same release `CONFIG_MBEDTLS_GCM_C`, `CONFIG_MBEDTLS_HARDWARE_AES` and `CONFIG_MBEDTLS_HKDF_C` are on, and
+`mbedtls_gcm_*` are mapped by `port/include/gcm_alt.h` to the hardware-AES `esp_aes_gcm_*` (measured).
+
+**How to apply:**
+- Before writing a cipher (or any mbedTLS component) into a design, confirm it exists in both `sdkconfig`
+  (`CONFIG_MBEDTLS_*`) and the symbols (`xtensa-esp32-elf-nm -g --defined-only libmbedcrypto.a`).
+- AES-256-GCM is available on both sides from first-party code (CryptoKit `AES.GCM` on the Mac). `mbedtls_hkdf_expand`
+  can be called alone (Expand only is RFC 5869 §3.3 when K is a uniform key).
+- Check the primitives against NIST CAVP and RFC known answers in an on-device test sketch; a matching header name is
+  not evidence that the code is there.
+
+## The ESP32 loop task has 8 KB of stack by default — overflowing it shows as "Double exception"; measure the low-water mark
+
+**Symptom:** A library that decrypts and parses each line with a few KB of stack buffers crash-looped in an on-device
+test sketch with `Guru Meditation Error: Core 1 panic'ed (Double exception)`; the backtrace pointed at an mbedTLS
+allocation and `_xt_alloca_exc`. Printing `uxTaskGetStackHighWaterMark(nullptr)` before each test showed 2,028 B left
+before the one that crashed (2026-09-26, esp32 core 3.3.8, measured).
+
+**Why:** Arduino-ESP32 runs `setup()`/`loop()` in one task whose stack is 8 KB by default
+(`CONFIG_ARDUINO_LOOP_STACK_SIZE=8192`). When it runs out, the crash happens while handling the next exception, not
+where the stack was used up, so it only reads as "Double exception".
+
+**How to apply:**
+- `SET_LOOP_TASK_STACK_SIZE(16 * 1024);` at the top of the sketch enlarges the loop task's stack (a macro in the core's
+  `Arduino.h` overriding the weak `getArduinoLoopTaskStackSize`). At 16 KB the minimum left was about 5 KB (measured).
+- Do not enlarge by guesswork: print `uxTaskGetStackHighWaterMark` at each stage of a test and measure.
+- Keep large structures (a recorder of a few KB, say) `static` or global, not local.
+
+## Templates in an `.ino` file are broken by the Arduino preprocessor
+
+**Symptom:** A template function returning an array's length, written in a test sketch's `.ino`, failed to compile
+with `'N' was not declared in this scope` (2026-09-26, arduino-cli 1.5.1, esp32 core 3.3.8, measured).
+
+**Why:** The Arduino build generates forward declarations for the functions in `.ino` files; templates are not handled
+correctly by it (inferred from the error and from a macro compiling where the template did not).
+
+**How to apply:** No templates in `.ino` files. Use a macro such as
+`#define COUNT(a) (sizeof(a) / sizeof((a)[0]))`, or put templates in `.cpp`/`.h` files.
+
+## With M5Unified's defaults the BASIC's speaker pops at boot — set `internal_spk = false` when no sound is used
+
+**Symptom:** Firmware that never plays sound sometimes made the M5Stack BASIC's speaker pop at boot (power-on, and the
+restart after flashing). With `internal_spk = false` in `M5.config()` passed to `M5.begin(config)`, five power cycles
+made no pop (2026-09-27, M5Unified 0.2.14, one unit, judged by ear by the maintainer).
+
+**Why:** With the speaker enabled (the default) on the BASIC, M5Unified drives the speaker pin (GPIO25) low in
+`begin()` (the `board_M5Stack` speaker set-up in M5Unified.cpp; read in the source). A step on a pin that was floating
+reaching the amplifier input is the likely mechanism (inferred).
+
+**How to apply:**
+- Firmware without sound: `auto c = M5.config(); c.internal_spk = false; M5.begin(c);`.
+- For something that happens "sometimes", count after the fix (e.g. five power cycles).
+
+## `arduino-cli monitor` exits as soon as its stdin closes — a capture tool keeps stdin open
+
+**Symptom:** Started from a script to read on-device test results, `arduino-cli monitor -p <port> --config
+baudrate=115200 --quiet` exited at once with no output (also with `< /dev/null`). The first attempt had worked, so it
+looked like timing (2026-09-26, arduino-cli 1.5.1, measured).
+
+**Why:** The monitor exits when its input reaches EOF (as observed; the source was not read). A closed parent stdin or
+`/dev/null` is EOF immediately.
+
+**How to apply:**
+- Start it with stdin as an open pipe (in Python, `stdin=subprocess.PIPE`), read for a fixed time, then terminate it.
+- Opening the port reboots the ESP32 (the ROM's boot messages come first, garbled at another baud rate). A test that
+  repeats its result at an interval can be read whenever the port is opened.

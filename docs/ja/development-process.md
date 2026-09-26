@@ -1258,11 +1258,14 @@ pull request はすべて本人がエージェント生成のブランチから�
 - 非特権のプロセスからは、いまつながっている Wi-Fi の名前を読めなかった（`ipconfig getsummary` は伏せ字、
   `networksetup -getairportnetwork` は「未接続」と答えた）。
 
-**なぜ:** 「記憶したネットワーク」とパスワードは別々に保存されている（観測から）。システム設定の
-「リストから削除」が両方を消すかは測っていない。ビルド成果物が登録された経緯は分からない（macos-gui の
+**なぜ:** 「記憶したネットワーク」とパスワードは別々に保存されている（観測から）。システム設定 › Wi-Fi ›
+既知のネットワークの「リストから削除」は、**両方を消した**（2026-09-27、macOS 27.0、1 回実測。`networksetup` の一覧にも
+システムのキーチェーンにも残らなかった）。ビルド成果物が登録された経緯は分からない（macos-gui の
 「通知クリックは Bundle ID で解決される — 常駐アプリは単一インスタンスを強制する」の項にある、ビルドのたびの登録と同じものかもしれない）。
 
 **適用方法:**
+- 利用者に消し方を案内するなら、システム設定の「リストから削除」を案内する（パスワードまで消える）。
+  `networksetup -removepreferredwirelessnetwork` はパスワードを残すので、使ったら続けて管理者権限でパスワードも消す。
 - 後片づけの一覧に「記憶したネットワーク」とシステムのキーチェーンの両方を載せ、消えたことを
   `networksetup -listpreferredwirelessnetworks` と `security find-generic-password -a <SSID> <keychain>` で確かめる。
 - Launch Services の後片づけは、起動したパスではなく bundle id で `lsregister -dump` を検索し、出てきたものを

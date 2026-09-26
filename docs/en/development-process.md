@@ -1474,12 +1474,15 @@ one-off script (see *A lesson nobody is held to is a note*).
 - An unprivileged process could not read the current Wi-Fi name (`ipconfig getsummary` shows it redacted,
   `networksetup -getairportnetwork` reports "not associated").
 
-**Why:** The Known Networks entry and the password are stored separately (as observed). Whether System Settings'
-"Remove From List" removes both was not measured. How the build output came to be registered is unknown (it may be
+**Why:** The Known Networks entry and the password are stored separately (as observed). System Settings › Wi-Fi ›
+Known Networks › "Remove From List" **removed both** (2026-09-27, macOS 27.0, measured once: neither the `networksetup`
+list nor the System keychain had it afterwards). How the build output came to be registered is unknown (it may be
 the per-build registration described in macos-gui, "Notification clicks resolve by bundle ID — resident apps must
 enforce a single instance").
 
 **How to apply:**
+- When telling users how to remove such a network, name System Settings' "Remove From List" (it takes the password
+  too). `networksetup -removepreferredwirelessnetwork` leaves the password; follow it with the admin-rights delete.
 - List both Known Networks and the System keychain in the clean-up, and confirm with
   `networksetup -listpreferredwirelessnetworks` and `security find-generic-password -a <SSID> <keychain>`.
 - For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`

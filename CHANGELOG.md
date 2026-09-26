@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-27
+
+- **embedded** (ja + en): arduino-esp32 3.3.8's mbedTLS has no ChaCha20-Poly1305
+  (check sdkconfig and symbols); the loop task's 8 KB stack and "Double
+  exception" (SET_LOOP_TASK_STACK_SIZE, measure the low-water mark); templates in
+  `.ino` files; M5Unified's boot pop on the BASIC (`internal_spk = false`);
+  `arduino-cli monitor` exits at stdin EOF; the version check must not be a
+  whole-line match (the linker merges string suffixes).
+- **macos-gui** (ja + en): SwiftUI SecureField with a Japanese input source
+  (restrict the field editor to Roman sources); NWPathMonitor updates are far more
+  frequent than path changes (gate side effects on the watched value); a
+  Developer ID app's keys live in the file-based keychain and never sync (TN3137).
+- **development-process** (ja + en): System Settings' "Remove From List" removes
+  both the Known Networks entry and the System keychain password (now measured).
+  (All from the m5-system-panel end-to-end test.)
+
 ## 2026-09-26 (evening)
 
 - **embedded** (ja + en): Wi-Fi + mDNS + TCP alone fill 88 % of the ESP32's default
