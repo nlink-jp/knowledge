@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-27 (sweep follow-ups)
+
+- **shell-scripting** (ja + en): `ls <glob> | tail -1` picks the wrong artifact
+  because `git describe` versions do not sort by age; `git add` given a path
+  already removed with `git rm` stages nothing at all (measured).
+- **development-process** (ja + en): Launch Services registrations from
+  temporary-directory verification pile up across sessions — search by the
+  temp prefix too, and remove them at the end of each verification.
+
 ## 2026-09-27 (AppleDouble in GUI zips)
 
 - **release-engineering** (ja + en): `ditto -c -k` stores extended attributes

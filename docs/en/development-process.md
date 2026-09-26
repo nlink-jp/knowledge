@@ -1494,6 +1494,10 @@ them was not isolated.
   Verifying `.app` copies unpacked in temporary directories (`codesign`, `stapler`, `spctl`) also left registrations
   (2026-09-27, 19 of them). `lsregister -u` removes a path even after it is deleted; an `.app` whose directory had
   been deleted was later found registered again.
+- Registrations from verification in temporary directories **pile up across sessions**. Search `lsregister -dump`
+  by temporary-directory prefix too, not only by bundle id: on 2026-09-27 that found 19 left by six earlier sessions
+  and Python temporary directories (every directory already gone). End each verification procedure with a step that
+  removes the registrations it made.
 - To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
   `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
 - With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.

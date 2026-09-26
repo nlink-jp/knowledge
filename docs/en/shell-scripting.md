@@ -218,6 +218,36 @@ a gate reports a failure that the same evidence, printed a line earlier, contrad
 the plumbing before the asset — then fix the check and re-run it for a machine verdict instead
 of reasoning the FAIL away.
 
+## Do not pick "the artifact just built" with `ls <glob> | tail -1` — version strings do not sort by age
+
+**Symptom:** To check a rebuilt zip, a script used `Z=$(ls dist/<name>-v*-darwin-arm64.zip | tail -1)`. `dist/` held
+the previous `<name>-v0.1.1-darwin-arm64.zip` and the new `<name>-v0.1.1-2-gbcb4938-darwin-arm64.zip`, and `-2-g…`
+sorts before `-darwin…` (`2` < `d`). `tail -1` picked the old zip, and the check reported the fix as not working. The
+script printed the path, which is how it was caught (2026-09-27, measured).
+
+**Why:** `git describe` versions (`v0.1.1`, `v0.1.1-2-g<hash>`, `v0.1.1-dirty`) do not sort lexically in build order.
+`ls -t` (by mtime) is not reliable either once files are copied or unpacked.
+
+**How to apply:**
+- Name the artifact from the same version the build used (have the Makefile print `$(VERSION)`, or take the path the
+  build printed).
+- Always print the path of the file a check examined. When a result is unexpected, first suspect the wrong file.
+
+## `git add` given a path already removed with `git rm` stages nothing at all
+
+**Symptom:** A bulk-commit script staged a deletion with `git rm`, then ran `git add Makefile <new file> <removed file>`.
+It exited with `fatal: pathspec '<removed file>' did not match any files` (exit 128) and **staged none of the other
+paths either**; `git add -A -- …` behaved the same (git 2.54.0, 2026-09-27, measured). A guard that checked for
+unstaged changes before committing stopped all 19 repositories, so no partial commit was made.
+
+**Why:** `git add` fails as a whole when any pathspec matches nothing (a path absent from both the work tree and the
+index's remaining entries matches nothing).
+
+**How to apply:**
+- Stage deletions with `git rm`, and pass `git add` only paths that exist (a directory also works).
+- In a bulk-commit script, check right before committing that no unstaged or untracked change is left, and skip and
+  report the repository if one is. That catches a failed `git add` even when its error is missed.
+
 ## On macOS's bash 3.2, an empty array under `set -u` is an unbound variable
 
 **Symptom:** A fixture script built its optional arguments as an array and
