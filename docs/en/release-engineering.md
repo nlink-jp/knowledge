@@ -373,6 +373,43 @@ installs signed+notarized release zips as-is (prebuilt).
 - Cleanup order: uninstall → untap (untap refuses while artifacts remain
   installed).
 
+## After a push to the tap, a user's `brew upgrade` can still see the old version — tell them `brew update` first
+
+**Symptom:** Right after a new cask version (0.1.0 → 0.1.1) was pushed to our own tap, a user's
+`brew upgrade --cask <name>` said "Not upgrading <name>, the latest version is already installed". Homebrew's copy of
+the tap on that Mac (`brew --repository <org>/tap`) was still at the previous commit (the 0.1.0 cask). After
+`brew update`, the same `brew upgrade` moved to 0.1.1 (2026-09-27, macOS 27.0, once). 0.1.0 had been installed on the
+same Mac a few tens of minutes earlier.
+
+**Why:** The auto-update that `brew upgrade` runs first fetched the official API data but did not advance the
+third-party tap's copy (observed). It may skip re-fetching taps based on the time since the last update; this was not
+checked.
+
+**How to apply:**
+- When announcing a new version, give two steps: `brew update`, then `brew upgrade --cask <name>` (no `--cask` for a
+  formula).
+- When it says the latest is installed, look at the tap's copy first:
+  `git -C "$(brew --repository <org>/tap)" log --oneline -1` and the file's `version`.
+- Check the published side with the tap repository's content and the sha256 of the published zip (downloaded and
+  hashed). A stale copy on a user's Mac is not a publishing defect.
+
+## A GUI's first release shipped without an app icon — the release gate checks the icon inside the published zip
+
+**Symptom:** A new menu-bar app (Swift, `.app` assembled by the Makefile) was published without an app icon.
+`make verify-release` checked the notarization marker, the staple, Gatekeeper, the linked SDK and the version, and
+passed; an independent review did not flag it either. The user noticed after installing it (2026-09-27).
+
+**Why:** The scaffold never added the icon generation or `CFBundleIconFile`. The organization's GUI example copies an
+icon, but nothing checks for one. Signing and notarization pass without an icon. A menu-bar app never shows in the
+Dock, so there is hardly a moment during development when the icon is seen.
+
+**How to apply:**
+- Add the icon at scaffold time. Draw the source with a script (as net-meter does: `scripts/gen-icon.swift` →
+  `assets/AppIcon-1024.png` → `make-icns.sh`), and make the build fail when the source is missing (not a warning).
+- In `verify-release`, check that **the zip users download** contains `<App>.app/Contents/Resources/AppIcon.icns`
+  and that its `Info.plist` has `CFBundleIconFile` (`unzip -l` and `unzip -p`). Confirm once that a zip without the
+  icon fails the check.
+
 ## Re-signing a dist/ binary kills daemons running from it
 
 **Symptom:** `make build` overwrote and re-signed `dist/<binary>`, and the

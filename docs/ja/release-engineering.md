@@ -315,6 +315,42 @@ rm -rf $(STAGE) ; \
   **`--appdir` は uninstall には渡せない**（receipt から解決される）。
 - 後片付けは uninstall → untap の順（installed 成果物が残っていると untap が拒否される）。
 
+## tap に push しても、利用者の `brew upgrade` は古い版のままのことがある — 案内は `brew update` から
+
+**事象:** 自前の tap に cask の新しい版（0.1.0 → 0.1.1）を push した直後、利用者が `brew upgrade --cask <name>` を
+実行すると「Not upgrading <name>, the latest version is already installed」と出た。Homebrew がこの Mac に持つ tap の
+写し（`brew --repository <org>/tap`）は、ひとつ前のコミット（0.1.0 の cask）のままだった。`brew update` の後に同じ
+`brew upgrade` を実行すると 0.1.1 に上がった（2026-09-27、macOS 27.0、1 回）。0.1.0 はその数十分前に同じ Mac で
+入れていた。
+
+**なぜ:** `brew upgrade` が最初に行う自動更新は、公式の API データは取り直したが、第三者 tap の写しは進めなかった
+（観測）。直前の更新からの経過時間で tap の取り直しを省いたのかもしれないが、確かめていない。
+
+**適用方法:**
+- 新しい版を出したら、利用者への案内は `brew update` → `brew upgrade --cask <name>`（formula なら `--cask` なし）の
+  2 段にする。
+- 「最新が入っている」と出たら、まず tap の写しを見る:
+  `git -C "$(brew --repository <org>/tap)" log --oneline -1` と、そのファイルの `version`。
+- 公開側が正しいかは、tap のリポジトリの内容と、公開した zip の sha256（ダウンロードして計算）で確かめる。
+  利用者の Mac の写しが古いことは公開の欠陥ではない。
+
+## GUI の初版がアプリアイコン無しで出た — リリース検査は、公開する zip の中のアイコンを見る
+
+**事象:** 新しいメニューバーアプリ（Swift、`.app` を Makefile で組み立てる）の初版を、アプリアイコン無しで公開した。
+`make verify-release` は公証の印・staple・Gatekeeper・リンクした SDK・版数をすべて確かめて合格し、独立検証も
+指摘しなかった。利用者がインストールした後に気付いた（2026-09-27）。
+
+**なぜ:** 足場を作ったとき、アイコンの生成と `CFBundleIconFile` を入れていなかった。組織の文書の GUI の例には
+アイコンのコピーがあるが、それを確かめる検査がどこにも無い。署名と公証はアイコンが無くても通る。
+メニューバー常駐アプリは Dock に出ないので、開発中にアイコンを見る場面がほとんど無い。
+
+**適用方法:**
+- 足場の段階でアイコンを入れる。元画像は描画スクリプトで作り（net-meter と同じ `scripts/gen-icon.swift` →
+  `assets/AppIcon-1024.png` → `make-icns.sh`）、組み立ては元画像が無ければ失敗させる（警告で続けない）。
+- `verify-release` で、**利用者がダウンロードする zip の中**に `<App>.app/Contents/Resources/AppIcon.icns` があり、
+  `Info.plist` に `CFBundleIconFile` があることを確かめる（`unzip -l` と `unzip -p`）。アイコンを抜いた zip で検査が
+  落ちることも一度確かめる。
+
 ## dist/ のバイナリ再署名は、そこから起動中の常駐プロセスを殺す
 
 **事象:** `make build` が `dist/<binary>` を上書き + `codesign --force` で再署名した結果、

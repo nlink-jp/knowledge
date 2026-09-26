@@ -1478,7 +1478,10 @@ one-off script (see *A lesson nobody is held to is a note*).
 Known Networks › "Remove From List" **removed both** (2026-09-27, macOS 27.0, measured once: neither the `networksetup`
 list nor the System keychain had it afterwards). How the build output came to be registered is unknown (it may be
 the per-build registration described in macos-gui, "Notification clicks resolve by bundle ID — resident apps must
-enforce a single instance").
+enforce a single instance"). Later observations (2026-09-27, macOS 27.0): an `.app` that was only assembled, signed
+and notarized — **never launched** — was registered; and an `.app` removed with `lsregister -u` was registered again
+later without being rebuilt (it was running when removed, and the user quit it afterwards). Which action registers
+them was not isolated.
 
 **How to apply:**
 - When telling users how to remove such a network, name System Settings' "Remove From List" (it takes the password
@@ -1486,7 +1489,8 @@ enforce a single instance").
 - List both Known Networks and the System keychain in the clean-up, and confirm with
   `networksetup -listpreferredwirelessnetworks` and `security find-generic-password -a <SSID> <keychain>`.
 - For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`
-  everything it finds.
+  everything it finds. **Count again after every build or release** (assembling alone registers, and removed entries
+  can come back). Leave the copy the user installed (`/Applications` and the like).
 - To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
   `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
 - With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.

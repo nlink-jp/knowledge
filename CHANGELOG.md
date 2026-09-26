@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-27 (m5-system-panel v0.1.1)
+
+- **release-engineering** (ja + en): after a push to the tap a user's
+  `brew upgrade` can still see the old version (the local tap copy was stale;
+  tell users `brew update` first); a GUI's first release shipped without an app
+  icon — gate on `AppIcon.icns` and `CFBundleIconFile` inside the published zip.
+- **development-process** (ja + en): Launch Services registered an `.app` that
+  was only assembled, signed and notarized, and a removed entry came back —
+  count registrations again after every build or release.
+
 ## 2026-09-27 (m5-system-panel release)
 
 - **embedded** (ja + en): corrected the firmware version check — match the whole
