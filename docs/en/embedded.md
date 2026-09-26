@@ -109,10 +109,17 @@ arduino-cli 1.5.1).
   in a Makefile, `$(foreach d,$(DEFINES),'$(d)')`.
 - Leave `build.extra_flags` alone — the board definitions use it. Use
   `compiler.cpp.extra_flags`, which `platform.txt` leaves empty for the user.
-- Do not assume it worked: confirm the version is in the binary with
-  `strings <.bin> | grep -F <version>`. **Not a whole-line match (`grep -x`)**: the linker can merge a literal that
-  is only the version into the tail of a longer string ending with it (e.g. `"<name> <version>"`), and then no line
-  of `strings` output is the version alone (2026-09-26, esp32 core 3.3.8, measured).
+- Do not assume it worked: confirm the version is in the binary with `strings <.bin>`. **Match the whole line of
+  the longer string that ends with the version** (e.g. `strings <.bin> | grep -qxF "<name> <version>"`).
+  - **A whole-line match on the version alone (`grep -x <version>`) finds nothing**: the linker can merge a literal
+    that is only the version into the tail of a longer string ending with it (e.g. `"<name> <version>"`), and then
+    no line of `strings` output is the version alone (2026-09-26, esp32 core 3.3.8, measured).
+  - **A substring match (`grep -F <version>`) checks nothing**: `v0.1.0` is a substring of `v0.1.0-dirty`, so a
+    build with uncommitted changes passes as the clean version (inferred from grep's semantics; raised by an
+    independent pre-release review).
+  - The whole line of the longer string does both: it matched on a clean build, and the same version with `-dirty`
+    matched zero lines (2026-09-27, esp32 core 3.3.8, measured). Keep one longer string that contains the version
+    (a boot banner, say) for this.
 
 ## On macOS, flash and read an M5Stack BASIC v2.7 at 230400 baud
 
@@ -133,6 +140,21 @@ esptool 5.2.0, on this one setup).
   `gen_esp32part.py`) and copy only the range in use — the first 4 MB for the
   standard 4 MB layout — which is much faster. The copy includes NVS, which can
   hold Wi-Fi settings; handle it accordingly.
+
+## esptool 5 needs Python 3.10 or later — pip with macOS's bundled Python installs 4.x
+
+**Symptom:** A user-facing flashing guide nearly said `python3 -m pip install esptool`. On macOS 27.0,
+`/usr/bin/python3` is 3.9.6 (measured). PyPI's metadata gives `requires_python` `>=3.10` for esptool 5.0.0 onwards
+(through 5.4.0) and `>=3.7` up to 4.12.0 (read from PyPI's JSON API, 2026-09-27).
+
+**Why:** pip drops versions whose `requires_python` the interpreter does not satisfy. On 3.9 every 5.x is dropped, so
+the newest 4.x (4.12.0) should be installed (inferred from pip's rules; installing on 3.9 was not tried). A guide
+written with 5.x commands (hyphenated names such as `write-flash`) then does not match the installed version.
+
+**How to apply:**
+- Point users at Homebrew: `brew install esptool` (homebrew/core had esptool 5.4.0, read with `brew info` on
+  2026-09-27). With pip, use a virtual environment on Python 3.10 or later.
+- Add a step that checks `esptool version` reports 5.x, and state the major version the guide assumes.
 
 ## To be a BLE keyboard (HID over GATT) on macOS, make the HID reads require encryption
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-27 (m5-system-panel release)
+
+- **embedded** (ja + en): corrected the firmware version check — match the whole
+  line of the longer string ending with the version (`"<name> <version>"`); a
+  substring match lets `-dirty` builds pass, and a whole line of the version
+  alone finds nothing. New: esptool 5 needs Python 3.10+, so pip with macOS's
+  bundled Python 3.9 installs 4.x (install with Homebrew, check `esptool version`).
+
 ## 2026-09-27
 
 - **embedded** (ja + en): arduino-esp32 3.3.8's mbedTLS has no ChaCha20-Poly1305
