@@ -1243,3 +1243,30 @@ pull request はすべて本人がエージェント生成のブランチから�
 さもないと除外は静かに「何も検査していない」へ育つ。パスを書いているラベルは、リンク先と一緒に直す。
 嘘をつくラベルは次に壊れるリンクである。そして**同じ日**に組織のゲートへ組み込む。この種類は移動の
 たびに再発し、一度だけ走らせたスクリプトは誰も再実行しない（→ *誰も守らされていない教訓はメモである*）。
+
+## 試験で Wi-Fi に参加したら、後片づけは「記憶したネットワーク」とシステムのキーチェーンの 2 か所 — Launch Services は bundle id で探す
+
+**事象:** 機器の設定用 Wi-Fi（使い捨てのパスワード）に Mac から参加する試験の後片づけで、次のことが起きた
+（macOS 27.0、2026-09-26、1 回）。
+- 参加した瞬間に「記憶したネットワーク」に登録され、機器が Wi-Fi を止めると約 11 秒で元の Wi-Fi に自動で戻った。
+- `networksetup -removepreferredwirelessnetwork <IF> <SSID>` は管理者権限なしで登録を消したが、システムの
+  キーチェーン（`/Library/Keychains/System.keychain`）の「AirPort network password」は残った。消すには
+  `sudo security delete-generic-password -a <SSID> -D "AirPort network password" /Library/Keychains/System.keychain`
+  が要った（利用者が実行）。
+- 試験用のアプリを外すとき、`lsregister -dump` には、試験用アプリのほかに**一度も起動していない**同じ bundle id の
+  ビルド成果物（`dist/` の .app）も登録されていた。
+- 非特権のプロセスからは、いまつながっている Wi-Fi の名前を読めなかった（`ipconfig getsummary` は伏せ字、
+  `networksetup -getairportnetwork` は「未接続」と答えた）。
+
+**なぜ:** 「記憶したネットワーク」とパスワードは別々に保存されている（観測から）。システム設定の
+「リストから削除」が両方を消すかは測っていない。ビルド成果物が登録された経緯は分からない（macos-gui の
+「通知クリックは Bundle ID で解決される — 常駐アプリは単一インスタンスを強制する」の項にある、ビルドのたびの登録と同じものかもしれない）。
+
+**適用方法:**
+- 後片づけの一覧に「記憶したネットワーク」とシステムのキーチェーンの両方を載せ、消えたことを
+  `networksetup -listpreferredwirelessnetworks` と `security find-generic-password -a <SSID> <keychain>` で確かめる。
+- Launch Services の後片づけは、起動したパスではなく bundle id で `lsregister -dump` を検索し、出てきたものを
+  すべて `lsregister -u` する。
+- どのネットワークにいるかを記録したいときは、SSID ではなく IP アドレスとルーター（`ipconfig getifaddr` /
+  `ipconfig getoption <IF> router`）で判定する。記録にはほかのネットワークの名前を書かない。
+- 有線 LAN を主経路にしておけば、Wi-Fi を試験用のネットワークに切り替えても作業中のセッションは切れない。

@@ -1458,3 +1458,32 @@ test, so the exemptions cannot quietly become "nothing is checked". Repair a lab
 path along with the target it points at: a label that lies is the next broken link. Then wire it
 into the organization gate the same day — the class recurs on every move, and nobody re-runs a
 one-off script (see *A lesson nobody is held to is a note*).
+
+## After a test joins a Wi-Fi network, clean up two places — Known Networks and the System keychain — and find Launch Services entries by bundle id
+
+**Symptom:** Cleaning up after a test in which a Mac joined a device's setup Wi-Fi (one-time password)
+(macOS 27.0, 2026-09-26, once):
+- Joining added the network to Known Networks at once; when the device stopped its Wi-Fi the Mac rejoined its
+  previous network by itself after ~11 s.
+- `networksetup -removepreferredwirelessnetwork <IF> <SSID>` removed the entry without admin rights, but the
+  "AirPort network password" in the System keychain (`/Library/Keychains/System.keychain`) remained. Deleting it
+  took `sudo security delete-generic-password -a <SSID> -D "AirPort network password" /Library/Keychains/System.keychain`
+  (run by the maintainer).
+- When unregistering the test app, `lsregister -dump` also listed a **never-launched** build output with the same
+  bundle id (the `.app` in `dist/`).
+- An unprivileged process could not read the current Wi-Fi name (`ipconfig getsummary` shows it redacted,
+  `networksetup -getairportnetwork` reports "not associated").
+
+**Why:** The Known Networks entry and the password are stored separately (as observed). Whether System Settings'
+"Remove From List" removes both was not measured. How the build output came to be registered is unknown (it may be
+the per-build registration described in macos-gui, "Notification clicks resolve by bundle ID — resident apps must
+enforce a single instance").
+
+**How to apply:**
+- List both Known Networks and the System keychain in the clean-up, and confirm with
+  `networksetup -listpreferredwirelessnetworks` and `security find-generic-password -a <SSID> <keychain>`.
+- For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`
+  everything it finds.
+- To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
+  `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
+- With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-26 (evening)
+
+- **embedded** (ja + en): Wi-Fi + mDNS + TCP alone fill 88 % of the ESP32's default
+  app partition while BASIC v2.7 has 16 MB flash (set `FlashSize`/`PartitionScheme`);
+  the ESP32 RNG is true only while the radio is on (documented); measured free-heap
+  figures added to the PSRAM caveat (from m5-system-panel Phase 0).
+- **macos-gui** (ja + en): a connection created during the local network prompt can
+  stay in `.preparing` after Allow; denial shows as `.waiting(-65570)` with reason
+  `notAvailable` on macOS 27.0, and System Settings lists the executable name;
+  Bonjour browse results do not report a powered-off device.
+- **development-process** (ja + en): cleaning up after a test that joins Wi-Fi —
+  Known Networks and the System keychain are separate, and Launch Services entries
+  are found by bundle id.
+
 ## 2026-09-26
 
 - **development-process** (ja + en): moving a tool between umbrellas — a

@@ -25,6 +25,9 @@ ESP32 board package v3.x (missing `rom/miniz.h`). M5Unified is the successor.
 - M5Stack Basic v2.7 has **no PSRAM** — a full-screen `createSprite(320,240)`
   (150 KB) fails allocation and the screen goes black. Draw directly with
   background-color overwrites. Core2 has PSRAM and can double-buffer sprites.
+  Measured with Wi-Fi, mDNS and a TCP listener running (arduino-esp32 3.3.8,
+  M5Unified 0.2.14, 2026-09-26, one unit): ~155 KB free, largest allocatable
+  block 59,380 B; a 320×80 16-bit band (51,200 B) could be allocated.
 - SD init is sometimes automatic, sometimes not (Core2 needs `SD.begin(4)`).
 - `M5.begin()` may initialize Serial2 — for GPS etc., `end()` then re-`begin()`.
 - **RTC double-offset problem**: `configTime(offset,...)` + `getLocalTime()` +
@@ -519,3 +522,37 @@ these requirements (confirmed in the documents themselves):
 - Measured on macOS 27.0: a connectable advertiser carrying a name is listed in
   Bluetooth settings even without a discoverable flag; a bonded BLE HID device
   that is advertising is reconnected at once after Disconnect.
+
+## On an ESP32, Wi-Fi, mDNS and TCP alone fill 90 % of the default app partition — BASIC v2.7 carries 16 MB
+
+**Symptom:** A probe sketch for M5Stack BASIC v2.7 with only a Wi-Fi join, an mDNS service and a TCP listener
+(no cryptography, no screen pages) used 88 % (1,156,815 bytes) of the default 1,310,720-byte app partition
+(`esp32:esp32` 3.3.8, default options of `esp32:esp32:m5stack_core`; measured 2026-09-26).
+
+**Why:** The board definition defaults to a 4 MB flash layout with a 1.25 MB app (two slots for OTA), regardless
+of the real flash. The BASIC v2.7 had 16 MB (`esptool flash-id` reported `Detected flash size: 16MB`; measured on
+the same unit).
+
+**How to apply:**
+- For any sketch that uses Wi-Fi, set flash size and layout from the start, e.g.
+  `--board-options FlashSize=16M,PartitionScheme=huge_app` (3 MB app, no OTA), passed to both compile and upload.
+  With it the same scaffold sketch used 15 % of 3,145,728 bytes (measured).
+- If OTA is needed, pick a layout with OTA slots such as `default_8MB` (two 3 MB apps).
+- Changing the layout moves regions relative to earlier firmware; flash from an erase.
+- Read the size from the unit with `esptool flash-id`, not from the model's spec sheet (read-only, but opening the
+  port resets the ESP32).
+
+## The ESP32 RNG is a true RNG only while the radio is on — generate keys after Wi-Fi starts
+
+**Symptom:** A design that generates a key and a one-time password on an M5 (ESP32) at setup needed to know when
+`esp_random()` may be called.
+
+**Why:** ESP-IDF v5.5 (API Reference › System › Random Number Generation) states the hardware RNG produces true
+random numbers only while Wi-Fi or Bluetooth is enabled, or while the internal entropy source is enabled with
+`bootloader_random_enable()`; after the application starts and before the radio is initialised it is
+pseudo-random only (read in the documentation; the quality of the output was not measured).
+
+**How to apply:**
+- Generate keys, passwords and nonce seeds **after** the radio is up (`WiFi.mode(...)` or a scan).
+- A device that never enables the radio follows the documented procedure (`bootloader_random_enable()`, and
+  `bootloader_random_disable()` before using ADC, I2S or the radio).

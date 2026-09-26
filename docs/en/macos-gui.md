@@ -1647,3 +1647,59 @@ showed it.
 - Read the bitmap's memory without reversing rows: the first row is the top.
 - Pin the orientation in a test, e.g. "T" has its widest inked row first and "L"
   its widest last.
+
+## An NWConnection created while the local network prompt is up can stay in `.preparing` after the user allows it
+
+**Symptom:** A menu bar app (Developer ID signed, not sandboxed) started a Bonjour browse on its first launch and
+the local network prompt appeared. The browser found the device the moment the user clicked Allow, and the app
+created an `NWConnection` 1 ms later. The unified log shows the connection's lower path (the resolved IPv4 child)
+failing 60 ms later with `unsatisfied (Local network prohibited)`; the connection then stayed in `.preparing` for
+over 2 minutes and never retried by itself — it entered neither `.waiting` nor `.failed` (macOS 27.0, 2026-09-26,
+one occurrence). Relaunched with the permission granted, the same connection was `.ready` in 0.16 s.
+
+**Why:** The path evaluation appears to have run before the grant reached the lower layer (inferred). TN3179 says
+connections waiting for permission are retried once it is granted, but this one never entered `.waiting`.
+
+**How to apply:**
+- Time out `.preparing` (e.g. 10 s) and recreate the connection. Leave `.waiting` to the OS.
+- With the remote device powered off, new connections also stayed in `.preparing` (same day, once). The same
+  timeout recovers both.
+- The prompt appears only once (TN3179: it cannot be reset on macOS). To observe the first-run behaviour, have
+  logging in place before the first launch.
+
+## Local network denial showed up as `.waiting(-65570)` with reason `notAvailable`
+
+**Symptom:** Toggling a running app off and on in System Settings › Privacy & Security › Local Network (macOS 27.0,
+2026-09-26, twice):
+- Switching it off failed the established `NWConnection` at once with POSIX 53 (Software caused connection abort).
+- Connections created afterwards entered `.waiting(-65570: PolicyDenied)` with `currentPath?.unsatisfiedReason`
+  `.notAvailable` — not TN3179's `.localNetworkDenied`.
+- `NWBrowser` stayed `.ready` and reported nothing.
+- Switching it back on, the OS moved the `.waiting` connection to `.preparing` by itself (as TN3179 says).
+- The list shows the app's **executable name**, not `CFBundleName` (seen with an app whose two differ).
+
+**Why:** Why the value differs from the documentation is unknown (not investigated).
+
+**How to apply:**
+- Decide "permission required" from a `.waiting` error of `.dns(-65570)` (`kDNSServiceErr_PolicyDenied`), and treat
+  `unsatisfiedReason == .localNetworkDenied` the same — check both.
+- Revocation at run time drops established connections at once; give the state table a "connected → no permission" row.
+- Choose the executable name as a user-facing name: System Settings shows it.
+
+## Bonjour browse results do not tell you a device has gone
+
+**Symptom:** A device found with `NWBrowser` (`.bonjourWithTXTRecord`) was powered off for over 2 minutes; no
+`removed` was reported. When it came back under the same name, neither `added` nor `changed` arrived (macOS 27.0,
+mDNS on an ESP32, 2026-09-26, once). When the Mac's own interfaces changed (wired Ethernet going down at sleep),
+`removed` and `added` were reported.
+
+**Why:** mDNS records carry a TTL, and a device that loses power sends no goodbye, so the record likely lives until
+it expires (inferred; the TTL was not measured).
+
+**How to apply:**
+- Use browsing only to learn the endpoint (the service name); decide whether the device is there from the
+  connection and its replies (e.g. an acknowledgement every second and a 5 s cutoff).
+- A connection to the service endpoint resolves the address on every attempt, so reconnect without waiting for the
+  browser to update.
+- In the same observation, after wake the watchdog and re-browsing reconnected 1.6 s before
+  `NSWorkspace.didWakeNotification` arrived (once). Do not design around waiting for the wake notification.
