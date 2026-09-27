@@ -1286,6 +1286,44 @@ the language".
   detection always works" and "an unknown identifier leaves only that language undetected" in tests.
 - Decide what "limit enabled, nothing picked" means (all languages, or the setting off), and show it.
 
+### `NLLanguageRecognizer.languageHints` becomes a prior only when it lists every language — the weight's ceiling is set by languages that share a script
+
+**Symptom:** For an English + Korean user, short English ("under", "begin", "im a cat") was detected as
+Swedish, Dutch, Catalan. The recognizer is confidently wrong on short Latin-script input ("im so small":
+German 0.98, English 0.01), so a tie-break that favours a preferred language within half the winner's
+probability never reaches it (instant-translate issue #2, 2026-09, macOS 27.0).
+
+**Why (measured — the documentation only calls it "a dictionary that maps languages to their
+probabilities in the language identification process"):**
+- **Hints for only the preferred languages act like `languageConstraints`.** With just English and Korean
+  hinted, every Latin-script sentence came out English at any weight from 0.02 to 0.8. Languages left out
+  behave as if their prior were zero.
+- **Every language (the 57 `NLLanguage` constants) at 1 and the preferred ones at *k* acts as a prior.**
+  All at 1 gives the same result as no hints.
+- **The weight's ceiling is set by languages that share a script or vocabulary with a preferred one.**
+  Raising *k* fixes more short English, but Japanese and Chinese swallow each other from *k* = 5 ("株式会社"
+  read as Chinese for a Chinese user, "人工智能研究所" as Japanese for a Japanese user), a short Bulgarian
+  sentence became Russian for a Russian user from 10, and Danish became Norwegian at 50 (at 1000 Ukrainian
+  became Russian too, measured on the prior alone).
+- The recognizer also returns `iu-Cans` (Inuktitut syllabics), which has no documented constant.
+
+**How to apply:**
+- For a prior, **list every language the recognizer can return and weight only the preferred ones**. A
+  language missing from the list loses to neighbours that share its script (a language with a script of its
+  own is detected even without a prior).
+- **Consider leaving languages that share a script (Han: Japanese and Chinese) out of the prior**: they
+  swallow each other, and something else (a preferred-language tie-break) already separates them.
+  instant-translate uses *k* = 20 with Japanese and Chinese excluded: short English went from 12 to 19 of 21,
+  and Japanese/Chinese detection did not change.
+- **Measure the weight through the app's whole pipeline** (the prior, then the tie-break or whatever runs
+  after it). A table measured on the prior alone understated the effect (four of the six reported inputs
+  were fixed, not three); the independent review before release caught it.
+- Do not measure one language pair only. A weight chosen on English + Korean (1000) turned Chinese
+  sentences into Japanese for a Japanese user.
+- Some short input stays wrong. Provide a manual choice (a source-language picker) and make it the answer.
+- Related: "An identifier `NLLanguageRecognizer.languageConstraints` does not know makes that language
+  silently undetectable".
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

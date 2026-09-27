@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-28 (language detection prior)
+
+- **macos-gui** (ja + en): `NLLanguageRecognizer.languageHints` measured —
+  hints for only the preferred languages act as a restriction; every language
+  at 1 with the preferred ones weighted acts as a prior; the weight's ceiling
+  is set by languages sharing a script (Japanese and Chinese swallow each other
+  from 5, Bulgarian became Russian from 10, Danish Norwegian at 50); measure through the
+  whole pipeline, not the prior alone.
+
 ## 2026-09-27 (vetting an outside PR)
 
 - **development-process** (ja + en): vet an outside pull request without
