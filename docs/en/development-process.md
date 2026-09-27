@@ -538,6 +538,42 @@ know the last one does a whole piece of work that the policy will never merge.
 - Writing the guide makes policies explicit that were only the maintainers' habit (here, "no CI" and
   "no outside code shipped" had been written nowhere). It doubles as an inventory of unwritten rules.
 - Related: "Mine legitimate signal even from PRs you reject" (handling a pull request that arrived).
+- Write down **not only "add tests" but also "run the whole test suite and make every test pass before
+  sending" and "say how you checked it (what you tried and what you did not)"**. With "add tests" alone,
+  a pull request arrived whose existing tests did not even compile, carrying a feature checked only in
+  the contributor's own two languages (vetting instant-translate PR #1, 2026-09). Give the pull request
+  template a "how this was tested" section.
+
+### Vet an outside PR without merging it: export it and only compile — after checking what runs at build time
+
+**Symptom:** A closed outside pull request (six features in one) was vetted afterwards for quality and
+danger. Without taking it into the repository, the review found nothing malicious, but **its existing
+tests did not even compile** (a property added without a default left the tests' initialisers short of
+arguments), and its language filter passed identifiers the recognizer does not know, stopping detection
+for those languages (measured) (instant-translate PR #1, 2026-09, macOS 27.0 / Swift 6.4).
+
+**Why:** Reading the diff tells you neither whether the tests were run nor whether the change works.
+Merging or branching the PR dirties the working tree or the submodule state. And "just building" still
+runs the contributor's code on your machine if the PR changed anything that executes at build time —
+the package manifest, build plugins, the Makefile, scripts.
+
+**How to apply:**
+- **Look at the scope first.** `gh pr view <n> --json files`: check that the manifest, build plugins,
+  Makefile, scripts, CI configuration and signing or entitlement settings are untouched. If any changed,
+  read that diff before building.
+- **Grep the added lines for risky calls** (network, file operations, process launch, dynamic loading,
+  keychain, external URLs). Grepping the diff's `+` lines narrows where to read.
+- **Export instead of merging.** `git fetch origin pull/<n>/head`, then
+  `git archive FETCH_HEAD | tar -x -C <scratch dir>`. Create no branch and no worktree (worktrees have
+  broken submodules).
+- **Build the app and compile the tests, but run nothing** (for Swift, `swift build` and
+  `swift build --build-tests`). Here that settled that the tests had never been run.
+- Check suspected behaviour with **small verification code of your own**, not by running the PR (here:
+  feeding the recognizer the same kind of input the PR would).
+- Report findings as confirmed (compiled, measured, or plain in the code) or inferred (needs running to
+  settle).
+- Related: "Mine legitimate signal even from PRs you reject"; "When outside PRs keep breaking the same
+  rules, check that the rules are written anywhere before closing the next one".
 
 ### Review behavior-describing doc PRs against the implementation
 

@@ -1096,6 +1096,34 @@ Apple Mail の 1 通ドラッグは受理するのに、複数通ドラッグは
   小さな sniffer スクリプトが決定的に効く。ドロップは不要で、ドラッグ開始
   → Esc キャンセルだけで観測できる。
 
+### `NLLanguageRecognizer.languageConstraints` に知らない ID を渡すと、その言語は黙って判定されなくなる
+
+**事象:** 「自動判定の候補を利用者が選んだ言語に絞る」設定で、候補の ID を翻訳の言語一覧
+（`Locale.Language` の `minimalIdentifier`：`zh`、`zh-TW`、`en-GB`、`pt-PT` など）から作り、
+`NLLanguage(id)` にして `languageConstraints` に渡していた。中国語を選ぶと中国語が判定されなく
+なった（外部 PR の精査、instant-translate、2026-09）。
+
+**なぜ:** NaturalLanguage の言語 ID は別の体系で、中国語は `zh-Hans` / `zh-Hant`、英語は `en`
+（`en-GB` は下の実測で何にも一致しなかった）。`NLLanguage("zh")` は作れてしまい（rawValue は `zh`）、エラーにもならないが、
+何にも一致しない。macOS 27.0 での実測:
+
+| 制約 | 入力 | `dominantLanguage` |
+|---|---|---|
+| なし | 中国語 | `zh-Hans` |
+| `[zh, en]` | 中国語 | **nil** |
+| `[zh-Hans, en]` | 中国語 | `zh-Hans` |
+| `[ja, en-GB]` | 英語 | **nil** |
+| `[ja, en]` | 英語 | `en` |
+
+判定が nil になると、それに頼る処理（自動翻訳など）は「判定できない」で止まる。
+
+**適用方法:**
+- 制約には `NLLanguage` の定数（`.simplifiedChinese` など）か、NaturalLanguage の体系に**写像した** ID
+  だけを渡す。表示用・翻訳用の言語一覧の ID を、そのまま流用しない。地域版は基本言語に畳む。
+- 写像できない言語は、制約から外すか、選べないようにする。**「制約を全部外すと判定は常に動く」
+  「知らない ID が混ざると、その言語だけ判定されない」**の両方をテストで固定する。
+- 制約を有効にして何も選ばなかった場合の扱い（全言語か、設定を無効にするか）を決めて、画面に出す。
+
 ## Wails（Go + WebView）
 
 ### window.alert() は確実に表示されない

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-27 (vetting an outside PR)
+
+- **development-process** (ja + en): vet an outside pull request without
+  merging it — check that nothing that runs at build time changed, grep the
+  added lines, export it with `git archive`, build and compile the tests
+  without running anything. Found an outside PR whose tests had never been run.
+  The contribution-guide entry now also asks for the whole suite run and a note
+  on how the change was checked.
+- **macos-gui** (ja + en): an identifier `NLLanguageRecognizer.languageConstraints`
+  does not know (`zh`, `en-GB`) matches nothing and makes that language
+  undetectable (measured on macOS 27.0).
+
 ## 2026-09-27 (outside contributions)
 
 - **development-process** (ja + en): when outside pull requests keep breaking

@@ -1256,6 +1256,36 @@ Mail (a known platform bug).
   `canReadObject(forClasses: [NSFilePromiseReceiver.self])` settles the
   question decisively. No drop needed — start a drag and cancel with Esc.
 
+### An identifier `NLLanguageRecognizer.languageConstraints` does not know makes that language silently undetectable
+
+**Symptom:** A "limit auto-detection to the languages I pick" setting built its candidate identifiers
+from the translation language list (`Locale.Language.minimalIdentifier`: `zh`, `zh-TW`, `en-GB`,
+`pt-PT`…), wrapped them in `NLLanguage(id)` and set them as `languageConstraints`. Picking Chinese made
+Chinese undetectable (vetting an outside PR, instant-translate, 2026-09).
+
+**Why:** NaturalLanguage uses its own identifiers: Chinese is `zh-Hans` / `zh-Hant`, English is `en`
+(`en-GB` matched nothing in the measurement below). `NLLanguage("zh")` can be constructed (its rawValue is `zh`) and raises nothing,
+but it matches nothing. Measured on macOS 27.0:
+
+| Constraints | Input | `dominantLanguage` |
+|---|---|---|
+| none | Chinese | `zh-Hans` |
+| `[zh, en]` | Chinese | **nil** |
+| `[zh-Hans, en]` | Chinese | `zh-Hans` |
+| `[ja, en-GB]` | English | **nil** |
+| `[ja, en]` | English | `en` |
+
+With detection at nil, anything that depends on it (automatic translation, say) stops at "cannot tell
+the language".
+
+**How to apply:**
+- Pass only `NLLanguage` constants (`.simplifiedChinese`…) or identifiers **mapped** into NaturalLanguage's
+  scheme. Do not reuse the identifiers of a display or translation language list as they are; fold
+  regional variants into the base language.
+- Leave out, or make unselectable, any language that does not map. Pin both "with no constraints
+  detection always works" and "an unknown identifier leaves only that language undetected" in tests.
+- Decide what "limit enabled, nothing picked" means (all languages, or the setting off), and show it.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

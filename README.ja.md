@@ -26,7 +26,7 @@ English version: [README.md](README.md)
 | ドキュメント | 内容 |
 |---|---|
 | [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数・ライセンス表記 |
-| [macos-gui](docs/ja/macos-gui.md) | パネルの状態は自分で持つ（isShown は閉じてから遅れる）、SwiftUI/AppKit の罠、メニューバーアプリ、macOS 27の実現性・間隔検証、リンクした SDK が外観を決める、ビューが正しいときはレイヤーの木を吐く、Wails、書き込み時点では CFPreferences も plist も保存の成否を答えない（失敗は設計の前に本物の対象で測る）、SwiftUI の中身からウィンドウの最小サイズを出すなら並べた結果を測る、`.keyboardShortcut` は届く形ごとに結び付ける |
+| [macos-gui](docs/ja/macos-gui.md) | パネルの状態は自分で持つ（isShown は閉じてから遅れる）、SwiftUI/AppKit の罠、メニューバーアプリ、macOS 27の実現性・間隔検証、リンクした SDK が外観を決める、ビューが正しいときはレイヤーの木を吐く、Wails、書き込み時点では CFPreferences も plist も保存の成否を答えない（失敗は設計の前に本物の対象で測る）、SwiftUI の中身からウィンドウの最小サイズを出すなら並べた結果を測る、`.keyboardShortcut` は届く形ごとに結び付ける、NLLanguageRecognizer の制約に知らない ID を渡すとその言語が判定されない |
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
 | [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計、文書 id 付き offset ページング、ファイル出力先は呼び出しごとの引数 |
 | [llm-integration](docs/ja/llm-integration.md) | Gemini/genai SDK、出力検証、drift、トークン、dedup、パイプライン、エージェントのツール除外、判定モデルは thinking でなく世代で選ぶ、ローカルサーバの接頭辞キャッシュと system プロンプト、再送上限は再生計測で、ローカルモデルが常置指示に行動する場所（system ではなく最初の user メッセージ） |
@@ -37,7 +37,7 @@ English version: [README.md](README.md)
 | [config-and-io](docs/ja/config-and-io.md) | Bubble Tea の Update 内 Send による凍結、canonical 識別子、strict 設定デコード、データ保持期限、保存先変更と reconcile、ボリューム空き容量、OAuth、ターミナル IO、任意の応答で開いたままになる送信窓、goroutine で読んだ端末問い合わせが残す reader と次の入力、時間の予算は一度だけ宣言、検査済みの数値がゼロの Duration になる、手元のパスをテキスト文法へ通し直す、推測した値を事実と別の印で記録し事実だけを比べる、排他的時刻境界を精度変換するときの丸め方向、既定値を登録したキーの「無し」は値で保存する |
 | [shell-scripting](docs/ja/shell-scripting.md) | BSD/GNU sed 差、zsh 展開の癖（`git -C` のグロブは今いるディレクトリで展開される）、Bash trap スコープ、置換の罠、bash 3.2 の set -u と空配列、`if` 文の後の `$?`、`! grep` はエラーも不一致と読む、取れなかった入力と空の答えの区別、`--verify` なしの `git rev-parse`、xargs の空入力 |
 | [embedded](docs/ja/embedded.md) | M5Stack / ESP32 の知見 |
-| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、作法違反の外部 PR が続いたら案内の有無を確かめる（組織の既定の CONTRIBUTING）、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用、upstream への提案が望まれているかの見極め、vendored パッチの上流に対する再生、まず自分のパッチを疑う、記録した教訓を検査へ変える、行番号引用を差分で再マップ、独立検証の回ごとの収束、対の照合ではなく参照を解決する、umbrella の fetch はサブモジュールにも書き込む、並列化の前に区間計測 |
+| [development-process](docs/ja/development-process.md) | rewrite/refactor 判断、コントリビューション triage、作法違反の外部 PR が続いたら案内の有無を確かめる（組織の既定の CONTRIBUTING）、外部 PR は取り込まずに書き出してコンパイルだけで精査する、ADR 粒度、ドキュメント作法、アーカイブ済みリポの分離、submodule の破損、報告と制御、移植コードの ADR 引用、upstream への提案が望まれているかの見極め、vendored パッチの上流に対する再生、まず自分のパッチを疑う、記録した教訓を検査へ変える、行番号引用を差分で再マップ、独立検証の回ごとの収束、対の照合ではなく参照を解決する、umbrella の fetch はサブモジュールにも書き込む、並列化の前に区間計測 |
 
 英語版は [docs/en/](docs/en/)（日本語が原文）。
 
