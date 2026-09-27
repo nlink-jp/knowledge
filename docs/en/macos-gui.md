@@ -1153,6 +1153,78 @@ of them is updated.
 - The only fixed sizes worth keeping are the ones a container legitimately owns,
   such as a popover's width.
 
+### Deriving an AppKit window's minimum size from SwiftUI content: measure the laid-out result
+
+**Symptom:** In a menu bar app's NSPanel hosting SwiftUI through `NSHostingView`, the fixed
+320 × 320 pt minimum was narrower than the language-picker row; shrinking the panel wrapped the
+hints one character per line and pushed buttons out. Deriving the minimum from the content then
+broke three times in three different ways (instant-translate, 2026-09, measured on macOS 27.0):
+1. Leaving it to `NSHostingView.sizingOptions`' `.minSize` (also part of the default
+   `.standardBounds`) gave a minimum height 16–29 pt short of what the content needed; the content
+   was centered vertically and the bottom margin was eaten. Holding text at its natural height
+   instead made the minimum jump to 646 pt.
+2. With `sizingOptions = []` and our own `contentMinSize`, the app crashed at launch
+   (an exception from `-[NSWindow _postWindowNeedsUpdateConstraints]`).
+3. Computing the minimum width as "row width − `Spacer` width", with a measuring modifier on the
+   `Spacer`, made the minimum grow with the panel until it reached the height of the screen.
+
+**Why:**
+1. `.minSize` is "the size that fits a proposal of width: 0, height: 0" (Apple's documentation).
+   Text cannot answer that proposal honestly: a single-line text without a fixed height counted as
+   0 tall, and a text held at its natural height wrapped one character per line at width 0 (both
+   measured). A multi-line error message cannot be made to answer honestly at all.
+2. As a window's contentView, `NSHostingView` resized the window itself from `windowDidLayout` →
+   `updateAnimatedWindowSize` even with `sizingOptions = []` (seen in the crash report's stack).
+   That fought our minimum inside the layout pass until AppKit gave up and threw.
+3. The row was seen to stretch vertically, leaving a gap above it; dropping the measurement stopped
+   the runaway. That a `Spacer` wrapped in a modifier is no longer treated as a stack spacer and
+   stretches vertically too is inferred from this. The stretch was not subtracted, so "grow the panel
+   to its minimum → measure → larger minimum" repeated.
+
+**How to apply:**
+- Compute the minimum with a pure function from **the sizes actually laid out at the current
+  width** (`onGeometryChange`): height = content height − how far each stretchy field is stretched
+  beyond its minimum + the title bar inset. Measure the content before the `frame` that fills the
+  panel, so a too-small panel reports the height it needs. Anything that appears later, such as an
+  error message, is included automatically.
+- **Subtract every view that stretches.** Pin "a larger panel does not change the minimum" in a test,
+  and cap the minimum at the screen size.
+- Set `NSHostingView.sizingOptions = []` and **put it inside a plain `NSView` container instead of
+  making it the window's contentView**. Defer your own `setFrame` to the next run-loop turn — the
+  measurement arrives in the middle of a layout pass.
+- Do not measure a `Spacer`. Push things aside with `.frame(maxWidth: .infinity)` and measure the
+  incompressible parts (pickers, buttons) directly.
+- A window that only needs its height fitted to its content (a settings window) works the same way.
+  Measured **inside** its scroll view, resizing the window cannot feed back into the measurement.
+- Related: "Do not fix a view's size against today's content".
+
+### `.keyboardShortcut` matches modifiers exactly — bind one key once per form it arrives in
+
+**Symptom:** A panel got ⌘+ / ⌘− / ⌘0 (bigger, smaller, reset text). ⌘− and ⌘0 worked; ⌘+ bound as
+`.keyboardShortcut("+", modifiers: .command)` did not, and beeped on every press. Rebinding `"+"`
+with ⌘⇧ left the keypad "+" as the only key that failed (instant-translate, 2026-09, macOS 27.0,
+JIS-arranged keyboard, measured with a temporary build that logged every key event it received).
+
+**Why:** In the log the main-row "+" (Shift-; on JIS) arrived as character `"+"` with ⌘⇧, and the
+keypad "+" as `"+"` with ⌘ alone. A shortcut fires only when **both** the character and the
+modifiers match, so one binding catches only one of them. The HIG likewise defines ⌘+ as
+Shift-Command-Equal sign (shifted on a US layout too). An unhandled ⌘ key falls through to the text
+field and beeps. Per-layout remapping (`KeyboardShortcut.Localization`) applies only when the key is
+unreachable on the current layout (Apple's documentation), so it plays no part here.
+
+**How to apply:**
+- Bind a symbol shortcut **once for each form it arrives in**: for enlarge, `"+"` + ⌘⇧ (main row),
+  `"+"` + ⌘ (keypad), and if wanted `"="` + ⌘ (unshifted on US; the alias browsers accept — this form
+  was not measured). Drop one and that key alone beeps.
+- When testing with synthetic keys (`CGEvent`), **a key code is a position on the layout**. US `=`
+  is key code 24, which is the `^` key on JIS — the probe never sent `+` or `=` at all.
+- **Testing whether a shortcut works with synthetic keys makes every failure an audible beep for the
+  user** (they reported hearing rejection beeps). Say so beforehand; if one try does not settle it,
+  build a temporary version that logs the events it receives (`keyCode`, characters, modifiers,
+  whether they were handled) and have the user press the keys by hand. Layout differences show up
+  in one pass.
+- Record the combinations you could not measure (other layouts, the app inactive) as unmeasured.
+
 ### Apple Mail multi-message drags arrive only via the pre-10.12 file-promise protocol
 
 **Symptom:** A drop target registered for

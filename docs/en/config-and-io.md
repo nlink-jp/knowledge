@@ -393,6 +393,13 @@ config loader that silently ignores unknown keys.
 - When a limit in the config and a limit in the engine are one fact — a page ceiling — and
   neither package can import the other, tie them in a test that imports both. Clamp a
   configured default that exceeds a tool's ceiling; refuse only a value the caller sent.
+- The same trap runs the other way. **For a key with a registered default
+  (`UserDefaults.register(defaults:)`), let the user choose "none" by storing a value that means
+  none — never by removing the key.** The registration domain is the fallback used when the app
+  domain has no value (Apple's documentation), so removing the key brings the default back. Make the
+  "none" value one the user's normal input cannot produce (instant-translate's shortcut: a combo
+  with no modifiers, while recording always requires one, 2026-09), and do not name it `none`, which
+  reads as `Optional.none` wherever the type is optional.
 
 ### Do not build a cache key by joining parts with a separator — hash length-prefixed parts, and do not fold case
 

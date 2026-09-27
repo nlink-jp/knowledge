@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-27 (instant-translate text size and panel layout)
+
+- **macos-gui** (ja + en): deriving an AppKit window's minimum size from SwiftUI
+  content — `NSHostingView`'s `.minSize` measures under a 0 × 0 proposal that text
+  cannot answer (16–29 pt short, or 646 pt); as contentView it resizes the window
+  mid-layout and AppKit throws; a `Spacer` wrapped in a measuring modifier made the
+  minimum run away. Measure the laid-out result instead (all measured on macOS 27.0).
+- **macos-gui** (ja + en): `.keyboardShortcut` matches modifiers exactly — the
+  main-row "+" arrives as ⌘⇧+ and the keypad "+" as ⌘+, so bind each form; synthetic
+  key codes are layout positions; testing a shortcut with synthetic keys makes each
+  failure an audible beep (measured on a JIS-arranged keyboard).
+- **config-and-io** (ja + en): for a key with a registered `UserDefaults` default,
+  store a value meaning "none" rather than removing the key.
+
 ## 2026-09-27 (sweep follow-ups)
 
 - **shell-scripting** (ja + en): `ls <glob> | tail -1` picks the wrong artifact
