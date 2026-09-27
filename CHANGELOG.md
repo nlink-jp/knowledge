@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-27 (outside contributions)
+
+- **development-process** (ja + en): when outside pull requests keep breaking
+  the same rules, check that the rules are written anywhere — put
+  `CONTRIBUTING.md` and a pull request template in the organization's `.github`
+  repository (GitHub's default community health files), state up front how
+  contributions are taken in, and link it from repositories with their own
+  guide, which do not show the default (verified with the community profile API).
+- **shell-scripting** (ja + en): a glob given to `git -C <dir>` expands in the
+  current directory, not in `<dir>`.
+
 ## 2026-09-27 (instant-translate text size and panel layout)
 
 - **macos-gui** (ja + en): deriving an AppKit window's minimum size from SwiftUI

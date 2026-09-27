@@ -64,6 +64,11 @@ trouble.
   matches. Hold argument lists as **arrays**, not strings
   (`opts=(-l -a); ls $opts`).
 - Always quote globs meant to expand remotely (scp/ssh).
+- **The glob in `git -C <dir> add *.md` expands in the current directory, not in `<dir>`.** With no match
+  it aborts with `no matches found` (hit in 2026-09); with a same-named file in the current directory it
+  expands silently to that list instead — `git add` then runs with another repository's file names
+  (the shell expands globs before running the command; `-C` takes effect only once `git` starts).
+  With `git -C` or `make -C`, name the files explicitly, or `cd <dir> &&` first.
 - One-liners in documentation either state "run under bash" or are written to
   behave identically in both shells.
 

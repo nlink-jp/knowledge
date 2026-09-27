@@ -507,6 +507,38 @@ and a real bug report**. These were cleanly reimplemented and shipped.
    afterwards ("your report shipped in vX.Y.Z").
 4. Reporters are usually sincere — don't treat them as adversaries.
 
+### When outside PRs keep breaking the same rules, check that the rules are written anywhere before closing the next one
+
+**Symptom:** Three outside pull requests arrived in five months, and none could be taken as sent:
+several changes bundled into one, an AI agent's working files committed, CI (GitHub Actions) added to
+an organization that deliberately does not use it, no tests and no documentation. Each was closed with
+reasons, and nothing stopped a fourth from arriving in the same shape. On inspection the organization
+had no `CONTRIBUTING.md` and no pull request template, and the two repositories that had their own
+guide described building the tool (nlink-jp, 2026-09).
+
+**Why:** Contributors can follow only the rules they can see. "One change per pull request", "no CI"
+and "outside code is re-implemented by the maintainers, not merged" can be the maintainers' consistent
+practice and still not exist for a contributor if they are written nowhere. A contributor who does not
+know the last one does a whole piece of work that the policy will never merge.
+
+**How to apply:**
+- Put `CONTRIBUTING.md` and `PULL_REQUEST_TEMPLATE.md` at the root of the organization's `.github`
+  repository (which must be public). GitHub shows them for every repository that has none of its own
+  (GitHub documentation, "Creating a default community health file"). Do not copy them into each
+  repository — the default also reaches repositories created later.
+- **State how contributions are taken in, up front** (for example: outside pull requests are read as
+  proposals, and wanted changes are re-implemented by the maintainers with credit). Say that issues come
+  first. There may be fewer pull requests; contributors waste less work.
+- **A repository with its own `CONTRIBUTING.md` does not show the organization default** (same
+  documentation). Give such a repository one line linking to the organization's policy, and do the same
+  in any repository that writes its own guide later.
+- Check the result with `gh api repos/<org>/<repo>/community/profile`: `files.contributing` and
+  `files.pull_request_template` return the organization default's URL for a repository without its own
+  files (measured).
+- Writing the guide makes policies explicit that were only the maintainers' habit (here, "no CI" and
+  "no outside code shipped" had been written nowhere). It doubles as an inventory of unwritten rules.
+- Related: "Mine legitimate signal even from PRs you reject" (handling a pull request that arrived).
+
 ### Review behavior-describing doc PRs against the implementation
 
 **Symptom:** A field-notes PR contained the **accurate, measured** statement
