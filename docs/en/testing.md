@@ -1618,3 +1618,31 @@ drawing is a separate expression from the drawing, so one can break while the ot
   the lifeline") lets wrong ends, bars and note sides through; compute the expectation exactly.
 - In mutation checks, always confirm the mutant **builds**. A mutant that failed to build on an
   unused variable was nearly read as "not caught".
+
+## Run the tests' properties at run time too — one function, a strict flag, and a generator that makes every form
+
+**Symptom:** a renderer's layout was guarded only by property tests (no two boxes overlap, every
+label drawn, arrows pointing at their receivers). They run offline, so a layout bug in a diagram the
+tests never generated would ship a wrong picture with nothing to refuse it. The same properties were
+moved into the renderer and run on every render, refusing a drawing that breaks one. The first
+version then refused 11% of random sequence diagrams that used `activate` statements: an exact
+end-point check counted a bar opened *after* a message as open at its arrow, and the tests had never
+seen it because the random generator only wrote the `+`/`-` form (mermaid-render, 2026-09). The same
+pre-release review found the run-time check cost 0.5 s at the limits (every pair of segments), then
+0.14 s after an x-sweep, on a chain whose links shared a few columns.
+
+**Why:** a property that only the tests hold guards the inputs the tests make. Moving it to run
+time guards every input, but also turns every false positive into a refusal a user sees, and every
+O(n²) loop that was fine in a test into latency.
+
+**How to apply:**
+- Keep **one function per property list** with a `strict` flag. The tests call it strictly; the
+  run-time path calls it without. Strict adds only what is a matter of looks (spacing, centring,
+  crossings), and each loose threshold is at most its strict one, so run time can never refuse what
+  the tests accept. Test that direction too: an ugly-but-right layout must pass the loose check.
+- Exact-to-epsilon comparisons are precision, not wrong pictures: keep them strict-only.
+- Before a check runs on every input, make the random generator produce **every syntactic form**
+  that reaches it (statements as well as shorthands), and sweep with the real font or data.
+- Bucket what is compared (a grid, not a one-axis sweep, when many items share a column) and put a
+  cost test on the worst legal inputs. Run the cheapest refusals (size limits) first.
+- Give the check a seam to corrupt a layout (`probe{corrupt: …}`), or no test can show it runs.
