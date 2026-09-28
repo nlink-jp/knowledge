@@ -1662,3 +1662,52 @@ the size of the need.
   for coverage or demand.
 - When the operator's explanation establishes the demand, record the decision and its reason in the RFP
   (if only the numbers remain, later readers will raise the same objection again).
+
+## When porting a parser generator's grammar, port the lexer rules in order, not the documentation's prose
+
+**Symptom:** mermaid's erDiagram and sequenceDiagram (jison) were ported to Go (mermaid-render,
+2026-09). Every detail that "writing to the documentation" was expected to match came from the
+lexer's nature instead: words such as `one` and `to` are never names in any case, `direction TD`
+is two entities rather than a direction (the lexer has no TD), `#` cuts a message's text. An
+independent review found more port mismatches: Go did not reproduce JavaScript's lookahead
+backtracking (`participant Alice # …` was refused), the `\s` and `.` character sets differ, and
+Go's `(?i)` folds `ſ` to `s`.
+
+**Why:** a jison lexer takes the **first rule that matches** unless `flex` is set (not the
+longest), appends `\b` to a rule ending in a word character, and `case-insensitive` applies to
+every rule. JavaScript's `\s` includes Unicode spaces and its `.` also stops at `\r`, U+2028 and
+U+2029. Go's regexp has no lookahead `(?=…)`, and JavaScript shortens a match until its lookahead
+holds.
+
+**How to apply:**
+- Keep the rules as a table in the original order, with each exclusive state's scope. Reproduce
+  the automatic `\b`.
+- Spell out JavaScript's `\s` and `.` character sets. Write lookaheads as functions and reproduce
+  the backtracking too.
+- Check each ported matcher position by position against the original regular expression as an
+  oracle, in a differential test.
+- Keep surprising behaviour as the original has it. Before "fixing" one, check the original's
+  source does otherwise.
+
+## A regex tried at every token that reads to the line's end makes lexing quadratic — answer from per-line facts, and adopt the original's limit
+
+**Symptom:** the same port tried ER's `.*direction\s+TB[^\n]*` at every token: 106 s on one 40 KB
+line. The sequence lexer lowered the whole rest of the source for every name it matched: 23 s at
+32,000 lines. A prefilter skipping lines without the word did nothing on lines with it. The first
+fix still fell back to the original regex on lines ending in a bare "direction": 167 s at 48 KB.
+Deeply nested blocks recursed until the stack overflowed, a fatal error that took the calling
+process down (mermaid-render, 2026-09).
+
+**Why:** a lexer tries rules at every position. A rule that reads to the line's end costs a line's
+length per token: quadratic in the line. A leading `.*` rereads the same stretch at every shifted
+position.
+
+**How to apply:**
+- Turn a rule that runs to the line's end into a function that gathers facts (occurrences, stops)
+  once per line and answers each position by binary search. Lexing only moves forward, so keeping
+  positions as "length remaining" makes the state safe.
+- Keep both a differential test against the original regex and a timing test on inputs the
+  original is slow on. The timing test also catches a fix whose branch still falls back to the
+  original regex.
+- Adopt the original system's limit (mermaid's `maxTextSize`, 50,000 characters) and bound
+  recursion depth. The limits are a backstop; the fix is the complexity.

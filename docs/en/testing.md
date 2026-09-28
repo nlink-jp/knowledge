@@ -1598,3 +1598,23 @@ with their expectation, and an expectation is not an observation.
 - When there is more than one method, **mark only the one tried as confirmed**; write the rest as "documented, not
   confirmed".
 - Do not write your expected result as an observation.
+
+## Test drawing by comparing a record of what is drawn with the source — record inside the primitive
+
+**Symptom:** layout property tests (a line's end sits on the right entity, and so on) passed, yet
+no test failed for mutants that swapped the two ends' cardinality markers, mixed up a marker's
+shape, swapped solid and dashed lines, or drew an arrowhead at the start. The first drawing record
+computed its values at the call site, so a mutant that inverted only the value passed to the
+primitive still passed (mermaid-render, 2026-09). In the same review, a property pinning arrow ends
+exactly found a real bug: arrows ran into the inner bars of nested activations.
+
+**Why:** layout checks look at coordinates, not at what is drawn there. A record made outside the
+drawing is a separate expression from the drawing, so one can break while the other still agrees.
+
+**How to apply:**
+- Give the canvas an optional trace function and record markers, heads and each line's dash flag
+  inside the primitive that draws them. Record the same variable that is drawn.
+- Build the expected values from the source and compare. A loose tolerance ("within 3.85 em of
+  the lifeline") lets wrong ends, bars and note sides through; compute the expectation exactly.
+- In mutation checks, always confirm the mutant **builds**. A mutant that failed to build on an
+  unused variable was nearly read as "not caught".
