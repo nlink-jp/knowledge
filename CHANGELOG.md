@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-28 (forks shipping under upstream's name)
+
+- **development-process** (ja + en): a fork shipping binaries with upstream's
+  README, app name and bundle ID — separate the licence (MIT notice kept: not a
+  violation) from etiquette; ask with technical reasons (shared settings domain,
+  single-instance guard by bundle ID, bug reports landing upstream); check the
+  licence with the REST `/license` endpoint, since `gh repo view --json
+  licenseInfo` came back empty; publish the policy before linking to it.
+
 ## 2026-09-28 (scope, archive sweep, manual checks, speech voices)
 
 - **development-process** (ja + en): judge a feature proposal by the scope you

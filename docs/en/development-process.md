@@ -596,6 +596,36 @@ person proposing cannot know it.
 - Make the reason for a proposal — the situation of use — something discussed in an issue before code (see "When
   outside PRs keep breaking the same rules…").
 
+### A fork shipping binaries under upstream's name: separate licence from etiquette, and ask with technical reasons
+
+**Symptom:** A fork of an MIT-licensed app published prebuilt binaries with upstream's README, app name and bundle
+ID (`jp.nlink.instant-translate`) unchanged, versioned by appending a digit to upstream's versions (v0.3.1.1,
+v0.4.1.1, v0.4.1.2). The fork had issues disabled, so there was no place to reach its owner (instant-translate,
+2026-09).
+
+**Why:** MIT only requires keeping the copyright and permission notice, and the fork kept it — **this is not a
+licence violation**. The problem is etiquette, and its harm can be stated technically (the first two points are read
+from upstream's code and the local settings file, not measured with the fork installed alongside):
+- This app keeps its settings in a domain named after the bundle ID
+  (`~/Library/Preferences/jp.nlink.instant-translate.plist`, readable with `defaults read jp.nlink.instant-translate`).
+  A fork with the same ID shares settings with the upstream build, and each overwrites the other's.
+- Its single-instance guard is `LSMultipleInstancesProhibited` plus a startup check for a running app with the same
+  bundle ID (`NSRunningApplication.runningApplications(withBundleIdentifier:)`). With the same ID, upstream and fork
+  count as "the same app", and one of them will not start.
+- With upstream's README unchanged, bug reports about the fork arrive upstream, and a version with an extra digit is
+  hard to tell from upstream's.
+
+**How to apply:**
+- First **check the licence's conditions and settle whether it is a violation**. If it is not, write a request, not
+  a demand. `gh repo view --json licenseInfo` came back empty for the fork; read the verdict from
+  `gh api repos/<owner>/<repo>/license`, or compare the sha of `contents/LICENSE` with upstream's.
+- Make the request **concrete steps with technical reasons**: an unofficial-build notice and a link upstream at the
+  top of the README; a changed `APP_NAME` and `BUNDLE_ID` (to avoid the settings and single-instance collisions);
+  versions distinguishable from upstream's; bug reports about the fork taken by the fork.
+- If the fork has no issues, post **where the person is listening** — a pull request or issue they opened upstream.
+- Publish it as organization policy (CONTRIBUTING, "Forks and redistribution"), and **publish the policy before**
+  asking with a link to it. Do not cite a policy that is not public yet.
+
 ### Review behavior-describing doc PRs against the implementation
 
 **Symptom:** A field-notes PR contained the **accurate, measured** statement
