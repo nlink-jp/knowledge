@@ -1572,3 +1572,29 @@ fixing tool share one test, both go blind at once.
 - Write down the hole a marker-based test still has: another block **inside** the scope that
   uses the same marker can still hide the form. If the form itself can be tested directly (here,
   `|| true` closing an `&&` chain), that test is stronger.
+
+## Record a person's check per item and per method — and read the settings that decide the result before asking
+
+**Symptom (three times):**
+1. Five items were handed over for a manual check; the answer was "fine", and an ADR then said "closes with Esc and
+   Space (checked by hand)". Asked, the user had not tried Space at all (net-meter, 2026-09).
+2. For a language-detection check, a table of expected results assumed Japanese + English; the user's secondary
+   language was Korean. The results looked wrong, and a round trip went into finding out why
+   (instant-translate, 2026-09).
+3. "The OS read-aloud worked" was taken as confirming the method suggested just before (Option-Esc), and the
+   reply and the record nearly said "Option-Esc works in this panel (confirmed)". What had been tried was the
+   right-click menu (same project).
+
+**Why:** "Fine" and "it worked" mean "nothing caught my eye" and "it worked somehow" — not "I tried every item, by
+the method and under the conditions you had in mind, and each did what you expected". Whoever asked fills the gaps
+with their expectation, and an expectation is not an observation.
+
+**How to apply:**
+- **Before asking, read the settings that decide the result** (`defaults read <bundle-id>` for an app's settings),
+  and compute the expected results with the shipping code under those settings. If a setting has to change, say
+  how to change it and how to put it back.
+- **Ask in a form that yields a result per item and per method** ("worked / did not / not tried" for each). With
+  only a summary answer, record "no problem reported" and treat each behaviour as unconfirmed.
+- When there is more than one method, **mark only the one tried as confirmed**; write the rest as "documented, not
+  confirmed".
+- Do not write your expected result as an observation.

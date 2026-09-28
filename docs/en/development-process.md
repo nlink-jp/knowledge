@@ -575,6 +575,27 @@ the package manifest, build plugins, the Makefile, scripts.
 - Related: "Mine legitimate signal even from PRs you reject"; "When outside PRs keep breaking the same
   rules, check that the rules are written anywhere before closing the next one".
 
+### Judge a feature proposal by the scope you defined — "other apps have it" is not a reason
+
+**Symptom:** A lightweight translation app received an outside pull request adding a "read the translation aloud"
+button. The only reason given was that it is "a common feature in many translators"; no situation of use was
+named. The maintainer declined: "other translators having it is not a reason", and "the app is defined as a way
+to get a translation quickly; loading it up with features was never the intent" (instant-translate PR #3, 2026-09).
+
+**Why:** Accept "others have it" and every feature has the same reason, and the app drifts from its definition.
+The scope question comes before whether a use case is good. And if the scope is not written in the README, the
+person proposing cannot know it.
+
+**How to apply:**
+- Judging a proposal, first ask **whether it falls inside the defined scope (RFP, ADR)**. If not, decline even a
+  reasonable use case. Answering with "scope" gives the same answer to every proposal of that kind.
+- If users may still need it now and then, **check whether a built-in OS feature covers it and point to it**
+  (here: select the translation, right-click › Speech › Start Speaking, confirmed by hand in the panel).
+- **State the app's scope at the top of the README** ("deliberately small; features beyond that are left out on
+  purpose, even where other apps have them"), so it is known before anyone proposes.
+- Make the reason for a proposal — the situation of use — something discussed in an issue before code (see "When
+  outside PRs keep breaking the same rules…").
+
 ### Review behavior-describing doc PRs against the implementation
 
 **Symptom:** A field-notes PR contained the **accurate, measured** statement
@@ -1079,6 +1100,25 @@ fails silently whenever someone forgets to make the call; recording it as an
   successor's name and the reason for archiving are exactly what gets read after
   archiving, and they are the first things a summary drops.
 
+
+### When you archive a tool, sweep the documents that refer to it too — add a dated note to design records instead of rewriting them
+
+**Symptom:** A local-LLM translation app was archived as superseded by an on-device successor (its repository
+description said so). The successor's README (both languages), CLAUDE.md and AGENTS.md nonetheless kept telling
+users for about a month that the two were "coexisting lightweight siblings — use the predecessor when you want
+LLM quality". It was noticed while editing the README for something else (instant-translate, 2026-09).
+
+**Why:** Archiving feels complete inside the archived repository. The documents that refer to it — the
+successor, siblings, catalogs — live in other repositories, and nothing there learns that the archive happened.
+
+**How to apply:**
+- When archiving, **search the whole organization for the name** (`grep -rn <name>`) and rewrite what users
+  read — READMEs, catalogs, agent-facing CLAUDE.md / AGENTS.md — to the current relationship (predecessor,
+  successor).
+- **Do not rewrite design records (RFP, ADR).** They record the decision as it stood; add a dated note at the top
+  ("Positioning update (YYYY-MM-DD): … the references to coexistence below record the decision as it stood then").
+- Related: "Archived state lives only on GitHub — a local scan will grab dead repos"; testing, "A withdrawn
+  mechanism disappears from the code, not from the prose".
 
 ### An embedded `.git` inside a submodule only bites when you remove it
 

@@ -1324,6 +1324,31 @@ probabilities in the language identification process"):**
 - Related: "An identifier `NLLanguageRecognizer.languageConstraints` does not know makes that language
   silently undetectable".
 
+### `AVSpeechSynthesisVoice(language:)` with a bare language code lets macOS pick the region
+
+**Symptom:** An outside PR's read-aloud feature passed the app's target identifiers (`Locale.Language`
+`minimalIdentifier`: `en`, `fr`, `zh-TW`…) straight to `AVSpeechSynthesisVoice(language:)`. With "English (United
+States)" selected in the app, the voice was Australian English (vetting an outside PR, instant-translate, 2026-09).
+
+**Why (measured on macOS 27.0):** for a code without a region, macOS picks one voice of that language, and the
+region it picked did not match the one the app meant.
+
+| Identifier passed | Voice returned |
+|---|---|
+| `en` | en-AU (Karen) |
+| `fr` | fr-CA (Amélie) |
+| `pt` | pt-BR (Luciana) |
+| `zh` / `zh-TW` | zh-CN (Tingting) / zh-TW (Meijia) |
+| `en-GB` / `pt-PT` | en-GB (Daniel) / pt-PT (Joana) |
+
+**How to apply:**
+- To pick a voice, pass an identifier **with its region** (expand a minimal identifier first). Do not assume the
+  voice returned for a region-less code matches the region the app selected.
+- A fallback of "the first voice that matches the language" follows an order that varies within a language (for
+  zh, zh-TW came first).
+- Before owning read-aloud at all, see whether the OS already does it: a selectable SwiftUI `Text` was read aloud
+  via right-click › Speech › Start Speaking (inside a non-activating `NSPanel`, confirmed by hand).
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear

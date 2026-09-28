@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-28 (scope, archive sweep, manual checks, speech voices)
+
+- **development-process** (ja + en): judge a feature proposal by the scope you
+  defined — "other apps have it" is not a reason; point to a built-in OS feature
+  when one covers it, and state the scope in the README. When archiving a tool,
+  sweep the documents that refer to it; add a dated note to design records
+  instead of rewriting them.
+- **testing** (ja + en): record a person's check per item and per method, and
+  read the settings that decide the result before asking.
+- **macos-gui** (ja + en): `AVSpeechSynthesisVoice(language:)` with a bare code
+  lets macOS pick the region (`en` → en-AU, `fr` → fr-CA, measured on macOS 27.0);
+  a selectable SwiftUI `Text` can be read aloud via the right-click Speech menu.
+
 ## 2026-09-28 (language detection prior)
 
 - **macos-gui** (ja + en): `NLLanguageRecognizer.languageHints` measured —

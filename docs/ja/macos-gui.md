@@ -1157,6 +1157,30 @@ Apple Mail の 1 通ドラッグは受理するのに、複数通ドラッグは
 - 見込みで直らない短い入力は残る。手動で言語を選ぶ手段（入力言語のピッカーなど）を用意し、それを答えにする。
 - 関連: 「`languageConstraints` に知らない ID を渡すと、その言語は黙って判定されなくなる」。
 
+### `AVSpeechSynthesisVoice(language:)` に言語コードだけを渡すと、地域は macOS が選ぶ
+
+**事象:** 外部 PR の読み上げ機能は、アプリの訳先の ID（`Locale.Language` の `minimalIdentifier`: `en`、
+`fr`、`zh-TW` など）をそのまま `AVSpeechSynthesisVoice(language:)` に渡していた。アプリで「英語（アメリカ
+合衆国）」を選んでいるのに、声はオーストラリア英語になった（外部 PR の精査、instant-translate、2026-09）。
+
+**なぜ（macOS 27.0 で実測）:** 地域の無いコードでは、macOS がその言語の声を 1 つ選ぶ。選ばれた地域は、
+アプリが意図した地域と一致しなかった。
+
+| 渡した ID | 返った声 |
+|---|---|
+| `en` | en-AU（Karen） |
+| `fr` | fr-CA（Amélie） |
+| `pt` | pt-BR（Luciana） |
+| `zh` / `zh-TW` | zh-CN（Tingting） / zh-TW（Meijia） |
+| `en-GB` / `pt-PT` | en-GB（Daniel） / pt-PT（Joana） |
+
+**適用方法:**
+- 声を選ぶときは、**地域まで含めた ID** を渡す（最小形の ID なら、地域を補った形に直してから）。
+  地域の無いコードで返る声を、アプリの地域の選択と同じものだと思わない。
+- 代わりの声を「一覧で最初に一致したもの」で選ぶと、順番は言語の中でばらばら（zh 系なら zh-TW が先頭だった）。
+- そもそも読み上げを自前で持つ前に、OS に任せられないかを見る。SwiftUI の選択できる `Text` は、右クリック ›
+  スピーチ › 読み上げを開始、で読み上げられた（前面化しない `NSPanel` の中で、手で確認）。
+
 ## Wails（Go + WebView）
 
 ### window.alert() は確実に表示されない
