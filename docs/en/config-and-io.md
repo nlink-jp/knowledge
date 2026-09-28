@@ -981,3 +981,28 @@ but narrows the selected set at the upper bound.
   as integers.
 - Whether the interval selects parents or every message is a separate contract;
   a rounding correction must not silently change that meaning.
+
+## A terminal cell's aspect ratio differs by terminal — read it from `TIOCGWINSZ` instead of assuming it, and never query
+
+**Symptom:** an agent's TUI computed the rows an inline image occupies from a fixed cell aspect of 2.25.
+While designing images for mermaid diagrams (2026-09), two terminals on the same Mac were measured:
+
+- iTerm2 (180 columns × 80 rows): `TIOCGWINSZ` reported 1440×1440 pixels → 8×18 cells, aspect 2.25
+  (matching the fixed value). It did not answer CSI 16t (the cell-size query) within 1.5 s.
+- kitty (256 × 114): `TIOCGWINSZ` reported 1792×1482 → 7×13 cells, aspect **1.86**. Its CSI 16t answer,
+  13×7, agreed.
+
+Both appear to report logical units rather than Retina device pixels (device pixels would be double;
+inferred). Using only the ratio, that difference does not matter.
+
+**Why:** the aspect is set by the font and line-spacing settings, not by the terminal's implementation. A
+fixed value is right only for the profile it was measured on. On a terminal that places an image across the
+whole declared rows and columns, a wrong ratio may distort the picture (whether kitty does so is unverified).
+
+**How to apply:**
+- Get the cell size by dividing `TIOCGWINSZ`'s `Xpixel`/`Ypixel` (`unix.IoctlGetWinsize`) by the columns and
+  rows. It is a read from the OS, not a query to the terminal, so no reply can leak into the input box while
+  Bubble Tea runs.
+- Keep a fixed fallback for terminals that report 0. Use only the ratio; do not rely on absolute pixels.
+- Do not use CSI 16t or similar queries. Some terminals do not answer, and on those that do, the reply leaks
+  into the input box while the UI runs (see "A terminal query read from a goroutine" above).

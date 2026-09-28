@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-28 (terminal cell aspect, font drawing, demand evidence)
+
+- **graphics-and-fonts** (new theme, ja + en): Go's `font.Drawer` draws missing
+  characters as tofu and drops `LoadGlyph` failures (decide glyph presence per
+  character, fall back per face, refuse what no face has, skip variation
+  selectors / ZWJ / ZWSP, line height from the faces used); a `.ttc` can have
+  readable and unreadable faces (`ParseCollection` succeeds lazily; failures
+  appear per face); `sfnt.Name` returns the first record whatever its language
+  (match ID 4 / ID 6 across every language; recommend the PostScript name).
+  Measured with `golang.org/x/image` v0.46.0 on macOS system fonts.
+- **config-and-io** (ja + en): the terminal cell aspect differs by terminal
+  (iTerm2 2.25, kitty 1.86 on the same Mac); read it from `TIOCGWINSZ`, keep a
+  fallback, never query (iTerm2 does not answer CSI 16t).
+- **development-process** (ja + en): no trace of use is not evidence of no
+  demand when the feature is unusable; count records by provenance and ask the
+  operator.
+
 ## 2026-09-28 (forks shipping under upstream's name)
 
 - **development-process** (ja + en): a fork shipping binaries with upstream's

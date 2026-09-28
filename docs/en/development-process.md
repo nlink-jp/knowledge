@@ -1639,3 +1639,26 @@ them was not isolated.
 - To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
   `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
 - With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.
+
+## No trace of use is not evidence of no demand — a feature that cannot be used is not used
+
+**Symptom:** planning an engine to show mermaid diagrams as images in the terminal (2026-09), the mermaid
+blocks in about 250 agent sessions were counted to decide the scope. There were 51, but checking where they
+came from showed that every one came from requests to test the display ("show some diagrams to test the
+rendering"); mermaid arising naturally during real work was close to zero. An independent verification pass
+flagged "no evidence of demand". The operator's explanation ran the other way: they want diagrams, but the
+current box-drawing text rendering is too poor to use, so they do not ask for them; once usable, diagrams
+will go into their work instructions.
+
+**Why:** usage records capture behaviour under the features as they are. When a feature works badly, users
+route around it and stop asking. The gap in the records then measures the current feature's quality, not
+the size of the need.
+
+**How to apply:**
+- Before using "no trace of use in the records" as a reason to reject or defer, check whether the feature
+  was usable at all, and ask the person who holds the demand (the operator) directly.
+- Count what comes from the records by provenance (real work / display-test requests / file writes) and
+  state it as such. Samples from test requests can serve to choose the syntax to support, but not as grounds
+  for coverage or demand.
+- When the operator's explanation establishes the demand, record the decision and its reason in the RFP
+  (if only the numbers remain, later readers will raise the same objection again).
