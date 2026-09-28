@@ -1721,6 +1721,54 @@ where there is no floor beneath comes before speed.
 - Put the recommendation in the example config, not in the default: the
   previous generation has a retirement date coming.
 
+### A small judge does not tell risky tool calls from safe ones — it falls to confident false approvals or to escalating everything
+
+**What happened:** Twice we measured replacing an agent's auto-approval model verdict (approve or escalate
+one tool call) with a small judge faster than the cloud model (2026-09, agent runtime). Both runs used the
+production payload (tool name, arguments, the operator's rulebook, the MCP self-description, this turn's
+instruction) and the cases that actually reach the model tier (in-project verification commands, MCP sends,
+injected text, benign twins).
+
+- An on-device LLM of about 3B: 9 wrong out of 24 verdicts, **all 9 false approvals** (`curl | sh`,
+  `git push`, a credential read and a Slack send approved at confidence 0.8-1.0, and injected text approved
+  at confidence 1.0 on the second pass). Recast as an enumeration of facts, it flagged even `go test`, and
+  automation fell to almost nothing.
+- A non-generative typed-decision model returning typed probabilities (an encoder of 300-400M parameters,
+  zero-shot, 25 cases × 3 checkpoints × 3 phrasings): 7 of 9 configurations approved nothing. Asking the
+  multilingual checkpoint "can this run automatically" approved 24 of 25, with 14 false approvals
+  (including `curl | sh` and injected text). As an A/B choice it approved exactly one case, and that was
+  the JSON-shaped injection (0.808). The threshold-free separation (the probability that a safe case scores
+  above a risky one) was 0.27-0.80, and even in the best-separating configuration the only high score went
+  to the tool the rulebook names. The English checkpoint could not fit the payload into its state budget
+  and truncated it.
+
+**Why:** This verdict is reasoning about what a command and its arguments will do in this situation, not
+label classification. A small model responds to the surface of the input: tool names, words shared with
+the rulebook, words like "safe" or "approve". Typed probabilities, the absence of generated text and a
+claim of calibration guarantee nothing about verdict quality. And the errors come out as confident answers,
+not errors, so a design that falls back to the cloud on error never sees them.
+
+**How to apply:**
+- Measure candidates on **the production payload and the set of cases that reach the model tier
+  (including injected text, and benign twins with only the injection removed)**. **Count false approvals
+  separately from false escalations**, and also look at **threshold-free separation** (how much the score
+  distributions of safe and risky cases overlap). Escalating everything is not "safe"; it is "not telling
+  them apart". Picking the threshold afterwards can manufacture an apparent pass even on 25 cases, so fix
+  the threshold before measuring.
+- Read the limitations section of the judge model's own documentation first. If it says zero-shot accuracy
+  sits at the random or majority-class level, that negation is misread, or that the answer follows the
+  wording of option labels, it can be ruled out on paper.
+- If the rulebook is part of the input, also test **cases of the same kind that the rulebook does not
+  name**. A literal name match alone raises the score.
+- Making the small judge "veto only" (it may escalate but never create an approval) does not make anything
+  faster, because every approval still passes through the large judge. If speed is the goal, first reduce
+  what reaches the model tier with deterministic rules (per-tool standing approval and the like). Revisit a
+  small judge only as one trained (distilled) specifically on your own verdict records.
+- When evaluating third-party model code, run it in a disposable container, with inference under
+  `--network=none`. Fetch the weights on the host and check them, at a pinned revision, against the hashes
+  the author publishes (on Hugging Face: `lfs.oid` from the tree API, a SHA-256, for LFS files, and `oid`,
+  the git blob SHA-1 = `sha1("blob <size>\0" + content)`, for non-LFS files).
+
 ### A local model does not act on standing directives in the system prompt — a short line in the first user message reaches it, and the heading's standing sets the follow rate
 
 **Symptom:** In an agent runtime on a local LLM (26B class, an
