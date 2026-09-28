@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-29 (after the fork replied)
+
+- **development-process** (ja + en): the fork entry gains what came after — keep
+  measured and read-from-code reasons apart in the request; when the fork
+  replies it is done, check each item in the source (tarball, Makefile IDs,
+  README top, LICENSE sha, workflow runs) and say the check was on the source;
+  leave problems that stay inside the fork alone.
+
 ## 2026-09-28 (terminal cell aspect, font drawing, demand evidence)
 
 - **graphics-and-fonts** (new theme, ja + en): Go's `font.Drawer` draws missing

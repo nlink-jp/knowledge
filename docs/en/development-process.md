@@ -625,6 +625,20 @@ from upstream's code and the local settings file, not measured with the fork ins
 - If the fork has no issues, post **where the person is listening** — a pull request or issue they opened upstream.
 - Publish it as organization policy (CONTRIBUTING, "Forks and redistribution"), and **publish the policy before**
   asking with a link to it. Do not cite a policy that is not public yet.
+- When giving technical reasons, **say which parts were measured and which were read from code**. Here the
+  settings file name was observed locally, while the single-instance collision was read from upstream's code, not
+  measured with the fork installed alongside. In the message itself, state as fact only what was observed.
+- When they reply that it is done, **check each requested item in the source before answering**. Here the fork had
+  been renamed, with an unofficial notice at the top of the README and a new app name, bundle ID, tap and version
+  line. How: extract `gh api repos/<r>/tarball` into a temporary directory → read `APP_NAME`/`BUNDLE_ID` in the
+  Makefile and the top of the README → grep for leftovers of upstream's ID (`jp.nlink`) → compare the sha of
+  `contents/LICENSE` with upstream's → see the distribution runs with `gh run list`. The shipped binary was not
+  downloaded, so say the check was on the source. The reply was thanks naming what was met, plus the one item left
+  (issues disabled, so reports about the fork's features can only land upstream).
+- **Leave problems that stay inside the fork alone.** Here the signing and notarization scripts remained unused, and
+  the agent-facing docs still described upstream's steps. The suspicion was "the cloud build cannot work", but the
+  make targets the workflow calls had been rewritten for unsigned builds and the runs succeeded. "Does not run" and
+  "left unused" are different things, and neither affects upstream or its users, so the reply did not mention them.
 
 ### Review behavior-describing doc PRs against the implementation
 
