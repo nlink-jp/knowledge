@@ -1646,3 +1646,25 @@ O(n²) loop that was fine in a test into latency.
 - Bucket what is compared (a grid, not a one-axis sweep, when many items share a column) and put a
   cost test on the worst legal inputs. Run the cheapest refusals (size limits) first.
 - Give the check a seam to corrupt a layout (`probe{corrupt: …}`), or no test can show it runs.
+
+## An inline image taller than the screen, or on the screen at a clear, is lost differently per terminal — measure before drawing big pictures
+
+**Symptom:** a TUI drew mermaid diagrams as inline images at one em of diagram text per terminal line
+(gem-agent, 2026-09). iTerm2 scrolled a picture taller than the screen correctly; kitty clipped its
+lower part and the input frame was drawn over it. Cutting the picture into bands of at most half the
+screen fixed kitty, but on iTerm2 the bands showed seams and a missing lower-right corner (iTerm2 fits
+each band with preserveAspectRatio). Separately, narrowing the window — which made the TUI clear the
+screen (`ESC[2J`) to sweep its frame's re-wrapped leftovers — lost every picture on the screen at that
+moment on both terminals (kitty deleted them, iTerm2 left black space), while the text survived in
+the scrollback; both terminals also piled black space into the scrollback, with text alone too.
+
+**Why:** an inline image is not text. Terminals differ in whether a placement taller than the screen
+scrolls, how a band is fitted into its declared box, and whether a clear keeps an image in the
+scrollback. None of this is in the protocol documents in a form you can rely on.
+
+**How to apply:**
+- Measure each terminal with the real picture sizes before deciding: tall pictures, pictures near
+  the bottom of a full screen, and a resize after a picture. Record which terminal did what.
+- Workarounds are per terminal and measured: bands for kitty only; iTerm2 gets the picture whole.
+- A clear on resize is not harmless once pictures are on screen: it costs the pictures, not only the
+  frame. Count that before choosing a clear; erasing only the frame's rows is the candidate to measure.
