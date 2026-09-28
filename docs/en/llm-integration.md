@@ -208,6 +208,15 @@ yielding local-LLM-level throughput.
 for high-volume sequential workloads. Decide by frequency × data volume ×
 sensitivity (high frequency favors local LLMs; enterprise-contracted managed
 services tend to have stabler limits).
+- When a batch job is unavoidable, **rotate the same model across several endpoints**. In 2026-09, feeding
+  ~1.5k-token payloads back to back, a Gemini 3 flash model saturated with 429s on global, stalled 45-60 s on the
+  us multi-region, and answered in 5 s on eu, with the endpoints taking turns getting worse. A one-line prompt got
+  through everywhere in 1.4 s, so a connectivity check never shows it. Moving eu→us→global on every retry gave 12-18
+  items a minute with no item abandoned. The multi-region REST host is `aiplatform.<us|eu>.rep.googleapis.com`;
+  `<us>-aiplatform.googleapis.com` returns 400.
+- Collecting parallel results in submission order (`map`) makes one stuck item look like the whole job has stopped.
+  Collect them in completion order (`as_completed`) and append each one as it finishes, so a stopped run resumes
+  where it left off.
 
 ### Vertex AI tool config: unify the schema, keep paths per-tool
 
@@ -1768,6 +1777,13 @@ not errors, so a design that falls back to the cloud on error never sees them.
   `--network=none`. Fetch the weights on the host and check them, at a pinned revision, against the hashes
   the author publishes (on Hugging Face: `lfs.oid` from the tree API, a SHA-256, for LFS files, and `oid`,
   the git blob SHA-1 = `sha1("blob <size>\0" + content)`, for non-LFS files).
+- Distilling on your own verdict records did not remove this (the same typed-decision model, encoder frozen and
+  only the decision head trained, 554 logged teacher verdicts plus 154 synthetic cases, 2026-09). Separation rose from
+  0.54 to 0.76, and Japanese-language and fake-tag injections, neither of them in training, were approved 0 times. But
+  it approved `printenv | grep -i token` at 0.905, and approved 4 of 6 cases of a held-out form, injected text inside a
+  search tool's arguments, at up to 0.994. **It learned the kind of tool as a shortcut and did not read the arguments.**
+  Always keep injection forms that never enter training (injections placed somewhere else) for evaluation; becoming
+  robust to the forms you trained on says nothing about the next form.
 
 ### A local model does not act on standing directives in the system prompt — a short line in the first user message reaches it, and the heading's standing sets the follow rate
 
