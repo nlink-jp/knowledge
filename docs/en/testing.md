@@ -1753,3 +1753,26 @@ is refused before the check it aimed at, and that check's guard vanishes without
 - Having the corruption test log the refusing check's message shows which check fired first.
 - When one guard exists in two places (an upstream refusal and a downstream defence), test the
   downstream one directly with a hand-built input.
+
+## A port that matches the original's output can still differ in running time — port iteration by how it walks, not by what it returns
+
+**Symptom:** The dates (dayjs), placement (ganttDb) and ticks (d3) of mermaid's gantt charts were
+ported to Go and checked against the real code under node on tens of thousands of inputs, with no
+difference (mermaid-render, 2026-09). The pre-release independent review found two inputs that
+hung. One was `tickInterval 90000000millisecond`: d3's `millisecond.every(k)` floors to a multiple
+of k and steps by k, while the port stepped one millisecond at a time and kept the multiples — the
+same result, k times the work. The other came from the original: ganttDb counts excluded days one
+at a time, so a task of centuries with `excludes` makes the real code walk just as long.
+
+**Why:** Comparing outputs only asks what comes back. Random generators favour small values, and
+a difference in work only shows at large ones. A walk the original could afford because it runs
+once in a browser becomes an unbounded loop when a library takes arbitrary input.
+
+**How to apply:**
+- Port iteration parts (intervals, walks, filters) by reading how the original walks, not by
+  reproducing its results. If a generic filter stands in, check that one step's work does not grow
+  with the value.
+- Besides the comparison generator, make inputs that set each numeric parameter to its largest
+  value, and time them.
+- Bound the original's own linear walks (day by day, week by week) in the port and refuse beyond
+  the bound — as a resource limit, not an error, with the limit written in the specification.
