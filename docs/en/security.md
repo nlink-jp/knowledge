@@ -1678,6 +1678,51 @@ description (anyone who can get a CVE published through a CNA writes its descrip
 - Do not apply this to MCP results. Making text inert for display is the job of whoever
   displays it; rewriting it here changes the data the model receives.
 
+### Making text inert at the ingress is not enough when a transform downstream decodes — hold the transform's output to what it writes itself
+
+**Symptom:** In an agent CLI's TUI, the model's reply, its thoughts, tool-call arguments and the
+approval dialog reached the terminal with escape sequences intact. Measured on a real terminal
+(tmux 3.7c, a private server with `set-clipboard on`), 58 of 80 deliveries acted: the title set,
+the clipboard buffer written through OSC 52, the screen erased, the cursor moved. In the approval
+dialog a CR hid the start of a command and an unterminated OSC hid the rest of it, so the command
+the operator read was not the command that ran. Making every string of every message inert once,
+by reflection, at the TUI's ingress brought that to 0 — and an independent review then found that
+the Markdown renderer (goldmark, under glamour) **decodes** the character references `&#27;`,
+`&#x1b;` and `&#13;` into a real ESC and CR. The ingress saw harmless ASCII, the renderer's output
+was an OSC, and the terminal obeyed it (3 of 95, flushed replies only). A second pass found that
+an SGR left in the renderer's output — an SGR 8 (conceal) that the plain style printed after an
+HTML block with no reset — hid the approval dialog that followed, command included. (Measured:
+gem-agent ADR-0093, `make escprobe`.)
+
+**Why:** "Once, at the ingress" holds only while nothing between the ingress and the terminal
+**makes text again**. A renderer with a decoder is a transform that turns harmless text into
+controls. A rule for character references at the ingress is a text rule over an unbounded domain
+(decimal, hex, leading zeros, named references) written against one decoder, and the ingress
+cannot tell whether the text will land in a code block, where references are not decoded. The
+escapes a renderer writes itself are a finite, measurable set (glamour's dark and light styles
+write SGR and nothing else; notty writes nothing — measured).
+
+**How to apply:**
+- Remove control **characters** (C0 but tab and newline, DEL, C1, the bidi embeddings, overrides
+  and isolates; invalid UTF-8 to U+FFFD), not sequence bodies. Without an ESC or C1 introducer
+  nothing left can start a sequence. Removing bodies too means removing an unterminated OSC to
+  the end of the string — the defence reproducing the terminal's "hide the rest" spoof, the shape
+  measured in the approval dialog.
+- Do it once at the ingress (every message string by reflection, every callback that hands text
+  back) — and hold the output of every **transform** over outside text to the vocabulary that
+  transform writes: wrap the renderer factory to keep SGR only, and close any output holding an
+  SGR with a reset so no style outlives the reply. The plain theme and box art have an empty
+  vocabulary and lose every control. No print site calls it.
+- Test the rendered paths with **character references**, not only raw control bytes. Test the
+  reset with a renderer that leaves a style open; the real one resets by habit and would shield
+  the test.
+- An architecture test that pins a package's importers matches the import path, not the
+  identifier at the call — an aliased import passed the first version.
+- Plain output (a pipe-friendly CLI) follows `ls -q` / `ls -w`: inert when the stream is a
+  terminal, verbatim to a pipe or a file. The wrapping writer holds the tail of a rune split
+  between writes, which is state, so it needs a lock: an interrupt handler and the turn write to
+  stderr at once (confirmed with `-race`), and the `*os.File` it replaced was safe for that.
+
 ## A directory the sandbox can write is input: reach it through an `os.Root`, opened from the directory someone vouched for
 
 **Symptom:** a server runs model-written code in a container with `/work` bind-mounted, and

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-29 (terminal injection, renderer decoding)
+
+- **security** (ja + en): making outside text inert at the ingress is not enough
+  when a renderer downstream decodes character references (`&#27;` into ESC);
+  hold a transform's output to what it writes itself (SGR, closed with a reset),
+  remove characters not sequence bodies, test rendered paths with references,
+  pin importers by import path, and follow `ls -q`/`-w` for plain output.
+
 ## 2026-09-29 (after the fork replied)
 
 - **development-process** (ja + en): the fork entry gains what came after — keep
