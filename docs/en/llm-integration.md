@@ -166,6 +166,17 @@ the vendor cancelled the increase.
 - Do not write **future schedules** into table comments ("introductory until
   X, then Y"). Record only the verification date and the source, and confirm at
   the next sync that the schedule actually happened.
+- When the schedule does happen, **append the new price as a period with its
+  start instant — never overwrite the old one.** A table that holds one price
+  per model can record a change only by overwriting, and the next "recompute
+  stored costs" (reprice) then applies the new price to all of history (real
+  case, 2026-09: Vertex lists three Flash models at double the price from
+  2027-01-01 — overwriting would double 2026). Hold prices as periods and look
+  them up by the record's own timestamp on every path. Write each start as a
+  literal instant with its offset at the billing day boundary (Google Cloud:
+  midnight US Pacific Time), not derived from a zone database — the offset
+  differs summer to winter, and Windows / Linux builds may lack zoneinfo. If
+  record times are stored in whole seconds, keep starts to whole seconds too.
 - Let users override per-model multipliers in config so a stopgap needs no
   release (here, four lines of TOML restored the right figure).
 - Measure once, on real workload data, **which column dominates cost** — that

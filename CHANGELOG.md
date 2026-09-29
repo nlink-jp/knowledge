@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-29 (price changes are appended as dated periods)
+
+- **llm-integration** (ja + en): the price-table sync entry gains the second
+  half of "don't write future schedules" — once a change happens, append it as
+  a period with its start instant instead of overwriting, or the next reprice
+  rewrites history; look prices up by each record's own time; write starts as
+  literal instants at the billing day boundary, in whole seconds.
+
 ## 2026-09-29 (cache-read multiplier by division)
 
 - **llm-integration** (ja + en): the price-table sync entry gains one rule —
