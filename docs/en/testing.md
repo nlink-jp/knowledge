@@ -1776,3 +1776,29 @@ once in a browser becomes an unbounded loop when a library takes arbitrary input
   value, and time them.
 - Bound the original's own linear walks (day by day, week by week) in the port and refuse beyond
   the bound — as a resource limit, not an error, with the limit written in the specification.
+
+## A part that matches the real part can still disagree inside the real pipeline — compare the whole pipeline
+
+**Symptom:** A Go check refusing mermaid label emphasis (`*x*`, `_x_`) was compared with the real
+marked 16 on 90,000 strings: no miss (mermaid-render, 2026-09). The pre-release review compared
+it with an emulator of the whole path a label takes (mermaid's entity decoding, then DOMPurify
+parsing and writing back, then marked) and found misses: DOMPurify writes U+00A0 back as
+`&nbsp;`, which changes the characters marked sees beside a delimiter; marked masks tags as
+letters before looking for emphasis; a delimiter right after an autolink is read as at the
+start. It also found disagreements in what whitespace is (Go and JavaScript differ on U+0085 and
+U+FEFF) and in the underscore rule (CommonMark and marked treat a combining mark or zero-width
+space beside `_` differently).
+
+**Why:** Testing a part alone means generating that part's input yourself. In the real
+pipeline, the earlier stages rewrite the input before the part sees it, and a generator that
+does not know the rewrites never makes the inputs that only exist after them.
+
+**How to apply:**
+- Compare a ported check with an emulator of the whole real pipeline (normalising, sanitising,
+  escaping stages included), and validate the emulator once against the real thing (the real
+  library in a browser).
+- Where several readings are possible and cannot be told apart (a definition of whitespace, a
+  spec's rule versus an implementation's), refuse if any reading says danger — take the union.
+  Over-refusal shows the source; a miss draws a wrong picture.
+- Run each form an earlier stage can produce (written back, masked, boundaries re-read) through
+  the check as a form of its own.
