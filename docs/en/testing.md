@@ -1713,3 +1713,43 @@ evidence the main record.
   numbered lines and markers, then read the screen's text back and count. The binary's echo of typed
   input is not history.
 - Filtering results with grep hides lines such as a failed capture. Look at failures unfiltered.
+
+## Check a port of a generated parser against the generator's own output — reading the grammar is not enough
+
+**Symptom:** mermaid's state diagram grammar (jison) was ported to Go rule by rule (mermaid-render,
+2026-09). An independent review of the specification generated the real parser from the same
+grammar with jison and ran it: 11 claims the specification made from reading the grammar were
+wrong or loose (`;` is a name character at the top level too, the direction rule beats comments and
+the header, and so on). After the fixes, comparing both sides' statement trees on 8,000 generated
+sources found one more: a rule given a "try only when the current line holds `{`" prefilter for
+speed could match across a line end (its `\s+` takes newlines).
+
+**Why:** First-match lexer rules, exclusive states and LALR default reductions make behaviour that
+reading misses. A port's optimisation (a per-line prefilter) silently narrows a rule's reach.
+
+**How to apply:**
+- When the source is a generator's input (jison, Langium), generate the real parser and run it
+  outside the repository.
+- Write a small tool that prints both sides in one canonical form (the statement tree as a string)
+  and compare on random sources. Generate a mostly-invalid population and a mostly-valid one (all
+  errors make a weak comparison).
+- Count "both refuse" as agreement (where each refuses may differ).
+- Before giving a rule a per-line prefilter, make sure the rule cannot cross a line end.
+
+## After adding a check, rerun every earlier mutant — corruption tests get caught by the new check first
+
+**Symptom:** A render-time check "a state's own part stays inside its node" was added
+(mermaid-render, 2026-09). Corruption tests that used to guard other checks ("states overlap", "a
+titled state is too small") were now refused by the new check first, so deleting the original
+checks left every test green. Only rerunning the whole mutant set showed it (4 of about 50).
+
+**Why:** A corruption test only asks that some check refuses. As checks are added, the corruption
+is refused before the check it aimed at, and that check's guard vanishes without a sound.
+
+**How to apply:**
+- After adding a check, rerun the feature's mutants. For each uncaught one, reshape the corruption
+  so only its target can see it (slide sideways on the same line, move the part and its node
+  together, add one item on the scope's side only).
+- Having the corruption test log the refusing check's message shows which check fired first.
+- When one guard exists in two places (an upstream refusal and a downstream defence), test the
+  downstream one directly with a hand-built input.
