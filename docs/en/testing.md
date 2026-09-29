@@ -1668,3 +1668,48 @@ scrollback. None of this is in the protocol documents in a form you can rely on.
 - Workarounds are per terminal and measured: bands for kitty only; iTerm2 gets the picture whole.
 - A clear on resize is not harmless once pictures are on screen: it costs the pictures, not only the
   frame. Count that before choosing a clear; erasing only the frame's rows is the candidate to measure.
+- **Later measurement (same project, 2026-09) corrected part of the reading above:** on `ESC[2J`
+  iTerm2 moves the screen's content into the scrollback (pictures included). A drag runs a clear per
+  width report, so one nearly empty screen piles up per report — that was the black space (565 rows
+  in one drag). kitty erases in place, so nothing piles up, but it loses the **text** that was on the
+  screen too (49 lines): "the text survives" was wrong for kitty. A reflow on its own kept pictures in
+  place on both. The fix is config-and-io's "An inline TUI's resize erases the frame's rows…" entry.
+
+## Drive the real terminal with nobody at the keyboard — open a new window and measure there, instead of asking someone to drag and capture
+
+**Symptom:** measuring a TUI resize defect, the operator was first asked to "narrow it", "capture it
+now", "copy everything" (gem-agent, 2026-09). Overshooting drags, missed captures and different copy
+methods got into the results. Then, with an automated probe already measuring, the final check went
+back to a hand check and a report, and the record called the binaries untested — the operator's
+words: this is wrong, and the real binaries need automated tests too.
+
+**Why:** a measurement that depends on a person's actions measures the person's timing too. Once
+automated, the leftovers that could not be explained by hand were reproduced and taken apart, and two
+hypotheses were refuted. And with the means to automate, doing the last step by hand makes the weaker
+evidence the main record.
+
+**How to apply (macOS, measured on iTerm2 and kitty):**
+- **Do not touch the user's windows: open a new one and measure there.** kitty enables remote
+  control for that launch only: `kitty -o allow_remote_control=yes --listen-on unix:<sock> …`, then
+  `kitten @ resize-os-window --unit cells`, `get-text --extent all` (scrollback included),
+  `send-text`, and `ls` (`platform_window_id`). A unix socket path is limited to about 104 bytes and
+  kitty resolves a relative one against its temporary directory — put it directly under a short
+  temporary directory. `send-text` decodes backslashes, so double any `\` in what you send.
+- iTerm2 through AppleScript: `create window with default profile command`, a session's
+  `columns`/`rows` (settable), `contents` (scrollback included) and `write text … newline no`. A
+  window's `id` was the number `screencapture -l` takes. iTerm2 splits a command itself, so a nested
+  `sh -c '…'` does not survive — hand it a launcher file.
+- **Do not close an iTerm2 window whose process still runs.** A confirmation dialog appears and holds
+  every later AppleScript call and screenshot (it stayed on the user's iTerm2). Record the pid in the
+  launcher, stop the process, then close with a bounded timeout.
+- Capture per window with `screencapture -x -o -l <window number>` (a full-screen capture shows
+  other apps).
+- Synthesize a mouse drag with CGEvent (run with `swift`). Before pressing, bring the target window
+  forward and check that the topmost window at that point (layers 0–19; the Dock keeps a transparent
+  full-screen window at 20) is the target; if not, do not press and do not retry. Restore the pointer
+  afterwards. Before running, tell the user how many minutes not to touch anything and wait for a yes.
+- **Measure the built binary the same way.** Start it with an isolated config (no MCP, a model name
+  that is never called and marks the footer), type commands through the terminal so it prints
+  numbered lines and markers, then read the screen's text back and count. The binary's echo of typed
+  input is not history.
+- Filtering results with grep hides lines such as a failed capture. Look at failures unfiltered.

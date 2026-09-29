@@ -752,7 +752,41 @@ fine.
   green while the UI dies, so without this shape the next one is found on real
   hardware.
 
+### An inline TUI's resize erases the frame's rows, never the screen — end rows at their text, and draw narrow while the width moves
 
+**Symptom:** a Bubble Tea v1 inline TUI (gem-agent and lagent, 2026-09) cleared the screen when the
+window narrowed, to sweep the re-wrapped copies of its input box. The clear lost the inline images on
+the screen and piled empty screens into iTerm2's scrollback (testing's "An inline image taller than the
+screen, or on the screen at a clear…" entry). Without the clear, stale copies of the input box stayed
+as a staircase; with a sweep of only the frame's rows, a hand's drag still left one or two.
+
+**Why:** three separate causes (all measured on iTerm2, kitty and tmux 3.7c, with a trace of every
+flush). (1) The terminal re-wraps the frame's rows first, and Bubble Tea repaints by moving up "lines
+drawn last time − 1", so the rows the re-wrap added stay above it. (2) The textarea draws the input
+box's rows padded with spaces to the full width whatever was typed; a repaint during a resize — the
+cursor blink alone, every ~530 ms — writes that row for the width last reported into a terminal
+already narrower, which wraps it where the renderer does not count it. (3) iTerm2 moves its screen
+continuously but updates the program's report and the kernel's window size (`TIOCGWINSZ`) only about
+every 200 ms (read every 2 ms to check); nothing the program can read gives the current width.
+
+**How to apply:**
+- Pass a writer with `tea.WithOutput`; on a width shrink compute K, the rows the last **flushed**
+  frame gains at the new width, and rewrite the next flush's leading `CSI n A` into
+  `\r CSI n+K A CSI J`. `tea.Println` always adds `\r\n` and leaves a row of history; a prefix in
+  `View()` is lost to the next view or repeated by a repaint. The rewrite depends on the flush format,
+  so a test drives the real renderer through the writer and checks that flushes begin with `CSI n A`
+  (a dependency upgrade that changes it fails).
+- End every managed row at its last visible cell. Background-coloured padding (the input line's
+  highlight) becomes `CSI K` plus `CSI 999 C`, which keeps the bar full width. A single reversed blank
+  (the textarea's cursor) is not padding.
+- While width-changing reports keep coming (400 ms after the last), draw every frame row shorter than
+  the narrowest width the model lays out; it cannot wrap however far ahead of its report the terminal is.
+- Do not over-estimate K "to be safe": it erases real history above the frame. On a terminal that
+  truncates instead of re-wrapping (xterm and the like — not measured), K can over-state and do that.
+- Do not measure this by asking someone to drag. Driving the terminal with nobody at the keyboard is
+  testing's "Drive the real terminal with nobody at the keyboard" entry.
+
+### Go's `flag.FlagSet.Output()` is stderr — send a report meant for people to stdout explicitly
 
 **Symptom:** A subcommand rendered its formatted report with
 `printReport(fs.Output(), …)`. The `--json` variant went to stdout, the text
