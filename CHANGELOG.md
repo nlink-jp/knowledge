@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-29 (cache-read multiplier by division)
+
+- **llm-integration** (ja + en): the price-table sync entry gains one rule —
+  derive a cache-read multiplier as cache-read price ÷ base input price, never
+  by matching a dollar figure; two models can share a $0.20/MTok cache read at
+  0.1× and 0.05×. Pin the row in dollars so a swap surfaces as a wrong amount.
+
 ## 2026-09-29 (terminal injection, renderer decoding)
 
 - **security** (ja + en): making outside text inert at the ingress is not enough

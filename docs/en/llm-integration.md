@@ -156,6 +156,13 @@ the vendor cancelled the increase.
   Pin two things separately in tests: the exception model's multiplier differs
   from the standard one, and the cost engine takes the multiplier from the
   record's own model.
+- **Derive a multiplier by division** (cache-read price ÷ base input price),
+  never by matching a dollar figure to a known model. Real case (2026-09): a new
+  model's cache read was $0.20/MTok, the same figure as a footnoted-exception
+  model — but on a $2 base that is the standard 0.1×, not the exception's 0.05×
+  on $4. Copying the row with the same dollar figure halves the cache-read cost.
+  Pin the pricing-page row column by column in dollars in the tests, so a
+  swapped multiplier shows up directly as a wrong amount.
 - Do not write **future schedules** into table comments ("introductory until
   X, then Y"). Record only the verification date and the source, and confirm at
   the next sync that the schedule actually happened.
