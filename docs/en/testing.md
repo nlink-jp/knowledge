@@ -1802,3 +1802,63 @@ does not know the rewrites never makes the inputs that only exist after them.
   Over-refusal shows the source; a miss draws a wrong picture.
 - Run each form an earlier stage can produce (written back, masked, boundaries re-read) through
   the check as a form of its own.
+
+## Check what is drawn, not the room kept for it — the passes after a layout make states the layout's data does not describe
+
+**Symptom:** A box-drawing renderer for terminals (mermaid-render, 2026-09) checked every render on
+its grid, and still the pre-release independent review found four ways wrong art passed. Three came
+from passes that move things after the layout:
+
+- a leaf node moved to straighten its link landed inside a frame it was not in;
+- a link moved but its label stayed where the line had been;
+- a widened frame shared a border with its neighbour.
+
+After the fixes, the second review found `Y│` — a one-cell label standing beside its line on 21% of
+random flowcharts. A label's room was kept two cells wide, the text was centred in it, and the line
+ran through the right-hand cell. The check asked whether the room touched the line, not the text.
+
+**Why:** The checks were written against the layout's data (boxes, paths, label rectangles). Later
+passes rewrite that data, and what covers what is not in it. The reader sees drawn characters, not
+rectangles.
+
+**How to apply:**
+- Write checks in the unit the reader sees. For box drawing: per cell, what is drawn there and
+  whose it is. For a label: whether the cells of its drawn text lie on its own line, not its
+  rectangle.
+- When you add a pass that moves or widens something after the layout, add a drawing-time check
+  for every wrong state it can make: no node in a frame it is not in, no frames touching, nothing
+  off the grid. Prevention inside the pass is not enough.
+- Refuse anything off the grid before drawing it: writing past the grid either clips or panics.
+
+## A rate floor does not catch a mutant that costs 1% — pin each rule with a direct test
+
+**Symptom:** Breaking the label-placement rules of a box-drawing renderer one at a time left its
+random-diagram rate test green (1,200 diagrams, floor 97%; mermaid-render, 2026-09). Ten mutants
+changed which diagrams drew by up to 1% (41 of 4,000). The drawing-time checks kept refusing wrong
+art, so nothing was ever drawn wrong; fewer diagrams simply drew.
+
+**Why:** A floor has slack, and a loss inside it shows in no single run. The better the drawing-time
+checks refuse wrong output, the more a broken rule shows only as "draws a little less".
+
+**How to apply:**
+- Test a routine that has rules (how candidates are made, what excludes them, how one is chosen)
+  directly, with small hand-built inputs, one input per rule whose result that rule changes.
+- Keep rate tests as smoke detection for a collapse. Do not rely on a floor to hold a rule.
+- A mutant whose only effect is "the rate drops a little" is not equivalent. It marks a missing
+  direct test.
+
+## The first item of a list built by map iteration changes from run to run — error messages are output too
+
+**Symptom:** A box-drawing renderer checked its line cells in map order and returned the first fault
+(mermaid-render, 2026-09). For 3 of 61 refused inputs the error message differed between runs. The
+drawn art was deterministic, so no test noticed.
+
+**Why:** Go's map iteration order changes every run. With two or more faults, which one comes first
+changes too.
+
+**How to apply:**
+- When you pick one item from a list to show, sort the list into a fixed order first (reading order:
+  row, then column).
+- Determinism tests should compare error messages, not only the drawn result. To catch a mutant
+  that removes the sort, pull the sorting into a function and test it directly: an input refused
+  for a single fault never exercises the order.
