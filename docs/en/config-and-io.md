@@ -612,6 +612,72 @@ one hole.
   escape ladder (second Ctrl+C warns, third quits) — with an append-only
   record you can honestly say "everything up to here is saved".
 
+### A Go process cannot pass "inherited as ignored" signals to its children — under nohup, a child gets TERM and PIPE at the default action
+
+**Symptom:** a child had to inherit the signal dispositions unchanged (POSIX.1-2024 `timeout`), and Go was
+tried. With HUP, TERM and PIPE ignored in the parent before a Go program started, `signal.Ignored(SIGTERM)`
+returned false and a child started with `os/exec` had TERM and PIPE back at the default action (only HUP stayed
+ignored; measured on go1.27.1 / macOS 27). The same investigation measured that a self-kill after
+`signal.Reset` exits 2 for QUIT and is survived for PIPE and USR1 (it cannot end by the same signal), that SEGV,
+BUS and ILL crash the runtime before reaching Notify, and that PIPE and PROF never reach Notify.
+
+**Why:** at start-up the Go runtime installs its own handler for signals inherited as ignored, except SIGHUP and
+SIGINT (read in `runtime/signal_unix.go`, `sigInstallGoHandler`). A signal with a handler is reset to default by
+exec.
+
+**How to apply:**
+- If a requirement is "pass inherited dispositions to the child", "end by the child's signal" or "forward every
+  signal received", do not write it in Go (timeout went to C for this). cgo patches part of it; forwarding
+  still collides with the runtime.
+- When a Go tool starts children under `trap '' TERM` or `nohup`, expect them to get TERM and PIPE at the default
+  action.
+
+### Signal pitfalls when supervising a child on macOS — ignoring drops signals sent to a just-forked child, and ignoring a synchronous signal makes a fault spin
+
+**Symptom:** the design experiments for timeout (C) measured the following (macOS 27, arm64).
+- A signal set to `SIG_IGN` in the parent and sent to a just-forked child before it restored the default was
+  discarded at generation (292 of 300 TERMs lost). Blocked at the default action in the parent instead: 0 lost.
+- With SEGV ignored or blocked, a NULL dereference re-executes forever at 100% CPU. So does a `-fbounds-safety`
+  trap (SIGTRAP).
+- A SEGV sent with `kill` and a real NULL dereference arrive with the same siginfo (`si_code=2`, `si_pid=0`,
+  `si_addr=0x0`); a handler cannot tell them apart.
+- A stopped process dies from a default-action TERM without SIGCONT. A process that catches TERM keeps it pending
+  until it is continued.
+- `ps -o sigmask` showed 0 for a process with blocked signals (masks are per thread).
+- kqueue `EVFILT_SIGNAL` records delivery attempts even while a signal is ignored or blocked, and `data` is a
+  count; a `kill` to oneself is already recorded when `kill` returns.
+
+**How to apply:**
+- Do not ignore signals you forward: block them at the default action in the parent and read them from kqueue;
+  the child restores its dispositions, then unblocks.
+- Never ignore or block the five that can arise synchronously (SEGV, BUS, ILL, TRAP, FPE); give them a handler.
+  Sent and real faults cannot be told apart, so treat "the same signal again with no main-loop progress" as a
+  fault (timeout's ADR-0002 uses 8 per iteration).
+- Test that SIGCONT is sent with a command that catches TERM: a stopped `sleep` dies from TERM without SIGCONT,
+  so the test would pass vacuously. Check masks in a unit test, not through `ps`.
+
+### Whether a time limit counts time asleep is decided by the clock — macOS's kqueue default and Go's monotonic clock stop, and GNU timeout on Linux does not count it either
+
+**Symptom:** "GNU `timeout` on Linux counts time asleep" was written from conjecture and nearly misled the
+operator's decision. It is the other way round.
+
+**Why:** GNU `timeout` arms a relative `timer_create(CLOCK_REALTIME)`, and Linux measures relative
+`CLOCK_REALTIME` timers on `CLOCK_MONOTONIC`, which stops during suspend (read in `kernel/time/hrtimer.c`).
+macOS `clock_gettime(3)` documents that `CLOCK_MONOTONIC` keeps incrementing while asleep and
+`CLOCK_UPTIME_RAW` (= `mach_absolute_time`) does not. kqueue's `EVFILT_TIMER` uses the latter by default and the
+former with `NOTE_MACH_CONTINUOUS_TIME` (`sys/event.h`). The Go runtime's monotonic clock is
+`mach_absolute_time` (darwin nanotime), so Go timers stop during sleep too.
+Measured (macOS 27): a 120 s limit on kqueue's default timer, put to sleep, counted the rest after waking. The
+kernel's record (`sysctl kern.sleeptime kern.waketime kern.sleep_abs_time kern.wake_abs_time`) showed mach time
+advancing about 0.09 s across a 157 s sleep. `pmset -g log` Sleep/Wake times missed the kernel's transitions by
+seconds (4 s early, 3 s late); `Wake Requests` lines are schedules, not wakes.
+
+**How to apply:**
+- When building a time limit, decide first whether sleep counts and express it in the clock (kqueue flag, clock
+  ID). To match Linux tools, it does not.
+- Read sleep boundaries from `kern.sleeptime`/`kern.waketime` and the `*_abs_time` values, not from `pmset -g
+  log`; do not build a narrow pass window on pmset times.
+
 ### In-process walks need the same "return is guaranteed" contract — a tool that merely receives ctx ignores Ctrl+C
 
 **Symptom:** Ctrl+C during an agent's file search stayed on

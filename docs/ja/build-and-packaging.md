@@ -187,3 +187,21 @@ UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定
 関門は形ごとのfixture（`--no-xattrs` のみのものを含む）で実証し、fixtureは畳み込まない読み手
 （Pythonの `tarfile`）で先に読み返す。どの関門でも落ちない断定を書いたことが、最初の修正が
 効いたと信じられた理由である。署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。
+
+## C の安全策は、既定のままだと問題を見つけても失敗しない — 陽性対照は実際に動くビルド規則を読む
+
+**事象:** timeout の 5 層（警告・静的解析・`-fbounds-safety`・ASan/UBSan・入力の揺さぶり）を Apple clang 21 で実測した。
+- `clang --analyze -Werror` は指摘があっても rc=0。`-Xanalyzer -analyzer-werror` で初めて失敗する。
+- UBSan は既定で報告して続行し、rc=0。`-fno-sanitize-recover=all` が要る。
+- Apple の SDK は `_FORTIFY_SOURCE` を最大 2 として扱う（3 は効かない。`secure/_common.h` を読んで確認）。
+- Apple clang に libFuzzer（`-fsanitize=fuzzer`）は無い。
+- 層ごとの検出は重ならない。配列を越える `memcpy` は警告も静的解析も見逃し、ASan だけが捕まえた。長さ 3 の配列の
+  添字 3 は `-fbounds-safety` が実行時に止め、通常ビルドは黙って読んだ。
+- `-fbounds-safety` は、`main` の argv を `char *__null_terminated *__counted_by(argc)` で受ければ通り、`execvp` へ渡す
+  1 か所だけ `__unsafe_forge_null_terminated` が要る。ローカル配列を `const char *` の引数へ渡す書き方と、`SIG_IGN` を
+  関数ポインタの引数で渡す書き方は拒否される（`sa_handler` への直接代入、長さつきの `write` は通る）。
+- 陽性対照がフラグの変数だけを見ていると、ビルド規則からフラグが外れても通る。`$(MAKE) -n` で規則を読んでも、
+  `-f $(firstword $(MAKEFILE_LIST))` を付けないと、動いているのとは別の Makefile を読む。
+
+**適用方法:** 層ごとに失敗させるフラグを明示する。わざとバグを入れたファイルで、各層が診断の文言つきで失敗することを
+`make test` の最初に確かめる。フラグが規則に入っているかは、動いている Makefile の `make -n` の出力で確かめる。

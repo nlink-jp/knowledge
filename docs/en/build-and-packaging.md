@@ -208,3 +208,24 @@ fixture per shape, the `--no-xattrs`-only one included, read back first with a
 reader that does not fold (Python's `tarfile`). A packaging claim that nobody's
 gate can fail is how the first fix shipped believed. Signature/notarization checks and
 archive-content checks are independent; neither substitutes for the other.
+
+## C safety layers do not fail on findings by default — positive controls read the build rules that actually run
+
+**Symptom:** timeout's five layers (warnings, static analysis, `-fbounds-safety`, ASan/UBSan, input stress) measured
+with Apple clang 21:
+- `clang --analyze -Werror` exits 0 with findings; only `-Xanalyzer -analyzer-werror` fails.
+- UBSan reports and carries on, exit 0; it needs `-fno-sanitize-recover=all`.
+- Apple's SDK treats `_FORTIFY_SOURCE` as at most 2 (3 has no effect; read in `secure/_common.h`).
+- Apple clang has no libFuzzer (`-fsanitize=fuzzer`).
+- The layers catch different things: a `memcpy` past an array passed warnings and static analysis and only ASan
+  caught it; index 3 into a 3-element array was trapped by `-fbounds-safety` and read silently by a normal build.
+- `-fbounds-safety` accepts `main` taking `char *__null_terminated *__counted_by(argc) argv`; the single call to
+  `execvp` needs `__unsafe_forge_null_terminated`. Passing a local array to a `const char *` parameter, or
+  `SIG_IGN` through a function-pointer parameter, is rejected (assigning `sa_handler` directly and a counted
+  `write` are accepted).
+- A positive control that checks only the flag variables passes when a rule loses the flag. Reading the rules with
+  `$(MAKE) -n` also reads a different Makefile unless given `-f $(firstword $(MAKEFILE_LIST))`.
+
+**How to apply:** give each layer its failing flags explicitly; at the start of `make test`, prove each layer fails,
+with its diagnostic text, on a file with a planted bug; check the flags are in the rules through `make -n` of the
+Makefile that is running.

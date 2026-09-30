@@ -603,3 +603,21 @@ be settled from the published asset and from records nobody edits.
   is where two writers meet. The release steps are the guard (`make clean &&
   make package`, `verify-release`'s marker-freshness gate); `go version -m`
   and the notary log are the audit that proves it afterwards.
+
+## A CLI signed with the Hardened Runtime does not pass `DYLD_*` to its children
+
+**Symptom:** a command started through timeout, signed with Developer ID and the Hardened Runtime, lost
+`DYLD_LIBRARY_PATH` from its environment (other variables arrived; measured on macOS 27). macOS's own
+`/usr/bin/env`, `nice` and `nohup` did not pass `DYLD_*` either (measured).
+
+**Why:** macOS removes `DYLD_*` from the environment of a restricted process (Hardened Runtime, SIP-protected), and
+children inherit that environment (behaviour measured; no primary source for the mechanism yet). The entitlement
+`com.apple.security.cs.allow-dyld-environment-variables` lets them through, but also lets `DYLD_INSERT_LIBRARIES`
+into the process itself.
+
+**How to apply:**
+- A signed CLI that starts children (a wrapper, a supervisor) documents in its README limits that `DYLD_*` does not
+  reach them.
+- Decide on the entitlement against the wider injection surface it opens (timeout does without it, behaving like
+  macOS's own wrappers).
+- Check environment-passing behaviour on the shipped (signed) build.

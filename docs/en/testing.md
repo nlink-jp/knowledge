@@ -1862,3 +1862,23 @@ changes too.
 - Determinism tests should compare error messages, not only the drawn result. To catch a mutant
   that removes the sort, pull the sorting into a function and test it directly: an input refused
   for a single fault never exercises the order.
+
+## The reference's manual is not the reference's behaviour — a tool that claims compatibility tests against the real thing
+
+**Symptom:** from the GNU coreutils manual's "-k has no effect if the main duration is 0", the GNU difference table
+said "-k does not start at a forwarded signal either". Run against GNU `timeout` 9.7 under podman with the same
+inputs, GNU did start it (as this implementation does). The same comparison found that GNU accepts `-s 0` and
+`-s EXIT`, and that its `-v` reports forwarded signals too.
+
+**How to apply:**
+- A tool claiming "compatible with X" runs the same cases against X itself (a container pinned by digest, for
+  example) and compares outcomes (exit status or signal name, stderr where it matters). Values that differ by
+  platform, such as signal numbers, are compared by name.
+- List the expected differences, and fail both on a difference not in the list and on a listed one not observed.
+  The listed differences double as the positive control (comparing a run with itself fails). When the reference
+  is unavailable, fail rather than skip.
+- Find specifications the tests do not guard by running mutants that break them: here the e2e suite stayed green
+  while three specifications were unguarded.
+- Stop a one-off manual measurement once its question is answered. If a sharper re-run would change no decision and
+  guards nothing against regression, do not re-run it just to satisfy a preset criterion; record that the
+  criterion's premise broke.

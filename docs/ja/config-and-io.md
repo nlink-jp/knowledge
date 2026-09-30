@@ -529,6 +529,66 @@ content-addressed ストア（ハッシュ名・削除なし）だったため�
 - UI 側にも多層防御を: キャンセル無視のツールに備え、中断中の再 Ctrl+C ×2 で警告 →
   ×3 で終了、の脱出はしごを用意する（記録が追記型なら「ここまでは保存済み」と言える）。
 
+### Go のプロセスは「無視で受け継いだシグナル」を子へ渡せない — nohup の下の子が TERM・PIPE を既定動作で受ける
+
+**事象:** 受け継いだシグナル設定を子へそのまま渡す必要があり（POSIX.1-2024 の `timeout`）、Go で試した。
+親で HUP・TERM・PIPE を無視してから Go のプログラムを起動すると、`signal.Ignored(SIGTERM)` は偽を返し、
+`os/exec` で起動した子では TERM・PIPE が既定動作に戻っていた（HUP だけは無視のまま。go1.27.1 / macOS 27 で実測）。
+同じ調査で、`signal.Reset` の後の自己 kill は QUIT で exit 2、PIPE・USR1 では生き残り（同じシグナルで終われない）、
+SEGV・BUS・ILL は Notify へ渡る前にランタイムが落ち、PIPE・PROF は Notify に届かなかった（実測）。
+
+**なぜ:** Go ランタイムは起動時に、無視で受け継いだシグナルのうち SIGHUP・SIGINT 以外へ自分のハンドラを入れる
+（`runtime/signal_unix.go` の `sigInstallGoHandler` を読んで確認）。ハンドラのあるシグナルは exec で既定動作に戻る。
+
+**適用方法:**
+- 「子に受け継いだ設定を渡す」「子と同じシグナルで自分も終わる」「受けたシグナルをすべて中継する」のどれかが
+  要件なら Go で書かない（timeout はこれで C にした）。cgo で一部は補えるが、中継はランタイムと衝突する。
+- Go のツールが `trap '' TERM` や `nohup` の下で子を起動するとき、子は TERM・PIPE を既定動作で受けると想定する。
+
+### macOS で子を監督するときのシグナルの落とし穴 — 無視は fork 直後の子へのシグナルを捨て、同期シグナルの無視は空回りを招く
+
+**事象:** timeout（C）の設計実験で、次を実測した（macOS 27、arm64）。
+- 親で `SIG_IGN` にしたシグナルは、fork した子が既定動作へ戻すまでの隙に子へ送られると、生成時に捨てられた
+  （TERM 300 回中 292 回消失）。親で既定動作のまま塞いで（block）おくと 0 回。
+- SEGV を無視または塞いだ状態で NULL 参照すると、同じ命令を再実行し続け、CPU 100% のまま戻らない。
+  `-fbounds-safety` の停止（SIGTRAP）も同じ。
+- `kill` で送った SEGV と本物の NULL 参照は、同じ siginfo で届く（`si_code=2`・`si_pid=0`・`si_addr=0x0`）。
+  ハンドラの中では両者を見分けられない。
+- 停止中のプロセスは、既定動作の TERM を受けると SIGCONT なしで死ぬ。TERM を捕まえるプロセスでは、
+  再開されるまでシグナルが保留される。
+- `ps -o sigmask` は、塞いだシグナルのあるプロセスでも 0 と表示した（mask はスレッドごと）。
+- kqueue の `EVFILT_SIGNAL` は、無視中・塞いでいる間も配送の試みを記録し、`data` は回数。
+  自分宛ての `kill` は、`kill` から戻った時点で記録済み。
+
+**適用方法:**
+- 子へ中継するシグナルは親で無視せず、既定動作のまま塞いで kqueue で受ける。子は設定を戻してから塞ぎを外す。
+- 同期で起きうる 5 種（SEGV・BUS・ILL・TRAP・FPE）は無視も塞ぎもせず、ハンドラを置く。送信と例外は
+  見分けられないので、「メインループが進まないまま同じシグナルが続いたら例外」とみなす
+  （timeout の ADR-0002 は 1 周あたり 8 回）。
+- SIGCONT を送っていることのテストには、TERM を捕まえるコマンドを使う。止まった `sleep` は SIGCONT なしでも
+  TERM で死ぬので、テストが空振りする。mask の検査は `ps` ではなく単体テストで行う。
+
+### 時間制限にスリープ中の時間を含めるかは時計で決まる — macOS の kqueue 既定と Go の単調時計は止まり、Linux の GNU timeout も数えない
+
+**事象:** 「Linux の GNU `timeout` はスリープ中も数える」と推測で書き、利用者の判断を誤らせかけた。実際は逆だった。
+
+**なぜ:** GNU `timeout` は相対の `timer_create(CLOCK_REALTIME)` を使い、Linux は相対の `CLOCK_REALTIME`
+タイマーを、サスペンド中に止まる `CLOCK_MONOTONIC` で計る（`kernel/time/hrtimer.c` を読んで確認）。
+macOS の `clock_gettime(3)` は、`CLOCK_MONOTONIC` を「スリープ中も進む」、`CLOCK_UPTIME_RAW`
+（= `mach_absolute_time`）を「進まない」と明記している。kqueue の `EVFILT_TIMER` は既定で後者を使い、
+`NOTE_MACH_CONTINUOUS_TIME` で前者を使う（`sys/event.h`）。Go ランタイムの単調時計は
+`mach_absolute_time`（darwin の nanotime）なので、Go のタイマーもスリープ中は止まる。
+実測（macOS 27）: kqueue の既定のタイマーで 120 秒の時間切れを仕掛けてスリープさせると、起床後に残りを
+数えてから終わった。`sysctl kern.sleeptime kern.waketime kern.sleep_abs_time kern.wake_abs_time` の
+記録では、157 秒のスリープのあいだに mach 時刻は約 0.09 秒しか進んでいなかった。`pmset -g log` の Sleep/Wake の
+時刻はカーネルの遷移から数秒ずれていた（入りが 4 秒早く、復帰が 3 秒遅い）。`Wake Requests` の行は起床ではなく予約。
+
+**適用方法:**
+- 時間制限を作るときは、スリープ中を数えるかを先に決め、時計（kqueue のフラグ、clock ID）で表す。
+  Linux のツールと同じにするなら数えない。
+- スリープの境目は `pmset -g log` ではなく、`kern.sleeptime`・`kern.waketime` と `*_abs_time` で読む。
+  pmset の時刻で狭い許容幅の合否を作らない。
+
 ### プロセス内の走査にも「復帰は保証」の契約を — ctx を受け取るだけのツールは Ctrl+C を無視する
 
 **事象:** エージェントのファイル検索中に Ctrl+C を押しても「中断中…」のまま

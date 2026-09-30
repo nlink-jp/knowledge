@@ -518,3 +518,19 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   自分の clone で作業するか待つ。共有 `dist/` は 2 つの書き手が出会う場所。リリース手順
   そのものが防壁（`make clean && make package`、`verify-release` のマーカー鮮度ゲート）で、
   `go version -m` と notary ログが事後にそれを証明する監査。
+
+## Hardened Runtime で署名した CLI は、子プロセスへ `DYLD_*` を渡さない
+
+**事象:** Developer ID + Hardened Runtime で署名した timeout を通してコマンドを起動すると、`DYLD_LIBRARY_PATH` だけが
+子の環境から消えていた（他の変数は届く。macOS 27 で実測）。macOS 標準の `/usr/bin/env`・`nice`・`nohup` も、
+同じく `DYLD_*` を渡さなかった（実測）。
+
+**なぜ:** macOS は制限付き（Hardened Runtime・SIP 保護）のプロセスの環境から `DYLD_*` を取り除き、その環境が子へ
+受け継がれる（振る舞いは実測。仕組みの一次資料は未確認）。entitlement
+`com.apple.security.cs.allow-dyld-environment-variables` を付ければ通るが、そのプロセス自身への
+`DYLD_INSERT_LIBRARIES` も許すことになる。
+
+**適用方法:**
+- 子を起動する署名済みの CLI（ラッパー・スーパーバイザ）では、`DYLD_*` が子へ届かないことを README の限界に書く。
+- entitlement を付けるかは、注入面の拡大と引き換えに判断する（timeout は付けず、macOS 標準のラッパーと同じにした）。
+- 環境の受け渡しに関わる振る舞いは、配布ビルド（署名済み）で確かめる。

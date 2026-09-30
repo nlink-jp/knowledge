@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-30 (timeout for macOS: signals, clocks, C safety layers, compatibility tests)
+
+- **config-and-io** (ja + en): a Go process cannot pass inherited-ignored signals to
+  its children; macOS signal pitfalls when supervising a child (ignoring drops
+  signals to a just-forked child, ignoring a synchronous signal spins, sent and real
+  SEGV share siginfo, a stopped process dies from TERM); whether a time limit counts
+  sleep is decided by the clock (kqueue default and Go stop; GNU on Linux does not
+  count it; pmset times miss the kernel's transitions).
+- **release-engineering** (ja + en): a Hardened Runtime CLI does not pass `DYLD_*`
+  to its children, like `/usr/bin/env`.
+- **build-and-packaging** (ja + en): C safety layers that do not fail by default
+  (`--analyze -Werror`, UBSan), Apple's FORTIFY cap, `-fbounds-safety` idioms, and
+  positive controls that read the running Makefile.
+- **testing** (ja + en): test compatibility against the reference itself, not its
+  manual; list expected differences; stop a one-off measurement once answered.
+
 ## 2026-09-29 (price changes are appended as dated periods)
 
 - **llm-integration** (ja + en): the price-table sync entry gains the second
