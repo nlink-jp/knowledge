@@ -966,7 +966,15 @@ user-role message keeps the prefix (2 s).
   them, and advertise a server on demand through a catalog plus
   `mcp_load(server)` (measured 34,947 → 4,578 tokens). Calls go through the
   native schema after the load — an `mcp_call(server, tool, json)` proxy
-  renders no schema and loses argument discipline.
+  renders no schema and loses argument discipline. Measured (2026-10): a
+  load changes the tool block, so the whole conversation after it is
+  re-processed. A 1k-token server waits 73–82 s at 47k tokens of
+  conversation. Returning the schemas in the load's result and calling
+  through a proxy cuts that to 3 s. On a 44-tool server, though, valid
+  first calls fell from 87% to 67%: the model mixed up arguments between
+  sibling tools (`list_*` and `search_*`), and the real server silently
+  ignores an unknown key. A wrong call is worse than a wait, so stay
+  native.
 - "Characters ÷ 4" overestimates tokens (317k characters measured 60k
   tokens); measure with `stream_options.include_usage`.
 
@@ -1004,6 +1012,35 @@ probability retries and still loses.
   Record the remedy for that point (a nudge kept out of the history, a
   seed change, isolating the server-side template) as the next
   measurement instead of raising the bound again.
+
+### A plain, deterministic fixture cannot measure argument discipline — measure on a real server's sibling tools, with variance
+
+**Symptom:** To compare two ways of giving a model its tool schemas, a
+strictly validating fixture server was built (nine tools with enums,
+nesting, arrays and dates) with six tasks. Both ways completed 18/18, and
+30 replays of each post-load request scored 180/180. The same comparison
+on a real 44-tool server split them: 104/120 against 80/120 (2026-10, a
+local-LLM agent).
+
+**Why:**
+- **The samples did not vary.** At the server's default sampling, 8 of
+  the 12 cells produced the same call 30 times. Thirty replays were in
+  effect one sample.
+- **The fixture's prompts and tools were too plain.** The prompts named
+  their arguments outright, and no two tools looked alike. The real
+  failure is arguments leaking between sibling tools (`list_issues` and
+  `search_issues`), and it needs confusable siblings to show.
+
+**How to apply:**
+- Compare argument discipline on a real server's schema set that has
+  sibling tools, taken from a captured real request.
+- Raise the temperature above the default so the samples vary. Count the
+  distinct calls per cell to check that the samples are independent.
+- Score offline against the captured schema (tool name, unknown keys,
+  missing required fields, enum values, types). Nothing touches the
+  external service.
+- When both ways score perfectly on a home-made fixture, write "did not
+  discriminate", not "equivalent".
 
 ## Agents & subagents
 

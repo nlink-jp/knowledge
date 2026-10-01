@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-02 (MCP load cost and argument discipline)
+
+- **llm-integration** (ja + en): the `mcp_call` proxy bullet now carries the
+  measurement. A load re-processes the whole conversation; a proxy keeps the
+  cache but lowers valid first calls on a 44-tool server from 87% to 67%,
+  because arguments leak between sibling tools. New entry: a plain,
+  deterministic fixture cannot measure argument discipline; measure on a real
+  server's sibling tools, with variance.
+
 ## 2026-09-30 (timeout for macOS: signals, clocks, C safety layers, compatibility tests)
 
 - **config-and-io** (ja + en): a Go process cannot pass inherited-ignored signals to
