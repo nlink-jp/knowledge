@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-05 (M5Stack BASIC backlight range)
+
+- **embedded** (ja + en): the BASIC backlight entry gains the usable range on the
+  2.2 curve (25–75 %, judged on the device in m5-system-panel's brightness
+  levels; 10 % too dark, 100 % too bright) and when `setBrightness()` is still
+  right (the fallback, where the channel stayed 9-bit).
+
 ## 2026-10-02 (MCP load cost and argument discipline)
 
 - **llm-integration** (ja + en): the `mcp_call` proxy bullet now carries the

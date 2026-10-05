@@ -469,7 +469,15 @@ extra adds up.
 - A curve alone at 44.1 kHz does not help: below 1 % there is one step left.
   Suspect the frequency first.
 - Check the board (`M5.getBoard()`) and `ledcChangeFrequency`'s return value,
-  and fall back to M5GFX's linear mapping when either fails.
+  and fall back to M5GFX's linear mapping when either fails. A channel that could
+  not be moved stays 9-bit, so `setBrightness()` is right in that case only
+  (`ledcChangeFrequency` returns 0 on failure and leaves the resolution alone —
+  arduino-esp32 3.3.8 source).
+- For a desk display, **25–75 %** on this curve was the usable range
+  (2026-10-05, m5-system-panel's five levels; one unit, one person's judgement):
+  10 % was too dark even in a dark room and 100 % too bright. Levels at
+  25 / 40 / 55 / 65 / 75 % were judged "all right, evenly spaced". Do not make
+  full on the top level.
 
 ## The Arduino-ESP32 BLE library asks every connecting central to pair, by default
 
