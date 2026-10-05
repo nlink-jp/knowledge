@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-05 (corrections; review findings and held evidence)
+
+- **llm-integration** (ja + en): the "unreachable vs wording" entry's figures are
+  corrected to the operator's re-count (65 of 75 MCP results, not 75 of 85 — spill
+  re-reads were counted twice) with the split's result (visible marks used as-is
+  85%, hidden 89%), and a bullet on fixing what a breakdown tool counts. New entry
+  from the operator's measurement: an agent takes in a review's false finding
+  without checking when it holds no evidence of its own (5/5, against 0/5 with
+  evidence), and long contexts drop verification rather than accuracy.
+
 ## 2026-10-05 (partial results: unreachable vs wording; probes the agent examines)
 
 - **llm-integration** (ja + en): two new entries from gem-agent ADR-0096. A report

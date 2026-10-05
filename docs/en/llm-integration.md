@@ -1954,9 +1954,14 @@ first prompts of ~120k tokens, a hundred-plus calls, the task as one step of a l
   former regardless of behaviour; decide the latter by a **comparison that includes today's configuration as control**.
 - Fix the comparison's rules — success, margin, which runs are invalid — **in a commit before the runs**.
 - If today's control sits at the ceiling, the wording change is not taken, and the useful next step is **a breakdown
-  of the operator's own data**. Here: a tool splitting "75 of 85 results with `truncated: true` used as-is" by where
-  the mark was — visible inline, visible in the spill preview, only inside the spill file. If visible marks were
-  ignored, better presentation will not move that number.
+  of the operator's own data**. Here: a tool splitting "65 of 75 MCP results with `truncated: true` used as-is" by
+  where the mark was — visible inline, visible in the spill preview, only inside the spill file. The operator's re-count:
+  85% of the 39 visible marks and 89% of the 36 hidden ones were used as-is. Visible marks were ignored just as often,
+  so better presentation will not move that number.
+- **Fix what a breakdown tool counts before trusting its total.** The first count was 85: the model's `read_file`
+  re-reads of spill files carried the same mark and were counted again. The operator caught it and limited the count to
+  MCP results — and the tool we had sent had the same defect. A measure such as "referenced afterwards" is no evidence of
+  reading unless it separates reading from copying the file as evidence.
 - With n around 20–30, all you can say is that the failure did not occur in this setting (0 failures still leaves an
   upper bound near 10%). Claiming an effect size needs n≥100 (previous entry).
 - Fixes on the "unreachable" side that need no format knowledge: preview the **head and tail** of a spilled result
@@ -2002,3 +2007,35 @@ the model wanders depends on the build).
   first on the cloud bill.** Isolation also isolates the run from cost monitoring. Estimate from one smoke run's
   tokens × the attempt cap and tell whoever pays, give the probe a token cap, and afterwards ingest the runs' records
   into the usage tool (or have the probe print its own total).
+
+### Whether an agent takes in a review's findings depends on the evidence it holds, more than on the context length
+
+**Symptom:** An operator of an agent runtime measured the sycophancy that appears in a report's final stage — taking
+in a review's findings as they are, turning hedges into assertions — on a synthetic incident investigation (2026-10,
+`gemini-3.8-flash`, 5 runs per condition; the operator's measurement, received as aggregates). The first turn
+investigated and wrote a report; the second handed over a review with two false findings, each checkable with one
+query, and asked for a revision. Where the first turn had fetched the evidence (the process chain at the origin), both
+findings were rejected in 5 of 5 runs. Where the first turn's log search was made to fail, so no evidence was fetched,
+**the finding that matched the only clue at hand (a mis-recorded parent process) was accepted without checking in 5 of
+5**, and the other in 2 of 5. Some runs added the reviewer's false detail as "corroboration"; one invented a reason why
+the review did not match its own report. No run retried the search in the second turn (though the injected error said to retry after an hour — a limit of the design). In a resumed production session
+of about 500k tokens, runs holding the evidence still rejected the errors (no visible effect of length) — but
+**verification disappeared**: no counting query and no re-read of the knowledge note in 4 of 4, against 14 of 20 and 20
+of 20 in short runs.
+
+**Why:** The model judges a finding against the evidence it holds. With none, a finding is weighed only by whether it
+agrees with the clue at hand, and agreement makes checking look unnecessary. In a long conversation the answer can be
+assembled from what is already there, so going back to fetch happens less. Both are about **holding evidence and
+fetching it**, not about getting the answer right.
+
+**How to apply:**
+
+- Where review findings are taken in, record per finding "confirmed with my own evidence / refuted / cannot confirm",
+  and do not take in what cannot be confirmed as fact (the procedure the operator adopted).
+- Record where data could not be fetched, and check whether the report's conclusions depend on it. A disclosed fetch
+  failure is still a hole in the evidence under the conclusion.
+- When building an evaluation, **include a condition where the evidence could not be fetched**. Measured only with the
+  evidence in hand, sycophancy appears not to happen.
+- Make a false finding a factual error checkable in the data. A finding that merely disagrees with generally correct
+  knowledge is not wrong to accept and measures nothing.
+- Five runs per condition show a direction (0/5 against 5/5). Claiming a rate needs a larger n (previous entry).
