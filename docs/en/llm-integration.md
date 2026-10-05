@@ -2039,3 +2039,39 @@ fetching it**, not about getting the answer right.
 - Make a false finding a factual error checkable in the data. A finding that merely disagrees with generally correct
   knowledge is not wrong to accept and measures nothing.
 - Five runs per condition show a direction (0/5 against 5/5). Claiming a rate needs a larger n (previous entry).
+
+### When a fact the runtime states and the conversation's record disagree, the model takes the one next to the work — the date in a resumed session
+
+**Symptom:** In an agent runtime, an investigation session that began on 9/4 (about 130k tokens, "2026-09-04" sixteen
+times in its conversation) was resumed on 10/6 with the request to save follow-up points "in a memo with a dated
+filename" (2026-10, `gemini-3.8-flash`, 5 runs per condition, measured). The system prompt's date line stated the launch
+day as the "session started" day — untrue on resume.
+
+| Condition | Memo dated today (10/6) | Called the date tool |
+|---|---|---|
+| Before ("Session started: 10/6") | 0/5 — all 9/4 | 0/5 |
+| The system-prompt line made true ("Resumed: 10/6; the conversation began on 9/4") | 0/5 — all 9/4 | 0/5 |
+| The same fact also stated at the resume point, as the runtime's own message | **5/5** | 4/5 |
+
+Making the system prompt's line true did not move the model at all. The same line at the resume point moved every run
+to today's date, most of them checking it with the date tool. An operator had seen the same mix-up in 2 of 4 resumed
+long sessions.
+
+**Why:** With two sources of the date that disagree — the system prompt's line and the dates filling the conversation
+— the model takes the one next to the work. The system prompt sits before the whole conversation; after hundreds of
+thousands of tokens, one line there is weak material for a decision. The system prompt also said to check the current
+time with the date tool; it was not used. By contrast, in a separate measurement where the position of a
+partial-result note changed, position did not change behaviour — there was no conflicting source there. Position matters
+**where a conflict has to be resolved**.
+
+**How to apply:**
+
+- When a fact the runtime states can disagree with the conversation's record (resume, a long pause, a changed
+  environment), **state it at the point where the disagreement arises, as the runtime's own message**. Correcting the
+  system prompt's fact is not enough.
+- Word it so it stays true over time. Calling the resume day "today" becomes false at midnight; state both the resume
+  day and the day the conversation began.
+- Do not re-read the system prompt's facts on every rebuild. Capture the date once when the session begins (reading
+  the clock on each reload moves the "started" day after midnight).
+- Together with the earlier entry where a local model followed a directive placed in the first user message rather
+  than the system prompt, "a near position in the conversation" held for a cloud model too.

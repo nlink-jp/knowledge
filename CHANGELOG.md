@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-06 (a runtime fact that conflicts with the conversation)
+
+- **llm-integration** (ja + en): new entry — a resumed session took the
+  conversation's date for new work in 5 of 5 runs, even with the system
+  prompt's line made true (0/5), and today's date in 5 of 5 once the same fact
+  was stated at the resume point. Position matters where a conflict has to be
+  resolved.
+
 ## 2026-10-05 (corrections; review findings and held evidence)
 
 - **llm-integration** (ja + en): the "unreachable vs wording" entry's figures are
