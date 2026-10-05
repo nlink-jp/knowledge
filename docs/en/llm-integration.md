@@ -1925,3 +1925,74 @@ things.
   same procedure and confirm it reproduces.** Here the unwrapped condition
   reproduced (32%, interval covering the old 40%) and the wrapped one did not
   (23% against the old 10%). That only one half reproduced is itself the finding.
+
+### A report that "the information was there, where it was easy to miss" splits into what could not be reached and how it was said
+
+**Symptom:** An operator of an agent runtime reported repeated analysis failures in which partial results were
+treated as the whole, and blamed the runtime's presentation: a large tool result is spilled to the work directory and
+the model sees only its first 800 characters (so a server's trailing `"truncated": true` and row total are never
+visible), the spill notice sits inside the data tag after the body, and so on. Checked against the code, every
+finding was true — but they were of two kinds. (1) **Unreachable**: the notice said "read this file with
+`read_file`", yet `read_file` reads by line up to 200 KB and cannot reach the end of a single-line JSON over 200 KB;
+`shell_exec` kept only the head of its output; the search did not count the files it skipped. (2) **Wording**: the
+claim that the model would act if partiality were declared in the runtime's own voice, outside the data tag and in
+front of the body. (1) was fixed. (2) was measured before deciding — real binaries against a stub MCP server, three
+builds: today's, (1) only, and (1) plus the note outside the tag (2026-10, `gemini-3.8-flash`, isolated environment,
+21–33 answered runs per build). **Every run answered correctly, today's included.** Even with the head-only preview,
+the model read the spill file and checked with a count query every time. The reported failure did not reproduce in a
+short, clean session.
+
+**Why:** "The information was there but hard to see" yields two claims. One — "the runtime's own route does not reach
+it" — is a defect, checkable in the code. The other — "said differently, the model would follow it" — is a hypothesis
+about behaviour, and whether it helps is unknown until today's configuration is measured as the control. If today's
+already succeeds, there is no room; the failures arise in conditions the measurement lacked (a large MCP fleet,
+first prompts of ~120k tokens, a hundred-plus calls, the task as one step of a long analysis).
+
+**How to apply:**
+
+- Split a reported "it was missed" into **unreachable (a defect)** and **wording (a behavioural hypothesis)**. Fix the
+  former regardless of behaviour; decide the latter by a **comparison that includes today's configuration as control**.
+- Fix the comparison's rules — success, margin, which runs are invalid — **in a commit before the runs**.
+- If today's control sits at the ceiling, the wording change is not taken, and the useful next step is **a breakdown
+  of the operator's own data**. Here: a tool splitting "75 of 85 results with `truncated: true` used as-is" by where
+  the mark was — visible inline, visible in the spill preview, only inside the spill file. If visible marks were
+  ignored, better presentation will not move that number.
+- With n around 20–30, all you can say is that the failure did not occur in this setting (0 failures still leaves an
+  upper bound near 10%). Claiming an effect size needs n≥100 (previous entry).
+- Fixes on the "unreachable" side that need no format knowledge: preview the **head and tail** of a spilled result
+  (metadata comes last); state spans in **bytes** (a rune count subtracted from a byte count is wrong for non-ASCII);
+  give the read tool a **byte-offset window** (negative from the end). Do not add a "complete" note to every result —
+  a constant line is skipped.
+
+### A probe of agent behaviour must assume the agent will examine the probe
+
+**Symptom:** The comparison above ran real binaries one-shot against a stub MCP server (2026-10, `gemini-3.8-flash`,
+`thinking = "high"`; the read-lane shell can read the whole disk). In the first smoke run the model, after answering,
+found the stub with `ps` and `strings` and `cat`-ed the probe's source — which holds the scoring rules and the
+answers. Each run then got its own random directory, the stub was built with `-trimpath`, and a rule was fixed before
+the runs: a run that names a path outside its own directory, or `..`, is contaminated and replaced. Even so, in the
+first counted launch the stub's server was named `probe`, and one run spent 50 rounds disassembling the stub with
+`otool` looking for the answer branch. Renamed to look like the operator's setup (`splunk` and `obsidian` behind a
+binary named `mcp-bridge`) and restarted, the "how many events" scenario still saw runs examine the parent directory
+after answering (`ls -la ..` and the like) in most attempts of all three builds (30–37 of 31–37), so it never reached
+20 valid runs. The contamination rate also differed by build (in the note-reading scenario, 6 of 26 runs for the
+build with the note outside the tag, 1–2 for the others) — a result in itself.
+
+**Why:** An agent with a shell examines its surroundings when the project is empty. Names like "probe" or "test" are
+cues that it is under test. With a wide read lane, anything holding answers or scoring rules is in reach. Silently
+dropping contaminated runs biases what remains whenever contamination correlates with the treatment (when how much
+the model wanders depends on the build).
+
+**How to apply:**
+
+- Make the stub **look real** — the production server and tool names. No `probe`, `test` or `mock` in names.
+- Keep answers, scoring rules, other runs' records and the probe's source **out of the agent's reach**, or detect
+  references to them. Separate each run's working area from the results and give it a random name. Build the stub
+  with `-trimpath`.
+- Fix the contamination rule (which paths, strings, `..`) **before the runs, like the scoring rule**, and always report
+  **the contamination rate per build** and a **sensitivity line** scoring contaminated runs by their answers.
+  Contamination is part of the result, not noise to discard.
+- When the environment changes, **discard the earlier runs as a pilot before scoring**, record the change in a commit
+  and restart. Check the mechanics with a single run and keep it out of the score.
+- A measurement in an empty project also measures how the model wanders: a question answerable in three calls took a
+  median of 33–38 calls. Budget time and cost for it.

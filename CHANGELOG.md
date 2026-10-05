@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-05 (partial results: unreachable vs wording; probes the agent examines)
+
+- **llm-integration** (ja + en): two new entries from gem-agent ADR-0096. A report
+  that the information "was there, where it was easy to miss" splits into what the
+  runtime's route could not reach (a defect, fixed) and how it was said (a
+  behavioural hypothesis, measured with today's build as control — which sat at
+  the ceiling, so the wording change was not taken). And a probe of agent
+  behaviour must assume the agent examines the probe: stub names, reach of the
+  answers, a contamination rule fixed in advance and reported per build.
+
 ## 2026-10-05 (M5Stack BASIC backlight range)
 
 - **embedded** (ja + en): the BASIC backlight entry gains the usable range on the
