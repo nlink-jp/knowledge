@@ -1996,3 +1996,9 @@ the model wanders depends on the build).
   and restart. Check the mechanics with a single run and keep it out of the score.
 - A measurement in an empty project also measures how the model wanders: a question answerable in three calls took a
   median of 33–38 calls. Budget time and cost for it.
+- **Estimate the cost in money before the runs, and count it yourself after.** This measurement took about 240
+  sessions and 5,862 calls — $38.94 at list price (measured; it matched the day's bill). Pointing each run's state
+  directory at a scratch area kept the usage records out of where the usage tooling reads, so **the spend surfaced
+  first on the cloud bill.** Isolation also isolates the run from cost monitoring. Estimate from one smoke run's
+  tokens × the attempt cap and tell whoever pays, give the probe a token cap, and afterwards ingest the runs' records
+  into the usage tool (or have the probe print its own total).

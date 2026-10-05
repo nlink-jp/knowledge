@@ -9,6 +9,8 @@
   the ceiling, so the wording change was not taken). And a probe of agent
   behaviour must assume the agent examines the probe: stub names, reach of the
   answers, a contamination rule fixed in advance and reported per build.
+  The probe entry also records the cost ($38.94 for ~240 sessions): isolating
+  each run's state hid the spend from the usage tooling until the bill showed it.
 
 ## 2026-10-05 (M5Stack BASIC backlight range)
 
