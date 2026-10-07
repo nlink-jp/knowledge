@@ -978,6 +978,83 @@ user-role message keeps the prefix (2 s).
 - "Characters ÷ 4" overestimates tokens (317k characters measured 60k
   tokens); measure with `stream_options.include_usage`.
 
+### Compare inference servers on the same weights file, one at a time — the felt speed may come from what ships with the weights, not the server
+
+**Symptom:** Weighing a switch of an agent's backend from LM Studio to
+another MLX inference server, the operator found the new server faster.
+Compared as used daily (different model files), generation was 1.9× as
+fast; with **the same directory on disk** loaded by both servers the gap
+shrank to 8–25 %. The large gap came from the multi-token-prediction
+(MTP) head that shipped with the model build distributed for the new
+server (2026-10). The same measurement reported two concurrent streams
+as the sum of their per-stream rates, which put a server that starts
+the second stream only after the first one's prompt at 168 tok/s
+(143 counted over the window they share).
+
+**Why:** "server A + model X" against "server B + model Y" adds the
+server difference to the model difference (quantization, converter,
+bundled heads), and the two cannot be separated. Two servers resident
+at once disturb each other's numbers through memory pressure. Summed
+rates count the time the streams do not overlap twice.
+
+**How to apply:**
+- Make **the same weights file** (checked by path) the axis of the
+  comparison. Add the daily configuration as another column and say
+  where each difference comes from.
+- Load **one server at a time**; switch through the servers' API
+  (unload / load) and restore the starting state at the end.
+- Count concurrent streams as all tokens over the window from the first
+  token to the last end, and state each server's concurrency (slots).
+- Show each request's finish reason. A "generate until stopped" row the
+  model ended with `stop` is not a speed; an answer under 16 tokens gets
+  no rate (a one-word reply arrives at once and reads as tens of
+  thousands of tok/s).
+- Keep the raw per-request JSONL and make the summary rebuildable from
+  it. A stream that ends without a finish reason or usage is a failure
+  (a 200 cut by a server restart counted as a zero-token "success" in
+  the medians).
+- Have a verifier recount the headline numbers from the raw logs (five
+  errors were found this time).
+
+### Measure a local inference server's implicit behaviour, and absorb it in the runtime
+
+**Symptom:** Connecting an OpenAI-compatible MLX inference server to an
+agent (2026-10), the API had the same shape and different behaviour:
+- A request for a model name the server does not have was **answered by
+  the loaded model, with status 200**. A mistyped setting runs silently.
+- `reasoning_effort` is not validated: only `none` stops thinking, and
+  every other value, `off` included, leaves it on. Another server
+  validates the same vocabulary and rejects `off` with a 400.
+- `reasoning_tokens` is not sent (output tokens include the thinking);
+  the other server does not send `cached_tokens` (recorded as 0 while
+  it reuses the prefix).
+- On the other server the blank lines after the thinking stay in the
+  text, and one run's whole final answer was `\n\n`, which passed a
+  `content == ""` empty check.
+- The prefix cache's default memory budget (2 GB) did not hold one long
+  session: about 27 KB a token on a hybrid model, 3.3 GB at 122k tokens.
+  A resend took 207 s; with an 8 GB cap, 1.1 s.
+
+**Why:** "OpenAI-compatible" fixes the shape, not unknown values,
+defaults when a field is omitted, or which buckets are counted. A
+server's defaults (cache budget, thinking default) do not assume how an
+agent uses it — one long conversation, resent every turn.
+
+**How to apply:**
+- Match the model name against the server's model list at startup
+  (together with the context-length lookup) and make an unlisted id an
+  error. If a hand-set value can skip that lookup, document that it
+  skips the check too.
+- Judge an empty completion by `strings.TrimSpace(content) == ""`.
+- Measure whether a server thinks per value, and set the value
+  explicitly in comparison configurations.
+- Record which usage buckets each server sends; never read a missing one
+  as 0.
+- Write operating advice (bind address, API key, cache cap) only after
+  timing a resend at a real session's size. Estimate the cache as tokens
+  × the per-token entry size, and check it against the entry sizes the
+  server logs.
+
 ### Set a retry bound by replaying the captured request — a mis-sampled token is not a one-off
 
 **Symptom:** A local model returned an empty completion (no text, no
