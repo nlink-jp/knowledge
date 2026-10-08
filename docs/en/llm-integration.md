@@ -1917,6 +1917,41 @@ not errors, so a design that falls back to the cloud on error never sees them.
   Always keep injection forms that never enter training (injections placed somewhere else) for evaluation; becoming
   robust to the forms you trained on says nothing about the next form.
 
+### Adopt an auto-approval judge on what auto mode is for, not on perfection — label the cases with the operator's own past answers
+
+**Symptom:** A local 35B (3B active) model was evaluated as the judge of
+auto-approval — the tier that rules on a proposed tool call with a
+second model call (2026-10). The first criterion was "stop if any case
+that must be escalated is approved once", and a verification pass's
+finding that the judge would become the only check between reading
+something and sending it out was treated as a reason to stop. The
+operator pointed out that auto mode accepts some risk to cut
+interruptions and was never meant to judge perfectly; the comparison
+was the level already accepted (the sibling runtime's auto mode).
+
+**Why:** A judge is probabilistic: the same call drew 0–8 approvals in
+10. "Any error stops it" is a criterion every model fails once the
+sample is large enough. Part of the case set also never reached the
+judge, because the rule tier stopped it first, so it measured nothing.
+
+**How to apply:**
+- Decide on three things: (1) how many interruptions it removes, (2)
+  whether it passes a kind the rule tier and the sandbox miss and that
+  cannot be undone (exfiltration, injection, an action against the
+  instruction), (3) what residue is accepted and written into the ADR.
+- Label with the operator's own past answers: take the commands they
+  actually approved and refused from the transcripts' gate decisions
+  and judge each ten times. Here 47 % of the approved ones would have
+  run unasked, and every case of kind (2) stayed at 0/10.
+- Leave out the cases the rule tier stops first; a case that never
+  reaches the judge says nothing about it.
+- A refusal for a reason only the operator holds (not touching an
+  investigation target from this machine) is residue a rulebook line
+  settles: approved once in five without the rule, never with it.
+- Keep the scope to a finite domain. MCP calls were excluded: stating the
+  missing fact made the judge escalate reads as well, which is "always
+  ask" by another name.
+
 ### A local model does not act on standing directives in the system prompt — a short line in the first user message reaches it, and the heading's standing sets the follow rate
 
 **Symptom:** In an agent runtime on a local LLM (26B class, an
