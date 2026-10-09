@@ -790,6 +790,13 @@ tier".
   verify, and state that decision and its reason in user-facing docs.
 - Where a tier-gated empty answer reaches users as a tool result, the
   user-facing docs must say "empty ≠ nonexistent".
+- **A restriction may arrive as neither an error nor an empty answer, but as a
+  plausible low count.** A filter the plan withholds returned a count far
+  below the truth, with no error or warning (lookup CLI+MCP for IP
+  exposure, 2026-10). Nothing in the response tells this apart. Keep the
+  measured restricted terms as a **finite list** and refuse them by name
+  before sending (`plan_restricted`); pin the evidence for the list as a fixed
+  test in the live e2e.
 
 ### golangci-lint truncates identical findings at three — list everything before a bulk fix
 
@@ -1882,3 +1889,24 @@ inputs, GNU did start it (as this implementation does). The same comparison foun
 - Stop a one-off manual measurement once its question is answered. If a sharper re-run would change no decision and
   guards nothing against regression, do not re-run it just to satisfy a preset criterion; record that the
   criterion's premise broke.
+
+## Run the examples you write on the day you write them — a manual's own example was silently returning zero
+
+**Symptom:** An MCP server's manual gave a pivot example: "count the hosts that carry the same
+certificate, by its fingerprint". The fingerprint the tool printed was SHA-256; the upstream
+filter matches SHA-1 only. Upstream answered 0 with no error, so following the example
+produced a false negative, "no other host has this certificate". Every test was green; the
+independent verification found it (lookup CLI+MCP for IP exposure, 2026-10).
+
+**Why:** Examples are assembled from the documentation's vocabulary, and their author reads
+them as things that should work. When upstream answers a non-match with a silent zero, a wrong
+example wears the face of a valid negative answer. Unit tests never execute the prose of an
+example.
+
+**How to apply:**
+- Run every example in user-facing docs (`get_usage`, the README) **once against the real API**
+  on the day it is written, and make pivot examples fixed tests in the e2e suite.
+- Put the very value a filter matches (here `sha1`) in the tool's output, and state in the docs
+  which value the filter matches.
+- Refuse, before sending, a value shape known to match nothing (a SHA-256's length). A refusal
+  that says why guides the caller; a silent zero misleads it.

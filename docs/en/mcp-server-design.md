@@ -518,6 +518,14 @@ exists — there is none to turn on a 5,000-character `title`.
 - Copy before compacting. If the compact view shares its blocks with the engine's view,
   shortening corrupts the data on the cache path. Assert in a test that the engine's own
   values are left whole.
+- **Thin by the measure the ceiling uses.** If the ceiling measures the bytes of indented JSON
+  after the layer-2 shortening, the decision to drop rows until the result fits must measure
+  the same encoding in the same order. Thinning by compact JSON lets the indentation carry
+  the result over the ceiling, and a result that thinning could have delivered
+  is withheld whole (lookup CLI+MCP for IP exposure, 2026-10).
+- **Never withhold an answer that has been paid for.** Once a call has spent credits, a result
+  over the ceiling is thinned, with the dropped rows counted (`omitted.rows`), and always
+  returned. A whole-result `response_too_large` there means "pay again and ask for less".
 
 ## Contracts with upstream APIs
 
@@ -677,6 +685,29 @@ becomes a negative answer.
 - Word the message "**not in this index**", never "does not exist". A CVE published minutes
   ago may simply not be indexed yet.
 - Never cache an error, `not_found` included.
+
+### The right "absent" body can still be an upstream failure — confirm a negative through another route before it becomes an answer
+
+**Symptom:** An API that reports what an IP exposes answers 404 with a fixed "no information"
+body for a host it has not observed. But for some large hosts with dozens of services it gave
+**the same 404 and the same body**, while a (free) count query for the same IP returned a
+positive number. The history endpoint showed the same shape, and the first two measurements
+nearly concluded "history is not available on this plan" — re-measured, history worked, and
+the 404 was upstream failing to return data it held (lookup CLI+MCP for IP exposure, 2026-10).
+
+**Why:** A body's shape tells you what upstream said, not whether it is true. Some
+implementations emit their own "absent" when they fail internally. The previous rule (decide
+on the body's shape) lets that lie through as `not_found`. And inferring a plan restriction
+from a handful of measurements writes upstream's failure into the design as a "specification".
+
+**How to apply:**
+- Before returning a negative answer, **ask for the same fact through another, cheap route** (a
+  free count, say). Only a confirmed zero becomes the negative (`not_indexed`); a positive
+  value or a failed check is `upstream_error`. Never manufacturing a negative outweighs one
+  extra request.
+- Do not cache a negative even after it is confirmed.
+- Before concluding "this tier cannot use it", re-measure against a target known to have data.
+  A conclusion closed on two cases is a premise to doubt before it is recorded.
 
 ## Server implementation structure
 
