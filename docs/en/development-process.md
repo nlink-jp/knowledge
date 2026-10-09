@@ -1432,6 +1432,19 @@ trace of that reading nobody re-verifies.
 - Correct a wrong rationale even when the design decision built on it was
   right. The same conclusion with a different "why" changes which conditions
   matter next time.
+- **When a publisher releases its technical documents as a set, open the whole
+  set before saying something is absent.** Designing a skill that reads a
+  national weather agency's forecast JSON, we wrote "the weather-code name
+  table is not in the official documents" and "the warning-type names are
+  unpublished" (2026-10). Only the two code tables on the technical-documents
+  page had been opened, not the explanatory document set on the same page
+  (the name table in its appendix, the temperature slots defined in its
+  text). The warning names were in a code table already downloaded, under a
+  search term we had not used. The first error led straight to a design that
+  read "today 00:00" as the morning low, which that morning's 05:00 release
+  showed to be a maximum (an independent review caught all of it). Count the
+  page's links and write "unverified" while any remain unopened; zero search
+  hits only show that it is not written in those words.
 
 ### A mechanism two sibling products share is not fixed when only one of them is fixed
 
