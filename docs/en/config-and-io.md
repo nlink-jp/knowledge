@@ -25,6 +25,35 @@ external servers' published names.
 - Either alone is insufficient. "Dispatcher accepts aliases" leaves the schema
   lying — long-term debt.
 
+### Do not bind another party's display scalars to a strict type — one field's type drift makes the whole document unreadable
+
+**Symptom:** A threat-intelligence API's host record carried `asn` as the number
+`2497` at the top and as both `2497` and `"AS2497"` across the services in the same
+document. The Go wire struct typed it `*string`, so **one display-only field of the
+wrong type failed the whole record**. The escape hatch that returns the raw document
+(`--raw`) passed through the same validation before caching, so it failed too.
+
+**Why:** The writer of the document never promised the type (documents from
+dynamically typed stacks and search engines mix strings and numbers in one field).
+A strictly typed decode fails as "this document is unreadable", not "this field is
+unreadable" — the blast radius is out of proportion to the field's importance.
+
+**How to apply:**
+- Read string fields used only for display or aggregation through a type that
+  **accepts a string or a number** (in Go, an `UnmarshalJSON` that tries string, then
+  `json.Number`). Keep objects, arrays and booleans an error — accepting anything
+  hides a real change of shape.
+- When one value arrives in several forms, **settle on one form at projection**
+  (`2497` → `AS2497`).
+- Go's encoding/json **does not add the field name** to an error returned by a custom
+  `UnmarshalJSON` (measured on Go 1.27; a built-in type mismatch says
+  `Go struct field X.asn`). Put the kind that arrived (object, …) in the message
+  instead — not the value, which may carry third-party text.
+- Consider **not making the raw-document path depend on** the projection's strict
+  validation — it is needed exactly when the projection cannot read the document.
+
+Origin: a bug fix in a cybersecurity lookup tool (2026-10).
+
 ### When canonical forms change, migrate user config files at load time
 
 **Symptom:** Canonicalizing only the lookup side left previously saved user
