@@ -49,8 +49,22 @@ unreadable" — the blast radius is out of proportion to the field's importance.
   `UnmarshalJSON` (measured on Go 1.27; a built-in type mismatch says
   `Go struct field X.asn`). Put the kind that arrived (object, …) in the message
   instead — not the value, which may carry third-party text.
-- Consider **not making the raw-document path depend on** the projection's strict
+- **Do not make the raw-document path depend on** the projection's strict
   validation — it is needed exactly when the projection cannot read the document.
+  Gate the cache and raw on the document's shape only (an object, lists that are
+  arrays), read field by field and element by element, leave out what cannot be
+  read, and name the left-out paths (`data[].http.status`) in a note — spelled
+  from the types' names, never from values or map keys.
+- **Never turn an unreadable value into 0 or false.** A zero reads as a fact (a
+  "service on port 0" appeared, and asking for that port answered "not
+  observed"). Represent absence (pointers). When an element's **identifying
+  field** (a port, a breakdown value's count) is missing, null or unreadable,
+  leave the element out whole. A map's key is its identifier: keep the key and
+  leave out only the unreadable parts of its value.
+- **Count caps and totals before anything was left out.** Dropping one banner
+  from a history capped at 1,000 and counting 999 made the tool assert "under
+  the cap", which was false. Also note that dropping may shift a window's start
+  or a first sighting.
 
 Origin: a bug fix in a cybersecurity lookup tool (2026-10).
 
