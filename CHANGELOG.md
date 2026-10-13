@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-14 (a new model priced by the id as recorded)
+
+- **llm-integration** (ja + en): new entry — a new model's price passed its tests
+  but its real calls were recorded publisher-qualified (`google/<model>`, the
+  form the caller's config used) and priced $0; resolve only the forms the
+  calling API accepts, keep rows on the recorded id, and close a new-model sync
+  on zero unpriced records in real data. Also: read how a promotional price is
+  provided (a credit back makes the table net and the invoice gross).
+
 ## 2026-10-06 (a runtime fact that conflicts with the conversation)
 
 - **llm-integration** (ja + en): new entry — a resumed session took the

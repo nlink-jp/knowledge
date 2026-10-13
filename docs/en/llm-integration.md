@@ -216,6 +216,45 @@ billing granularity.
   sync (see the previous entry). Values may be unchanged while a neighbouring
   table has appeared.
 
+### Look prices up by the model id as recorded — resolve every form the caller accepts, and close a new-model sync on real data
+
+**Symptom:** A usage aggregation tool gained a price for a new-generation model
+and its tests passed. Checking real transcripts for unpriced records before the
+release showed that model's calls were recorded as `google/<model>`, a
+publisher-qualified id, which missed the table's `<model>` key and cost $0
+(usage aggregation CLI, 2026-10). The calling agent records the model name as
+written in its config, and the Vertex SDK accepted that form by expanding it to
+`publishers/google/models/<model>`. The same check showed, in a footnote, that
+the pricing page's promotional prices (the new model's limited-time price and
+the existing models' introductory one) are both provided as "50% credits back
+on net spend".
+
+**Why:** A rate table is keyed by the ids on the pricing or model page, but the
+recorded id is **the string the user wrote in a config**. An API accepts more
+than one spelling of a model (shorthand, resource name, snapshot suffix), so a
+change of spelling alone turns a known model into an unknown one. Unit tests
+look up only the ids the table was written with, so they never catch the
+mismatch. On the promotional side, the table's figure (net of the credit) and
+the invoice lines (the full charge plus a separate credit) do not match, which
+confuses anyone reconciling the two.
+
+**How to apply:**
+- Add id normalisation only for the forms **the calling API accepts as the same
+  model** (on Vertex: `google/<model>`, `…publishers/google/models/<model>`,
+  `-NNN`, `@version`). Do not strip another publisher's prefix — that would put
+  one model's price on a different model. Try the exact id first, so an
+  override the user keyed by the qualified form is not taken away.
+- Keep report rows on the id as recorded; use the normalisation only to resolve
+  the price.
+- Make **zero unpriced records on real data** part of done for a new model
+  (run the `doctor` / `reprice --dry-run` equivalent against real transcripts).
+  Passing tests do not close it.
+- For a promotional price, read the **footnote on how it is provided**
+  (a discount, or a credit back). If it is a credit back, say in user-facing
+  docs that the table's figure is net and how it shows on the invoice. If an
+  existing entry uses the same mechanism, treat both alike rather than one at
+  list price.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
