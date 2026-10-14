@@ -1556,6 +1556,16 @@ in an event**.
 - Mark the always-visible number too (the menu-bar figure). For a user who
   never opens the popover, that mark is the only way to say "this number is
   incomplete".
+- **A badge derived from $0 rows cannot see a wrong nonzero rate.** Real case
+  (2026-10): a rate-table correction (one model's cache reads had been charged
+  at 2×) left no trace in the stored rows, so neither the badge nor the Reprice
+  button appeared. The GUI now compares the bundled CLI's `--version` at
+  launch with the version it last repriced with (UserDefaults) and, if they
+  differ, runs reprice once before the first refresh. No record counts as a
+  difference. Reprice is idempotent, so a redundant pass costs a few seconds.
+  On failure the version is not recorded, so the next launch retries. On a
+  real store, two seconds after launch the model's total had dropped by
+  exactly the computed difference.
 
 ## What an app looks like is decided by the SDK it recorded linking against — and a toolchain update rewrites that silently
 

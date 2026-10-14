@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-15 (a published price changed after launch; a tier by prompt length)
+
+- **llm-integration** (ja + en): the price-table sync entry now says to re-check
+  every existing row at each sync — a model's cache read listed at the
+  standard 0.1× changed to 0.05× two weeks after launch. New entry — a model
+  priced by prompt length: the tier is chosen per request (prompt = input +
+  cache reads + cache writes, strict `>`), and one transcript record was
+  measured to be one request (120,586 records, top-level usage equal to the
+  last iteration in every one).
+- **macos-gui** (ja + en): the stderr-warning entry adds that a badge derived
+  from $0 rows cannot see a wrong nonzero rate; reprice once whenever the
+  bundled CLI's version changes.
+
 ## 2026-10-14 (a new model priced by the id as recorded)
 
 - **llm-integration** (ja + en): new entry — a new model's price passed its tests

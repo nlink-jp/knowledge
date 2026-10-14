@@ -163,6 +163,14 @@ the vendor cancelled the increase.
   on $4. Copying the row with the same dollar figure halves the cache-read cost.
   Pin the pricing-page row column by column in dollars in the tests, so a
   swapped multiplier shows up directly as a wrong amount.
+- **Re-check every existing row at each sync, too.** A published price can
+  change after the model ships. Real case (2026-10): two weeks later, the new
+  model above was listed at $0.10/MTok (0.05×) for cache reads, and the
+  footnote's exception list now named it. A sync that only looked at the new
+  model would have kept charging that model's cache reads at 2× (about 20% of
+  its notional cost on a real store). The pricing page does not say when a
+  price changed, so record both check dates and what each one found in the
+  table's comments.
 - Do not write **future schedules** into table comments ("introductory until
   X, then Y"). Record only the verification date and the source, and confirm at
   the next sync that the schedule actually happened.
@@ -181,6 +189,38 @@ the vendor cancelled the increase.
   release (here, four lines of TOML restored the right figure).
 - Measure once, on real workload data, **which column dominates cost** — that
   ranking is the list of columns an error is fatal in.
+
+### For a model priced by prompt length, choose the tier per request — and measure that one record is one request
+
+**Symptom:** A usage-accounting CLI added the first model priced by prompt
+length (2026-10): per the pricing page, $0.10/$0.50 for a prompt of up to
+100,000 tokens and $0.50/$2.50 for one over it. Until then the rate table held
+one price pair per model and assumed there was no long-context premium.
+
+**Why:** The rules for choosing the tier are only in the page's prose. The
+prompt length includes cache reads and cache writes. Each request is judged on
+its own, and one that is over the threshold pays the higher prices even when
+part of its prompt is a cache hit. Output follows the same tier. The boundary
+is "over", so strictly `>`. If one aggregated record sums several requests,
+each request can be under the threshold while the sum lands in the higher
+tier, and the record is over-charged.
+
+**How to apply:**
+- Model the tier like the fast-mode price: a substitute base pair, with the
+  cache multipliers applied on top of whichever pair applies. The page's
+  over-threshold row ($0.625 / $1 / $0.05) is exactly 1.25× / 2× / 0.1× of
+  $0.50, which confirms that shape.
+- Prompt length = input + cache reads + cache writes, output excluded. Pin in
+  tests both the boundary (exactly the threshold is the lower tier, +1 the
+  higher) and a case where cache tokens alone push the prompt over.
+- **Measure on real data that one record is one request.** Measured on Claude
+  Code transcripts (2026-10, 120,586 records carrying `iterations[]`): the
+  top-level `usage` equalled the last iteration in every record, and none was
+  a sum. Two iterations appeared only on a model fallback, and no record
+  carried server-tool use. So the top-level usage may choose the tier. Paths
+  that do use server tools were not observed.
+- Do not treat a threshold without premium prices as a tier: it would bill the
+  long prompts at $0.
 
 ### A pricing page repeats "the same" row per model generation — match by section heading, never by first hit
 
