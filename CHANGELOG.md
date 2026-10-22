@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-23 (thought signatures replay across thinking levels)
+
+- **llm-integration** (ja + en): the thought-signature entry adds that a
+  conversation produced at one thinking level replays with its signatures at
+  another — measured in both directions — so switching the level mid-session
+  needs no rebuilt conversation; supported levels still vary by model.
+
 ## 2026-10-15 (a published price changed after launch; a tier by prompt length)
 
 - **llm-integration** (ja + en): the price-table sync entry now says to re-check

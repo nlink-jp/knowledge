@@ -50,6 +50,15 @@ code used to work).
   restored tool result without re-reading anything. So as long as they are
   persisted, verbatim replay is a working basis for session resume — under the
   same model.
+- **Signatures replay across thinking levels too** (measured in a CLI agent,
+  2026-10): a tool call returned at `high`, replayed with its signature in a
+  `low` request, was accepted, and that conversation replayed at `high` and at
+  the model's default was accepted as well. The thinking level is a
+  per-request setting, not a property of the conversation, so a feature that
+  switches the level mid-session needs no rebuilt conversation. Which levels a
+  model accepts still varies (some reject `minimal` with a 400) — that is the
+  model's support, not the switch failing, so have the failing request's error
+  name the level and the way back.
 - The inverse does not work: resuming with signatures stripped fails, because a
   function-call Part without its signature is a 400. **Refuse to carry a session
   to a different model** rather than trying — there is no basis for it, and the
