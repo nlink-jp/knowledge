@@ -621,3 +621,26 @@ into the process itself.
 - Decide on the entitlement against the wider injection surface it opens (timeout does without it, behaving like
   macOS's own wrappers).
 - Check environment-passing behaviour on the shipped (signed) build.
+
+## The toolchain that builds the artifact is the one govulncheck must judge
+
+**Symptom:** after the host moved to Go 1.27, `wails build` (wails v2.12.0) failed on an unchanged tree with
+`internal error: package "os" without types was imported from ...`. Pinning `GOTOOLCHAIN=go1.26.4` in the Makefile
+fixed the build — and `govulncheck ./...`, run from the shell under go1.27.3, reported nothing reachable. Under the
+pinned toolchain it reported ten standard-library vulnerabilities in `net/http`, `crypto/tls` and `crypto/x509`,
+fixed by go1.26.9 / 1.26.10. Separately, a Go CLI's Linux and Windows binaries came from a container image pinned to
+`golang:1.26.2` while its darwin binary used the host's go1.27.3 (2026-10-25, measured).
+
+**Why:** the wails CLI embeds `golang.org/x/tools` v0.30.0, whose static analysis cannot read Go 1.27 export data —
+the same failure golangci-lint shows after a Go update. A tool built with an older x/tools breaks on the next Go
+minor; the usual escape is to pin the build to the previous minor. But source-mode govulncheck judges the standard
+library of the toolchain *it* runs under, so a pinned toolchain or a pinned container image ships a standard library
+nothing has checked.
+
+**How to apply:**
+- When a build must stay on an older Go minor, pin the **newest patch** of it (`GOTOOLCHAIN ?= go1.26.10`,
+  `golang:1.26.10`), say why in the Makefile, and bump it with each security release.
+- Run govulncheck under the same toolchain: `GOTOOLCHAIN=<pin> govulncheck ./...`, or `govulncheck -mode=binary`
+  on the built artifact.
+- Before upload, read `go version <binary>` for **every** platform's artifact. A cross-build container can sit on a
+  different patch from the host build.

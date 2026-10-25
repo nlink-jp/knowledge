@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-26 (govulncheck judges the toolchain it runs under)
+
+- **release-engineering** (ja + en): new entry — a wails build pinned to an
+  older Go minor (its CLI's x/tools cannot read Go 1.27 export data) and a
+  cross-build container pinned to an old patch both shipped a standard
+  library that host-run govulncheck never judged. Pin the newest patch of
+  the older minor, run govulncheck under that toolchain or in binary mode,
+  and read `go version` of every platform's artifact before upload.
+
 ## 2026-10-25 (a default written into an installed config never moves)
 
 - **containers-and-infra** (ja + en): new entry — bumping a toolchain default
