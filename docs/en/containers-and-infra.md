@@ -419,3 +419,27 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
     regenerated lock that breaks is caught, end the Dockerfile with a check that exercises the
     real uses (an I/O round trip) and fails the build. `pip check` misses incompatibilities with
     dependencies that declare no upper bound.
+
+
+## A default written into the config file at install time never receives later default bumps
+
+**Symptom:** a containerized CLI tool moved its default Node.js from 20, which had reached end of life, to 24
+(2026-10-25). Existing installs went on building with 20, the maintainer's own included.
+
+**Why:** the install step copies a template only when no config file exists, and never overwrites one. The
+template wrote `node_version = "20"` as a **live value**, and a config value wins over the default. So an
+old version the user never chose kept overriding the new default.
+
+**Why it is missed:** the release that changes the default passes its tests and builds. Checked on a clean
+machine with no config file, it runs on the new default.
+
+**How to apply:**
+- Leave version keys in the template commented out. A value belongs there only when the user deliberately
+  pins one.
+- Warn when the effective value is older than the default. Say where to remove it, from whichever source
+  supplied it (the config file or the environment variable). Compare numerically: as strings, `1.100` sorts
+  below `1.27`.
+- In the changelog of a release that bumps a default, say how to remove the line from an existing config file.
+- Test on a machine that has a config file made from the old template. A clean machine hides this bug.
+- The warning can only tell "older than the default", not "unsupported": an unsupported odd release line can
+  be newer than the default. Do not make the tool judge support; keep the default on a supported line instead.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-25 (a default written into an installed config never moves)
+
+- **containers-and-infra** (ja + en): new entry — bumping a toolchain default
+  did not reach existing installs, because the install step had copied a
+  template with the old version as a live value into a config file it never
+  overwrites. Comment version keys out in the template, warn when the
+  effective value is older than the default (naming its source, comparing
+  numerically), and test with a config made from the old template.
+
 ## 2026-10-25 (correction: take updates through a hash lock, not by floating)
 
 - **containers-and-infra** (ja + en): the rebuilt-image entry advised
