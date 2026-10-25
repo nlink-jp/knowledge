@@ -396,15 +396,26 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
 - A `--no-cache` rebuild gets a new ID and leaves the previous image untagged. Mention
   `podman image prune` alongside it. If the build also adds a version tag (`:<version>`), an
   image built by an earlier version keeps that tag and prune does not remove it.
-- **If the base is a tag rather than a digest (`python:3.12-slim`, say), add `--pull=newer`.**
-  podman's default (`missing`) keeps the local copy: the base, Python included, was three months
-  old (measured on podman 6.1.4; with the flag it refreshed to a 4-day-old image). Write it with
-  `=`: `--pull newer` parses `--pull` as `always` and takes `newer` as the build context. Without
-  registry access podman suppresses the pull error when a local image exists and carries on
-  (`man podman-build`).
-- **Pinning with `~=` a library that fixes only its newest line (Apache Arrow, Pillow) means a
-  rebuild never gets the fix.** `pyarrow~=18.0` could not leave the vulnerable Brotli Arrow 18
-  bundles, and `Pillow~=11.0` could not leave a CVE fixed only in 12.1.1. Give such packages a
-  floor instead, and because a floor can resolve a combination nobody has run, end the
-  Dockerfile with a check that exercises the real uses (an I/O round trip) and fails the build.
-  `pip check` misses incompatibilities with dependencies that declare no upper bound.
+- **Never get "a rebuild takes updates" from unverified downloads.** The same day, a tag-based
+  base (`python:3.12-slim`) was given `--pull=newer` and the pip packages floors only, so every
+  rebuild took the newest of everything. Fixes arrived — and so would whatever any upstream
+  published next, unverified, onto every user's machine. `~=` is no defence either (most
+  malicious releases are new patch releases). After the user pointed this out, it became:
+  - Pin the base by its multi-arch index digest (check with
+    `podman manifest inspect <name>@sha256:<digest>` that it is an `image.index` listing amd64
+    and arm64). No pull policy.
+  - Generate, from a constraints file (`requirements.in`), a lock with every package
+    (dependencies included) at one version and the SHA256 of every distribution (e.g.
+    `uv pip compile --universal --python-version 3.12 --generate-hashes`), and install only with
+    `pip install --require-hashes --no-deps -r <lock>`. A lock with one hash altered was refused
+    ("THESE PACKAGES DO NOT MATCH THE HASHES"). Other architectures' wheels can be checked
+    against the lock with `pip download --platform … --require-hashes`.
+  - The only thing a rebuild may take on its own is Debian's updates (`apt-get upgrade`), whose
+    signatures apt verifies. A new base or new pip packages arrive as a release, after the lock
+    is regenerated and its diff reviewed.
+  - Give libraries that fix only their newest line (Apache Arrow, Pillow) a floor in the
+    constraints file. With `~=` even the next lock cannot reach a fix (`pyarrow~=18.0` could not
+    leave Arrow 18's vulnerable Brotli, `Pillow~=11.0` a CVE fixed only in 12.1.1). So that a
+    regenerated lock that breaks is caught, end the Dockerfile with a check that exercises the
+    real uses (an I/O round trip) and fails the build. `pip check` misses incompatibilities with
+    dependencies that declare no upper bound.

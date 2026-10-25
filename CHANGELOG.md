@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-25 (correction: take updates through a hash lock, not by floating)
+
+- **containers-and-infra** (ja + en): the rebuilt-image entry advised
+  `--pull=newer` on a tag-based base and floor-only pip constraints, so that
+  every rebuild took the newest of everything — unverified downloads on every
+  user's machine, a supply-chain exposure. Corrected: pin the base by its
+  multi-arch index digest, install pip packages only from a SHA256 lock with
+  `--require-hashes --no-deps`, let a rebuild take only Debian's signed updates,
+  and keep floors for newest-line-only libraries in the constraints file the
+  lock is generated from.
+
 ## 2026-10-25 (a rebuilt image takes no security updates)
 
 - **containers-and-infra** (ja + en): new entry — a tool that builds its
