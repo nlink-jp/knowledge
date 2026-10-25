@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-25 (controls belong to the layer that owns them)
+
+- **mcp-server-design** (ja + en): new entry — an operations MCP server handed a
+  token with change permissions and then built tool-side layers to hold changes
+  back (two instances and tokens, mode-sealed tools, an in-house approval
+  procedure); each was argued away and the project was abandoned. What can be
+  done is the credential's to decide, what may be called is the runtime's
+  (the MCP spec puts confirmation and denial on the client), and the tool only
+  does the job correctly and describes itself honestly.
+
 ## 2026-10-23 (thought signatures replay across thinking levels)
 
 - **llm-integration** (ja + en): the thought-signature entry adds that a

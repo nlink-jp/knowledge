@@ -465,6 +465,52 @@ protect — and an unused feature is maintenance cost on its own.
 - Before adding a feature to a relay, check whether the upstream already
   provides it. If it does, not implementing is the right answer.
 
+### Put each control in the layer that owns it — the credential decides what can be done, the runtime what may be called, the tool only does it right
+
+**Symptom:** designing an MCP server to operate Cloudflare One (2026-10), an API token with change
+permissions was handed over while the tool side piled up mechanisms to hold changes back: a read
+instance and a change instance with two tokens, hiding the tools that return third-party text in
+change mode, and an in-house plan/apply procedure requiring a matching summary at approval. Each time
+the maintainer questioned it — "what does a separate file for the change token buy?", "the same tool
+names appear on two servers and the agent has to guess", "isn't that just switching tokens?" — the
+explanation of the mechanism's value retreated. It had also been missed that registering both servers
+in one session leaves the path from reading a log to changing settings intact. The independent design
+review never questioned that premise either, and the project was abandoned once its read features
+were done.
+
+**Why:** a permission the credential holds is a permission that can be used. A control inside the tool
+is only a promise, in the same process and on the same credential, not to use it — and configuration,
+the way the servers are registered, or a bug in the code each get past it. Which tools may be called,
+and when to ask a human, is the MCP client's (the agent runtime's) job: the MCP specification
+(2025-06-18, Tools) asks clients to let a human deny tool invocations and to prompt for confirmation on
+sensitive operations (SHOULD), and requires clients to treat tool annotations as untrusted unless they
+come from a trusted server (MUST). A server that blocks calls on its own duplicates what the runtime
+already has, and disagrees with the runtime's settings. (The specification also requires servers to
+"implement proper access controls" (MUST); for a server running locally on the operator's own
+credential, reading that as "the credential's scope" is reasonable — this is inferred.)
+
+**How to apply:**
+
+| Layer | Decides | Where it lives |
+|---|---|---|
+| Credential | What **can** be done | The permissions of the credential issued. If an operation must not happen, do not grant it |
+| Runtime | Which tools **may be called**, and whether a human confirms first | The MCP client's tool permission and approval settings |
+| Tool (MCP server) | Doing the job **correctly** within the permissions given | Ordering multi-step changes, consistency checks, detecting and warning about mistakes, reporting results accurately, describing the tools honestly |
+
+- Start the design by writing down what the credential handed to the tool can do. **That is the tool's
+  capability.** If an operation must not happen, the README gives the steps to issue a credential
+  without that permission.
+- Do not build layers in the server whose purpose is "has the permission but may not use it" — hiding
+  tools, sealing them behind a mode, splitting instances, an in-house approval procedure. The server's
+  part ends at README examples of permission and approval settings for the main runtimes.
+- Choosing a subset of tools at connection time (previous entry) is about context cost, not access
+  control. Do not justify the two with the same reason.
+- If the explanation of a mechanism's value shrinks each time it is questioned, suspect where the control
+  is placed and stop. Do not keep it alive with patches.
+- Give the independent review "could this control live in the credential or the runtime?" and "does it
+  hold under ordinary use (for example, both servers registered in one session)?". A review that only
+  checks a mechanism's internal consistency lets this class of mistake through.
+
 ### Discarding a type assertion on a required argument turns absence into a destructive default
 
 **Symptom:** A string-replacement tool's batch form read `m["new_string"].(string)` and threw
