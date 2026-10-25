@@ -363,3 +363,35 @@ with several, the "ID" came back as two lines and `podman rm` failed on it.
 answers every `ps` with one canned id cannot see a wrong name at all — give it a table of
 containers and match the way podman does (unanchored regex), so that a missing anchor fails
 the unit test, and keep one opt-in test that asks the real podman the same question.
+
+## An image rebuilt from the same Dockerfile takes no security updates — through the layer cache and through the base
+
+**Symptom:** a tool ships its Dockerfile inside the binary and has the user run `podman build`
+locally. After a Debian security update, a forced rebuild left the vulnerable package in place
+(measured on podman 6.1.4 with a digest-pinned `debian:12-slim`). Two causes stacked:
+
+1. **The layer cache.** The Dockerfile text does not change between rebuilds, so the
+   `apt-get update && apt-get install` layer is reused from the cache and apt never runs. After
+   the CVE fix, a library the tool installs fresh (`libbrotli1`) was still the unfixed version.
+2. **Packages already in the base image.** Even without the cache, `apt-get install <pkg>` does
+   not upgrade dependencies that are already installed. zlib, liblzma, gnutls and others that
+   the digest-pinned base contains stay at the digest's versions. In the image rebuilt without
+   the cache, `apt list --upgradable` still showed a pending security update for `liblzma5`,
+   which runs over the data under analysis.
+
+**Why it is missed:** a digest pin is a decision to fix versions, so it is easy to accept "updates
+become an explicit rebuild" and stop there. But the explicit rebuild itself updates nothing,
+because of the two causes above. The rebuild command succeeds, so nothing looks wrong.
+
+**How to apply:**
+- Run rebuilds with `--no-cache`. Pin the function that builds the argv with a unit test.
+- In the Dockerfile, run `apt-get upgrade -y` before the install. `export
+  DEBIAN_FRONTEND=noninteractive` so it covers every apt call in the RUN (prefixing it to the
+  first command does not carry to the rest).
+- After a rebuild, confirm in a throwaway container (as root, with network) that
+  `apt-get update && apt list --upgradable` lists nothing. That is the measurement that the
+  updates were taken.
+- Write in the ADR that the digest pins the Debian release, not each package version. The
+  target tool (tshark, say) is also re-resolved from the archive on every rebuild.
+- A `--no-cache` rebuild gets a new ID and leaves the previous image untagged. Mention
+  `podman image prune` alongside it.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-25 (a rebuilt image takes no security updates)
+
+- **containers-and-infra** (ja + en): new entry — a tool that builds its
+  embedded Dockerfile locally kept a vulnerable package after a forced
+  rebuild, for two stacked reasons: the layer cache reused the apt layer,
+  and `apt-get install` never upgrades packages already in the
+  digest-pinned base. Rebuild with `--no-cache`, run `apt-get upgrade -y`
+  before the install, and confirm `apt list --upgradable` is empty.
+
 ## 2026-10-25 (controls belong to the layer that owns them)
 
 - **mcp-server-design** (ja + en): new entry — an operations MCP server handed a
