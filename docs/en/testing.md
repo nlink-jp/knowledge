@@ -1910,3 +1910,22 @@ example.
   which value the filter matches.
 - Refuse, before sending, a value shape known to match nothing (a SHA-256's length). A refusal
   that says why guides the caller; a silent zero misleads it.
+
+## A bats assertion written as `! cmd`, or made inside a function called with `||`, never fails the test
+
+**Symptom:** A bats test was meant to forbid piping a download into a shell:
+`! grep -Eq '\|\s*sh\b' Dockerfile`. A mutation that added `curl … | sh` to the Dockerfile left
+the test green (cclaude v0.6.0, 2026-10-25). A helper used as `check_stage … || { echo …; return 1; }`
+had the same hole, caught before it ran: only its last line would have counted.
+
+**Why:** bats fails a test through errexit. Bash does not apply errexit to a command negated
+with `!`, nor to any command inside a function whose call is the left side of `||` or `&&` — the
+function returns the status of its last command, and earlier failed checks are forgotten.
+
+**How to apply:**
+- Assert absence with `run cmd; [ "$status" -eq 1 ]` (or `[[ ! … ]]`, which is a test
+  expression, not a negated command).
+- A helper meant to be called with `||` must make its last expression carry every check:
+  `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
+- Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch
+  directory, never the working tree).

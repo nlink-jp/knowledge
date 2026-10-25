@@ -419,6 +419,22 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
     regenerated lock that breaks is caught, end the Dockerfile with a check that exercises the
     real uses (an I/O round trip) and fails the build. `pip check` misses incompatibilities with
     dependencies that declare no upper bound.
+  - Tools that come as release files, not from a package manager (Go, Node.js, uv, gh, a
+    vendor's native binary): replace each `curl … | sh` installer with the file that installer
+    would fetch, at an exact version, with the amd64 and arm64 SHA256 copied from the author's
+    checksum file into `ARG`s, and `… | sha256sum -c -` on the line after the `curl`. Put each
+    download in its own stage (`FROM fetch AS <tool>`, final image `COPY --from`). Then
+    `build --target <tool> --build-arg <TOOL>_SHA256_AMD64=000…` is a cheap wrong-hash test; make
+    it require sha256sum's own "computed checksum did NOT match", not just a failed build (a
+    network error also fails). `--platform linux/amd64` under emulation checks the other
+    architecture's hashes against the real files.
+  - Build the "pinned hash matches" test with `--no-cache`. A cached layer skips the `RUN`, so
+    neither the download nor the check runs, and a status-only test passes on the memory of an
+    earlier build (cclaude v0.6.0: the `": OK"` line was missing on the cached stages).
+  - A config key that took a release line (`node_version = "24"`) cannot survive a hash lock: a
+    version without its hashes cannot be honoured. cclaude v0.6.0 retired its version keys
+    (ignored, with a warning naming the source to remove) and kept versions only in the
+    Dockerfile; ask the user before changing such a key, it is a breaking change.
 
 
 ## A default written into the config file at install time never receives later default bumps

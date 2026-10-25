@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-26 (testing a hash lock; bats assertions that cannot fail)
+
+- **containers-and-infra** (ja + en): the rebuilt-image entry gains how to hash-lock tools that
+  come as release files (one stage per download, amd64 and arm64 hashes, a wrong-hash test that
+  requires sha256sum's own message), why the "pinned hash matches" test needs `--no-cache`, and
+  that a version key taking a release line cannot survive a hash lock (cclaude v0.6.0).
+- **testing** (ja + en): new entry — `! cmd` and checks inside a function called with `||` run
+  without errexit, so a bats guard written that way never fails; assert with `run` and
+  `$status`, and prove a guard can fail against a mutated copy.
+
 ## 2026-10-26 (govulncheck judges the toolchain it runs under)
 
 - **release-engineering** (ja + en): new entry — a wails build pinned to an
