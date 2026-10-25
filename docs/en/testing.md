@@ -1931,6 +1931,11 @@ last line still counts, because its status becomes the test's result. Separately
 ignores `TMPDIR` and creates the directory under `_CS_DARWIN_USER_TEMP_DIR` (`/var/folders/…/T`)
 (`man mktemp`, and measured), so a test that points `TMPDIR` at its own directory and checks that it
 stays empty checks nothing.
+macOS `mktemp` also fills in only trailing X's: `mktemp …/ccc-config-XXXXXX.toml` returned the
+literal name `ccc-config-XXXXXX.toml` every time, so every test shared one file (measured). Once the
+mid-test checks counted, one test failed, skipped its cleanup, and every later test failed on that
+leftover file with "File exists". The same rewrite also found an expected value that had been false
+since an early release.
 
 **How to apply:**
 - Write mid-test checks with `[ … ]`, or fail explicitly: `[[ … ]] || { echo …; return 1; }`.
@@ -1938,6 +1943,9 @@ stays empty checks nothing.
   negated command, but on bash 3.2 it only counts on a test's last line.
 - To check a path the code under test created, do not assume you chose where it lands: have the
   process that received it (a stub, say) record the path, and check `[ ! -e "$path" ]`.
+- Put test files in `$BATS_TEST_TMPDIR` (per test, removed by bats), not in a `mktemp` template.
+- Wrap output checks in helpers that `return 1` when false (`output_has`, say) and use them on the
+  last line too, so a line added later cannot silently disable a check.
 - A helper meant to be called with `||` must make its last expression carry every check:
   `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
 - Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch

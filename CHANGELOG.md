@@ -6,6 +6,9 @@
   test under macOS's `/bin/bash` 3.2 (the bash bats picks there), so only `[ … ]` or
   `[[ … ]] || return 1` count; it no longer recommends `[[ ! … ]]` unconditionally; and macOS
   `mktemp -d` ignores `TMPDIR`, so check the path the code actually created (cclaude v0.7.0).
+  Then: macOS `mktemp` fills in only trailing X's (an `XXXXXX.toml` template is one literal
+  name), so put test files in `$BATS_TEST_TMPDIR`; wrap output checks in helpers that
+  `return 1`, even on a test's last line.
 
 ## 2026-10-26 (testing a hash lock; bats assertions that cannot fail)
 
