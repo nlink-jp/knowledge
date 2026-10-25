@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-26 (bats on macOS's bash 3.2)
+
+- **testing** (ja + en): the bats-assertion entry gains that a mid-test `[[ … ]]` never fails a
+  test under macOS's `/bin/bash` 3.2 (the bash bats picks there), so only `[ … ]` or
+  `[[ … ]] || return 1` count; it no longer recommends `[[ ! … ]]` unconditionally; and macOS
+  `mktemp -d` ignores `TMPDIR`, so check the path the code actually created (cclaude v0.7.0).
+
 ## 2026-10-26 (testing a hash lock; bats assertions that cannot fail)
 
 - **containers-and-infra** (ja + en): the rebuilt-image entry gains how to hash-lock tools that

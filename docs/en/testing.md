@@ -1911,20 +1911,33 @@ example.
 - Refuse, before sending, a value shape known to match nothing (a SHA-256's length). A refusal
   that says why guides the caller; a silent zero misleads it.
 
-## A bats assertion written as `! cmd`, or made inside a function called with `||`, never fails the test
+## A bats assertion written as `! cmd`, made inside a function called with `||`, or a mid-test `[[ … ]]` on bash 3.2, never fails the test
 
 **Symptom:** A bats test was meant to forbid piping a download into a shell:
 `! grep -Eq '\|\s*sh\b' Dockerfile`. A mutation that added `curl … | sh` to the Dockerfile left
 the test green (cclaude v0.6.0, 2026-10-25). A helper used as `check_stage … || { echo …; return 1; }`
 had the same hole, caught before it ran: only its last line would have counted.
+The next day, two tests of a temporary directory's cleanup passed against a copy with the cleanup
+code deleted (cclaude v0.7.0, 2026-10-26). A mid-test `[[ "${lines[0]}" == "context=${TMPDIR}/"* ]]`
+was in fact false, and the test still passed.
 
 **Why:** bats fails a test through errexit. Bash does not apply errexit to a command negated
 with `!`, nor to any command inside a function whose call is the left side of `||` or `&&` — the
 function returns the status of its last command, and earlier failed checks are forgotten.
+On macOS's `/bin/bash` (3.2.57), a false `[[ … ]]` does not trigger errexit either, and bats's
+`#!/usr/bin/env bash` picks that bash unless another one is installed. Measured on macOS 27:
+`/bin/bash -c 'set -e; [[ a == b ]]; echo survived'` prints `survived`. A `[[ … ]]` on a test's
+last line still counts, because its status becomes the test's result. Separately, macOS `mktemp -d`
+ignores `TMPDIR` and creates the directory under `_CS_DARWIN_USER_TEMP_DIR` (`/var/folders/…/T`)
+(`man mktemp`, and measured), so a test that points `TMPDIR` at its own directory and checks that it
+stays empty checks nothing.
 
 **How to apply:**
-- Assert absence with `run cmd; [ "$status" -eq 1 ]` (or `[[ ! … ]]`, which is a test
-  expression, not a negated command).
+- Write mid-test checks with `[ … ]`, or fail explicitly: `[[ … ]] || { echo …; return 1; }`.
+- Assert absence with `run cmd; [ "$status" -eq 1 ]`. `[[ ! … ]]` is a test expression, not a
+  negated command, but on bash 3.2 it only counts on a test's last line.
+- To check a path the code under test created, do not assume you chose where it lands: have the
+  process that received it (a stub, say) record the path, and check `[ ! -e "$path" ]`.
 - A helper meant to be called with `||` must make its last expression carry every check:
   `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
 - Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch
