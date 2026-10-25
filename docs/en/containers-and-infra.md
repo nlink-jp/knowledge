@@ -394,4 +394,17 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
 - Write in the ADR that the digest pins the Debian release, not each package version. The
   target tool (tshark, say) is also re-resolved from the archive on every rebuild.
 - A `--no-cache` rebuild gets a new ID and leaves the previous image untagged. Mention
-  `podman image prune` alongside it.
+  `podman image prune` alongside it. If the build also adds a version tag (`:<version>`), an
+  image built by an earlier version keeps that tag and prune does not remove it.
+- **If the base is a tag rather than a digest (`python:3.12-slim`, say), add `--pull=newer`.**
+  podman's default (`missing`) keeps the local copy: the base, Python included, was three months
+  old (measured on podman 6.1.4; with the flag it refreshed to a 4-day-old image). Write it with
+  `=`: `--pull newer` parses `--pull` as `always` and takes `newer` as the build context. Without
+  registry access podman suppresses the pull error when a local image exists and carries on
+  (`man podman-build`).
+- **Pinning with `~=` a library that fixes only its newest line (Apache Arrow, Pillow) means a
+  rebuild never gets the fix.** `pyarrow~=18.0` could not leave the vulnerable Brotli Arrow 18
+  bundles, and `Pillow~=11.0` could not leave a CVE fixed only in 12.1.1. Give such packages a
+  floor instead, and because a floor can resolve a combination nobody has run, end the
+  Dockerfile with a check that exercises the real uses (an I/O round trip) and fails the build.
+  `pip check` misses incompatibilities with dependencies that declare no upper bound.

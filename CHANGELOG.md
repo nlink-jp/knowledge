@@ -7,7 +7,11 @@
   rebuild, for two stacked reasons: the layer cache reused the apt layer,
   and `apt-get install` never upgrades packages already in the
   digest-pinned base. Rebuild with `--no-cache`, run `apt-get upgrade -y`
-  before the install, and confirm `apt list --upgradable` is empty.
+  before the install, and confirm `apt list --upgradable` is empty. Extended
+  the same day: a tag-based base needs `--pull=newer` (written with `=`;
+  podman suppresses the pull error offline), a version tag survives
+  `podman image prune`, and `~=` pins on libraries that fix only their newest
+  line (Arrow, Pillow) block fixes — use a floor plus a build-time round trip.
 
 ## 2026-10-25 (controls belong to the layer that owns them)
 
