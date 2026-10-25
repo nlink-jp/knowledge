@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-26 (read-only SQL in DuckDB needs a read-only database)
+
+- **security** (ja + en): new entry — a keyword prefix, DuckDB's statement
+  type and a READ ONLY transaction were each measured past by LLM-written
+  SQL (multi-statement prepare, a top-level data-modifying CTE, file-writing
+  table functions, json_execute_serialized_sql on an internal connection,
+  dbgen). Run untrusted SQL on a throwaway instance with the file attached
+  READ_ONLY, stage materialisations, lock the configuration, and keep the
+  statement-type check as the first layer only.
+
 ## 2026-10-26 (bats on macOS's bash 3.2)
 
 - **testing** (ja + en): the bats-assertion entry gains that a mid-test `[[ … ]]` never fails a

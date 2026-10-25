@@ -1996,3 +1996,41 @@ to foreign hosts, and mismatched filenames or sizes remain rejected.
 - Passing unit tests do not prove the real service matches their assumptions.
   Run the actual binary through the round trip before completion, and treat
   warnings or missing downloaded files as E2E failures.
+
+## Read-only SQL in DuckDB: only a read-only database holds — the statement type and a READ ONLY transaction do not
+
+**Symptom:** two tools ran LLM-written SQL against DuckDB 2.0 and meant it to read only. Each check was measured past
+in turn (2026-10-26):
+- A keyword-prefix check passed `SELECT 1; DROP TABLE t`. The Go driver executes every statement but the last while
+  preparing a multi-statement query, so the table was gone before anything looked at it — in one tool, during a
+  dry-run that ran before the user confirmed.
+- Requiring DuckDB's own statement type to be a single SELECT passed a top-level data-modifying CTE
+  (`WITH d AS (DELETE FROM t RETURNING *) SELECT count(*) FROM d` is type SELECT), and plain SELECTs of table
+  functions that write files (`enable_profiling(save_location=…)` overwrote an arbitrary file, `enable_logging`
+  created a log directory) or install extensions (`read_csv('https://…')`).
+- Running inside `BEGIN TRANSACTION READ ONLY` passed `json_execute_serialized_sql(json_serialize_sql('<DELETE …>'))`,
+  which runs its SQL on an internal connection outside the caller's transaction. In a "create table from this
+  query" path, statically linked `dbgen` / `dsdgen` created 8 and 24 tables next to the intended one.
+
+**Why:** each check decided "does not write" from a stand-in — the text, the statement type, the transaction — and
+each stand-in passed the writes it did not describe. DuckDB enforces read-only at the database level: a file opened
+with `access_mode=read_only`, or attached `(READ_ONLY)`, refuses writes from every connection, internal ones
+included.
+
+**How to apply:**
+- Run untrusted SQL only against a database DuckDB itself holds read-only. When the same process must also write
+  that file, close the writer and run the query on a throwaway in-memory instance that `ATTACH`es the file
+  `READ_ONLY` and `USE`s it; reopen the writer for the next write. DuckDB does not stop two instances in one process
+  from opening the same file, so keep one at a time under your own lock.
+- To materialise an untrusted query, run it on such a reader into a fresh staging file
+  (`CREATE TABLE stage.result AS <query>`), then copy that one table in from the writer with the staging file
+  attached `READ_ONLY`. Column types survive.
+- Also lock the configuration on every such instance: `SET autoinstall_known_extensions = false`,
+  `SET autoload_known_extensions = false`, `SET lock_configuration = true`. Read-only access does not stop the
+  profiling/logging file writes; the lock does.
+- Keep the single-SELECT statement-type check (driver `Prepare` + `StatementType`, never `PrepareContext`, which runs
+  the leading statements) for `COPY … TO`, `ATTACH` and clear refusals — as the first layer, not the control.
+- Test each refused form for its effect (tables, attached databases, files), not only for an error, and run a
+  control with the read-only attach or the lock removed: it must fail.
+- File reads (`read_csv`, `read_text`, `read_duckdb`, `glob`) remain. `enable_external_access = false` cannot be
+  relaxed while the database runs, so it also blocks the tool's own loads.
