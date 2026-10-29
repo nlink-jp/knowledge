@@ -1900,6 +1900,40 @@ a list only waits for the next one.
   again for pathguard: five holes → one high and three medium → one medium → an incomplete fix →
   none. When two findings share a cause, fix the cause (the anchor closed four spellings at once).
 
+## Canonicalizing a path to the kernel's name needs the right open, the right link test, and a re-check after the open
+
+**Symptom:** gem-agent judged whether a directory could be added by comparing the typed path as a
+string, so `/users/<name>/library/launchagents` passed the `~/Library` refusal (2026-10). The fix opened
+the directory and read the kernel's name back with `fcntl(F_GETPATH)` — the volume's case, the stored
+Unicode form, links resolved — and judged that. Two independent reviews of that fix found three more
+holes in the same place. A plain `open` of a FIFO waits for a writer, so a model that ran `mkfifo` in the
+project and suggested `/add-dir` on it froze the TUI's event loop and the grant lock. Links were told
+apart by comparing the typed path with the kernel's name under `strings.EqualFold`, so a Japanese
+directory name stored decomposed (`ト`+U+3099) was refused as a link, for ever, when typed in the composed
+form the IME produces. And the link check ran before the open, so a process swapping a link in and out
+of the project got past it and had another place opened (4,804 of 200,000 tries in a swap loop).
+
+**Why:** The kernel's name is a name that is safe to judge, but the three steps that lead to it —
+opening, comparing with what was typed, tying what was opened to what was judged — each carry their own
+spelling problem. APFS folds Unicode normalization as well as case and returns the form it stored;
+`EqualFold` folds case only. The gap between a name check and the open is a TOCTOU window for anyone
+who can write a link.
+
+**How to apply:**
+- Open for canonicalization with `O_RDONLY|O_NONBLOCK|O_DIRECTORY`: what is not a directory is refused
+  without waiting. Go's `os.Open` and `os.OpenRoot` add no `O_NONBLOCK` (and `OpenRoot` cannot be built
+  from a descriptor).
+- Tell a link by resolving, not by comparing names: `filepath.EvalSymlinks(typed) != typed`, byte for
+  byte. Resolving keeps every non-link component as typed, so a case or Unicode-form difference never
+  reads as a link.
+- Compare kernel names exactly. If the name judged, the name of the opened descriptor and the name
+  installed differ by a byte, refuse as "changed in between"; on a case-sensitive volume a case-only
+  difference is another place.
+- After the open, check again that the typed path still resolves through no link and is
+  `os.SameFile` with the opened descriptor. A swap after that is harmless — what is installed is the
+  open descriptor and the kernel's name.
+- Test with a real FIFO and a real decomposed name (skip when the composed spelling does not `Stat`).
+
 ## file:// in browser automation is not closed by checking arguments — arguments, the interception, and the entrance to reads
 
 **Symptom:** An MCP server driving Chrome over CDP (chrome-pilot-mcp) opened `file://` by default, so
