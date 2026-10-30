@@ -1583,6 +1583,16 @@ scales with document size:
   tool layer cannot see — the tracking would certify exactly the stale
   copies.
 
+### Counting operator turns from an agent transcript: the runtime writes user-role messages too
+
+**Symptom:** A tool that counts operator turns from agent transcripts took every user-role message as a turn. One runtime writes a message beginning "Runtime facts for this session:" in the user role at every session start, resume and /clear (to keep the system prompt byte-identical for the prefix cache), and both runtimes inject notes about interrupted calls ("note from <runtime>: …") the same way. On real transcripts, turns came out 641 where there were 432 (measured, 2026-10), and rounds per turn were pulled toward 0. The one injected prefix the tool did exclude for that runtime (a resume note) did not exist in it: it had been carried over from the other runtime by analogy. An independent verifier found this by reading the runtime's source.
+
+**Why:** A runtime puts facts in the user role to keep its system prompt stable. The role field cannot tell the runtime's words from the operator's; only the runtime's own constants can.
+
+**How to apply:**
+- Take the prefixes of injected messages from the writer's source (constants such as a facts or resume prefix, and the format strings of injected notes), per runtime. Do not carry one runtime's list to another by analogy.
+- Check the turn count on real data against a separate count of messages a person typed. A runtime that starts injecting a new message inflates turns until its prefix is added, so keep the prefixes in one place with where each comes from.
+
 ## Documentation & licensing
 
 ### Never claim "fully offline" for tools running in an LLM session

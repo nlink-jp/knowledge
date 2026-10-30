@@ -1580,6 +1580,8 @@ fixing tool share one test, both go blind at once.
   uses the same marker can still hide the form. If the form itself can be tested directly (here,
   `|| true` closing an `&&` chain), that test is stronger.
 
+**Second instance (2026-10, a transcript aggregator):** A shell result was counted as a timeout whenever it contained the runtime's timeout line anywhere. The runtime appends that line as the **last** line of a result. One counted result was the runtime's own source, found by a grep inside the session, quoting the format string. An earlier throwaway measurement script counted the same way, so the two agreed and were both wrong (one of two counted timeouts was not one; found by an independent verifier). Look for a line-shaped marker only on the line where the writer puts it, and take that place from the writer's code.
+
 ## Record a person's check per item and per method — and read the settings that decide the result before asking
 
 **Symptom (three times):**

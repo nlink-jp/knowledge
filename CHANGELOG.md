@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-30 (reporting from agent transcripts: closed sets and injected messages)
+
+- **security** (ja + en): new entry — a pattern that limits characters is not a
+  closed set: a model-name and version pattern let a cloud resource path, an
+  e-mail address and a company suffix into a numbers-only report. Accept a
+  free-form value by its shape, flag values the user chose, and plant the
+  test marker inside values a looser pattern would pass.
+- **llm-integration** (ja + en): new entry — counting operator turns from an
+  agent transcript must exclude the user-role messages the runtime writes
+  (session facts, late-return notes); take the prefixes from each writer's
+  source, not by analogy, and check against typed messages on real data.
+- **testing** (ja + en): the marker entry gains a second instance — a shell
+  timeout matched anywhere in the output counted a grep of the runtime's own
+  source; look for a line-shaped marker only on the line the writer uses.
+
 ## 2026-10-26 (read-only SQL in DuckDB needs a read-only database)
 
 - **security** (ja + en): new entry — a keyword prefix, DuckDB's statement

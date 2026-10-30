@@ -2072,3 +2072,14 @@ included.
   control with the read-only attach or the lock removed: it must fail.
 - File reads (`read_csv`, `read_text`, `read_duckdb`, `glob`) remain. `enable_external_access = false` cannot be
   relaxed while the database runs, so it also blocks the tool's own loads.
+
+## A pattern that limits characters is not a closed set — in a report that may leave the machine, accept a value by its shape
+
+**Symptom:** A tool that builds a numbers-only report from local agent transcripts, printing no free text, let three header strings through whenever they matched a pattern: a version, a model name, an MCP server name. The patterns limited the characters (for a model, `^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$`). An independent verifier fed the built binary a model `projects/<project-id>/locations/<region>/endpoints/<n>` and a version `v1.0.0-<company>.<project>`; both were printed as written, and so were an e-mail address and a relative file path (measured, 2026-10). In both runtimes the model name is a free-form configuration string (read in their configuration code), so a cloud project ID — a value the organization treats as secret — could reach a report meant to be handed to someone else. The leak test passed: every value planted in it already failed every pattern (a space, a leading `/`).
+
+**Why:** A character class bounds the alphabet, not what the string says. Identifiers, paths and addresses are made of the same characters as model names. A set is closed only when its values come from a list, or have a shape that leaves no room for anything else.
+
+**How to apply:**
+- Accept a free-form value by its shape: a version is a release tag or `git describe` output (digits and a commit hash only); a model id is a name with at most one publisher prefix (one `/` at most, no `@`). Everything else becomes `other`.
+- A value the user chose (a model id) can still identify something even when its shape fits. Say so in the README and ask the user to read it before sending, or show it only on request like other names.
+- Plant the test marker inside values a looser pattern would pass, not only in values that fail every pattern. Put the pattern back to the loose form once and check that the test fails.
