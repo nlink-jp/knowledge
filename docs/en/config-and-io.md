@@ -1149,3 +1149,30 @@ whole declared rows and columns, a wrong ratio may distort the picture (whether 
 - Keep a fixed fallback for terminals that report 0. Use only the ratio; do not rely on absolute pixels.
 - Do not use CSI 16t or similar queries. Some terminals do not answer, and on those that do, the reply leaks
   into the input box while the UI runs (see "A terminal query read from a goroutine" above).
+
+## Windows Explorer's ZIP turns into Deflate64 past about 2 GB — when "unzip opens it", suspect the compression method
+
+**What happened:** A ~2.8 GB ZIP made with Windows Server 2012's Explorer ("Send to → Compressed (zipped)
+folder") failed in an in-house macOS extraction app and extracted fine with `unzip` in the terminal. The
+contents were confidential and could not be shared, but the app handled only store and Deflate, which narrowed
+it down: once the files it packs pass about 2 GB, Explorer switches the compression method from Deflate
+(method 8) to **Deflate64 (method 9)**. Microsoft does not document the threshold; it comes from user reports
+and from tools that added support for the same reason (reported). A method-9 ZIP made with 7-Zip reproduced
+the app's error (measured).
+
+**Why:** No macOS component reads Deflate64. The Compression framework does raw Deflate only, and the SDK's
+zlib does not include `infback9`, zlib's contrib module for Deflate64 (checked in the SDK's `zlib.h` and
+`libz.tbd`). The Info-ZIP `unzip` that ships with macOS, on the other hand, is built with `USE_DEFLATE64`
+(checked with `unzip -v`). A 2 GB boundary invites suspicion of a signed 32-bit overflow; here that was not it
+(the app's reader handled 64-bit sizes correctly).
+
+**How to apply:**
+- When one extraction tool fails and another succeeds, look at the entry's compression method first. If the
+  contents cannot be shared, ask the recipient for `unzip -Z -v <file> | grep -i 'compression method'`, which
+  shows the method alone (`deflated (enhanced-64k)` is Deflate64).
+- A tool meant to receive ZIPs from Windows needs to extract method 9 (creating it is unnecessary). It differs
+  from Deflate in three places only: a 64 KiB window, distance codes 30/31 (32769 / 49153 + 14 extra bits),
+  and length code 285 meaning 3 + 16 extra bits. Report an unsupported method in a sentence that names its
+  number, not as a raw enum value.
+- Test data can be made with 7-Zip (`7zz a -tzip -mm=Deflate64`), but it never emits length code 285 (second
+  instance under "Verify the fixture before blaming the code" in testing).

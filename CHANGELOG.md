@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-31 (Windows Explorer's Deflate64 and what one encoder's fixtures cannot cover)
+
+- **config-and-io** (ja + en): new entry — Windows Explorer's built-in ZIP
+  switches to Deflate64 (method 9) past about 2 GB, and no macOS component
+  decodes it while the bundled `unzip` does. When one extraction tool fails
+  and another succeeds, read the entry's compression method first.
+- **testing** (ja + en): "Verify the fixture before blaming the code" gains a
+  second instance — 7-Zip's Deflate64 encoder never emitted the long-length
+  code the fixture was built to force; count the paths a decoder actually
+  ran and assert on the count. The mutation entry gains an exception: when
+  the removed guard prevented a crash, the crashed test process is a catch,
+  and the tally has to see exit status and the executed-count line.
+
 ## 2026-10-30 (reporting from agent transcripts: closed sets and injected messages)
 
 - **security** (ja + en): new entry — a pattern that limits characters is not a

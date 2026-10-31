@@ -439,6 +439,16 @@ by some means other than the thing under test. At minimum, check the named resou
 exists first (`say -v '?'`, a font list, a model list). Reading a correct answer as a
 bug costs more than the bug would have.
 
+**Second instance (2026-10-31):** To test a Deflate64 decoder, a Deflate64 ZIP was made with
+7-Zip from a 40 KiB random block repeated four times, meant to force both codes only Deflate64
+has: distances beyond 32 KiB and match lengths beyond 258 bytes. Having the decoder count each
+code it decoded showed the far distances were used and **the long-length code was used zero
+times** (measured): 7-Zip's encoder does not emit it even for a 40 KiB match. The fixture tests
+stayed green, so without the count the claim would have been "that path is cross-checked
+against an external implementation too". For a fixture meant to cover a format's codes or
+paths, **count on the decoding side which paths actually ran, and assert on the count**. Cover
+the paths one encoder never emits with inputs built by hand from the specification.
+
 ## "Not found" is only an answer when every source actually answered
 
 **What happened:** A lookup tool queries OTX under two indicator types, because
@@ -1418,6 +1428,12 @@ the author had in mind.
 - Confirm the failure on **an assertion line** (pick up `_test.go:NN:`). A compile error, a
   panic or a timeout is void — rewrite a mutation that leaves an import unused so that it still
   uses it, and move the arithmetic check ahead of the path that would panic.
+- Exception: when the failure the removed guard prevented is itself a crash (a flush check that
+  keeps writes inside a buffer), the test process dies on the out-of-bounds write before any
+  assertion runs. That mutant is caught, not void — provided the tally can see it. XCTest prints
+  neither failure lines nor the executed-count line when the process dies, so a tally of failure
+  lines reported "0 failed" and it looked blind (measured 2026-10-31). Count the exit status and
+  whether the executed-count line appeared, too.
 - A guard must fail, not hang. A test that waits forever because a fake clock never advances
   gets a runaway cap so that it fails fast. Always run with a timeout.
 - When a mutation is not caught, decide which of the three kinds it is before fixing: a hole →
