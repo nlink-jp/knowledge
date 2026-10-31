@@ -1488,6 +1488,47 @@ informative is the whole bug.
 - **Never hardcode a guessed cause as a prefix.** A fixed "it might be X" is
   actively misleading in every case where it is not X.
 
+### Hand over failure clues in a form that survives being passed along — a copyable report with no names
+
+**Symptom:** In a ZIP tool (2026-10), a 2.8 GB archive someone received
+failed to extract. The screen showed the cause itself
+(`unsupportedMethod(9)`), but what reached the developer was "it gave an
+extraction error", and the cause had to be inferred from the situation. The
+archive was confidential; its contents could not be shared either.
+
+**Why:** Alert text is hard to select, means nothing to the person reading
+it, and is the first thing dropped when a problem is relayed. Putting more
+on screen does not change what travels. And the people who struggle with
+files received from Windows are the ones who cannot share those files. If a
+report may contain names, it has to be vetted before sending — and then it
+is not sent.
+
+**How to apply:**
+- Keep the on-screen sentence plain and add **one copy action** to the
+  failure dialog (a second NSAlert button, "Copy Details"; OK stays the
+  default). From a result sheet the person is still reading, copy without
+  closing. In a CLI make it an opt-in flag so stderr stays one line. The
+  third tier of the "full case table" entry above — a technical tag for bug
+  reports — does not travel just by being selectable.
+- Put **only the shape** in the report: versions, the error's type and
+  case, the subject's structure as counts and IDs. No names, paths or
+  content, and also no **CRC (a fingerprint of the content) or timestamps**.
+  Its value is that it can be sent unread.
+- Keep names out **by construction**, not by scrubbing strings. Put names in
+  labeled error fields and render the report with an explicit `switch`
+  (`String(describing:)` prints associated values — the names). Pin
+  free-text details as name-free with a source-scanning test. For errors
+  you did not define, print the domain/code chain only
+  (`localizedDescription` quotes the file it failed on).
+- Test by making a real subject fail whose own name and every item name
+  carry a marker, and assert the report has no marker.
+- Make a fixed-format report ASCII. `ProcessInfo.operatingSystemVersionString`
+  is **localized** ("バージョン27.2（ビルド…）" on a Japanese system); build
+  the line from `operatingSystemVersion` and `sysctl kern.osversion`.
+- When picking IDs out of a structure that may be damaged, trust them only
+  when the lengths add up exactly. One wrong length and everything after it
+  is content — possibly a name — read as IDs.
+
 ### A state where you deliberately do nothing must still be nameable in the UI
 
 **Symptom:** a translator was reported as "you can't tell whether it's working."

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-01 (failure clues that survive being passed along)
+
+- **macos-gui** (ja + en): new entry — the cause was on screen
+  (`unsupportedMethod(9)`) yet reached the developer as "an extraction
+  error". Add one copy action that yields a report of shape only (versions,
+  error case, structure as counts and IDs), with names kept out by
+  construction, CRCs and timestamps excluded, ASCII throughout —
+  `operatingSystemVersionString` is localized.
+
 ## 2026-10-31 (Windows Explorer's Deflate64 and what one encoder's fixtures cannot cover)
 
 - **config-and-io** (ja + en): new entry — Windows Explorer's built-in ZIP
