@@ -65,38 +65,55 @@ code used to work).
   failure lands after the operator believes they are back at work. Name the
   recorded model in the error.
 
-### A function call arrives as one whole part — nothing streams while it is composed
+### A silent stream is not a dead connection — the content has no liveness signal, the connection does
 
-**Symptom:** A streaming UI's "no data for 20s — the connection may be stalled"
-warning fired on every large file write. The operator's report: "the model is
-clearly still working, but it says the connection stalled". Measured (Vertex
-`GenerateContentStream`, a Gemini 3 flash model, CLI agent, 2026-08): one write
-tool call with 21,761 bytes of content produced four thought-summary chunks in
-the first 9s and then **33s with no chunk at all**. Tapping the HTTP response
-body through a RoundTripper showed **40.4s without a single byte read**, then
-~37KB flushed at once when the call completed.
+**Symptom:** A streaming UI's "no data for Ns — the connection may be stalled"
+warning fired on live streams (CLI agent on Vertex `GenerateContentStream`).
+At 20s it fired on every large file write (2026-08). Raised to 90s, it still
+fired again and again on long contexts (2026-11).
 
-**Why:** A function call is not streamed argument-by-argument; it is sent as
-**one finished part**. Text streams incrementally, which is what makes the
-contrast look like breakage. The silence scales with the argument (~650 B/s
-measured, so a 100KB file is minutes of it). Consequently the client has **no
-signal at any layer** — not chunks, not response bytes — that separates
-"composing a large argument" from "the connection died".
+**Two sources of harmless silence, both measured:**
+- **A function call arrives as one whole part.** There is no argument-by-argument
+  streaming. One write call with 21,761 bytes of content gave four thought chunks,
+  then **33s with no chunk**. A tapped response body read **not one byte for
+  40.4s**, then ~37KB arrived at once. The silence scales with the argument
+  (~650 B/s).
+- **The server's wait before the first byte.** In a field session, rounds took
+  97–210s on prompts of 230k–770k tokens. One produced only 54 output and
+  58 thought tokens in 154s, so it was waiting, not composing. Even a
+  16k-token prompt at a high thinking level waited 90s, and once more than
+  180s, before its first chunk. No threshold fits.
+
+**Why the warning was wrong:** Nothing in the **content** (chunks, body bytes)
+tells "composing" or "thinking" from "dead". The **connection** can tell. An
+HTTP/2 client can ping a connection that has received no frame for a while,
+and close it when the ping goes unanswered. Google's Go auth library already
+configures this for the SDK's client (`ReadIdleTimeout` 31s, `PingTimeout` 15s
+by default). Measured with pre-registered hypotheses: live silences of up to
+205s had every ping answered, and connections frozen through a relay failed
+44–46s after the freeze, with a health-check failure first. So a dead
+connection was already an error within 46s of its last frame, and the 90s
+warning only ever fired on connections that were alive.
 
 **How to apply:**
-- Set the stall threshold from measurement, generously (40s of silence for a
-  21KB write means anything in the tens of seconds is a false alarm). Do not try
-  to build a byte-level heartbeat — measured impossible.
-- Do not add an automatic timeout; it kills legitimate long generation. Show the
-  elapsed silence and leave the decision to the human.
-- **Do not put the reason on screen.** "A function call arrives as one part" is
-  the supplier's business and the user cannot act on it. Constraints like this
-  belong in ADRs, comments and commit messages.
-- Design for the asymmetry: expected silence differs between a text answer and a
-  function call.
-- The cost of a false alarm is not information but the signal itself: a warning
-  that fires during healthy work is one operators learn to ignore, and then a
-  real stall has no way to reach them.
+- Do not detect a dead connection by counting silent seconds. Ask the
+  connection: use the HTTP/2 health check (`http.HTTP2Config.SendPingTimeout` /
+  `PingTimeout` in the standard library), and when it fails, end the turn with an
+  error that says what happened and what to do next.
+- If the property only exists as a dependency's default, own it: build the
+  client yourself with the values you rely on, and pin them with an offline
+  test. That test runs a local TLS h2 server and freezes the connection before
+  the headers and after the first chunk. Include a control with the check off,
+  which must hang.
+- Show the elapsed silence neutrally. Never word it as an accusation. Add no
+  automatic timeout: the health check ends only connections that do not answer.
+- **Do not put the reason on screen** (function-call framing, server timing).
+  The user cannot act on it; it belongs in ADRs, comments and commit messages.
+- An SDK may also print the transport error itself through the standard logger.
+  Under a full-screen or inline TUI, that line draws over the screen.
+  Redirect the logger while the TUI runs.
+- The cost of a false alarm is the signal itself: a warning that fires during
+  healthy work is one operators learn to ignore.
 
 ### Write usage down at call time — the LLM API never reports money
 
