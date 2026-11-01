@@ -1333,6 +1333,54 @@ instructions found there becomes an **injection path into every later turn**.
 - Tell the operator how many messages were summarised. **A model that has
   forgotten something must not look like one that never knew it.**
 
+### On a small window, trigger compaction on the request about to be sent
+
+**Symptom:** A cloud agent's history compaction (1M-token window) was ported to
+a local-LLM agent (windows of tens of thousands to ~170k tokens) in 2026-11,
+after a build without compaction stopped on another machine with a
+context-overflow error. The source's trigger was "compact between rounds when
+the server's prompt count for the previous request passes the threshold".
+Before porting, checking the source's design against recorded sessions turned up
+three cases that trigger cannot save.
+
+**Why:**
+- The last measurement does not include what was appended after it. One round of
+  parallel tool results can go from below the threshold to past the window in a
+  single step, and the request that would have reported the size is the one that
+  fails.
+- Not all growth is history. Across 410 recorded rounds, some grew the prompt by
+  16–20k tokens on 3–7 KB of new messages: rounds that loaded an MCP server's
+  schemas, which then ride every later request as tool definitions.
+- The same records put bytes per token at 3.5 (median) and 2.25 (10th
+  percentile), Japanese and tool output included. A "bytes ÷ 4" estimate comes
+  out low for most rounds.
+- On a small window the summariser's own input (the rendered history) can exceed
+  the window too. On a 1M window that never happened.
+
+**How to apply:**
+- Judge before every request: projection = the last request's measured count +
+  (estimate now − the estimate of that request). The server's own count stays the
+  base and only the change is estimated. Include the system prompt and the tool
+  definitions in the estimate. With no measurement yet (first request, just
+  resumed), use the estimate alone.
+- Do not take a measurement below half its own request's estimate as the base: a
+  server that counts only the tokens it did not have cached makes a full window
+  look small.
+- When the system prompt, the tool definitions and the retained tail alone reach
+  the threshold, summarising cannot get under it. Decline once, with the reason,
+  instead of paying for a useless summariser call every few rounds.
+- Bound the summariser's input (e.g. half the window): tighten the clipping in
+  steps, then summarise a shorter head if it still does not fit — a smaller
+  compaction beats none.
+- Do not detect overflow by reading the server's error text and retrying: each
+  server words it differently, so it becomes a text rule over an open set.
+- If per-session facts (the isolation tag name, the work directory) live in the
+  conversation, carry them into the summary message verbatim so the cut does not
+  summarise them away.
+- A summary that copies the isolation tag name is withheld by the send-time
+  wrap's tag-collision check on every later request — after the original history
+  is gone. Check that the summary can be wrapped before swapping it in.
+
 ### Distinguish summary verification labels from source field values
 
 **Symptom:** A local LLM summarized a short conversation while retaining a
