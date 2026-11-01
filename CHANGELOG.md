@@ -6,8 +6,10 @@
   `$PWD`, so a directory with Japanese voiced kana reached by a typed
   (NFC) `cd` was a different string from its on-disk (NFD) record:
   resume refused, a state marker reported a collision, keyed settings
-  vanished. Read the path from the kernel, compare recorded paths by
-  identity (`os.SameFile`), never normalise strings.
+  vanished. Read the path from the kernel; compare paths — equality and
+  containment — through one function on NFC-normalised strings, case not
+  folded. File identity (`os.SameFile`) was tried first and rejected:
+  stat stalls, symlinks inherit trust, no containment.
 
 ## 2026-11-01 (one round is bounded by the window)
 

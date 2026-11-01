@@ -533,16 +533,26 @@ the path.
 - Read a path that stands for a project or workplace from the kernel,
   not `$PWD`. Keep one function that does it and refuse every other
   `os.Getwd` with an architecture test.
-- Where a path is a record key (transcripts, a state directory's marker,
-  config tables), never compare a recorded path with the current one by
-  `==`. Treat them as the same when equal or when both exist and
-  `os.SameFile` is true, in one function. Records written before the fix
-  in the other spelling are then found without rewriting anything. Send
-  writes to the entry that already exists, so one directory never gets
-  two tables.
-- Do not normalise the strings to NFC or NFD: it needs a normalisation
-  table, still disagrees with a case-insensitive volume, and either form
-  disagrees with the on-disk spelling for half the directories.
+- Never write a path comparison as an operator (`==`,
+  `strings.HasPrefix(p, base+"/")`). Put equality, containment and the
+  relative path in one package, as a pure function that cleans both
+  sides and normalises them to Unicode NFC before comparing. Route record
+  keys (transcripts, state markers, config tables, paths hand-written in
+  a config file) and containment checks (is this inside the project)
+  through it, and refuse a raw prefix check with an architecture test —
+  six packages each had their own copy of it.
+- Do not fold case: on a case-sensitive volume those are two
+  directories, and folding hands one's trust to the other. Unicode form
+  is always one name on APFS/HFS+.
+- Do not match by file identity (`os.SameFile`). It was the first
+  implementation and was replaced after the pre-release review: it needs
+  both paths to exist, cannot answer containment, stats every record (a
+  network volume that no longer answers stalls each call), and follows a
+  recorded path that has since become a symlink, so the link's target
+  inherits the record's trust.
+- Send writes to the entry that already exists, so one directory never
+  gets two tables; records written before the fix in the other spelling
+  are found without rewriting anything.
 - When measuring, remember your own `cd` spelling changes the condition
   under test (`env -u PWD` aligns it with the kernel's).
 
