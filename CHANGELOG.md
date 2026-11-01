@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-01 (a silent stream is not a dead connection)
+
+- **llm-integration** (ja + en): the entry "a function call arrives as one
+  whole part" is rebuilt on a corrected premise. The content has no
+  liveness signal, but the HTTP/2 connection does: the health check pings
+  an idle connection and fails a dead one. Measured: live silences up to
+  205s answered every ping, frozen connections failed 44–46s after the
+  freeze. Long contexts add a second source of silence, the server's wait
+  before the first byte, that no threshold fits. Ask the connection, own
+  the setting, keep silence neutral.
+
 ## 2026-11-01 (failure clues that survive being passed along)
 
 - **macos-gui** (ja + en): new entry — the cause was on screen
