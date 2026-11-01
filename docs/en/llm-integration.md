@@ -1398,6 +1398,54 @@ three cases that trigger cannot save.
   wrap's tag-collision check on every later request — after the original history
   is gone. Check that the summary can be wrapped before swapping it in.
 
+### On a small window, bound one round of tool results and the retained tail by the window
+
+**Symptom:** In a local-LLM agent with the compaction above (2026-11, a
+~170k-token window), the model issued four whole-file reads in one round;
+the results alone were 506 KB. The request was projected at 113 % of the
+window, compaction declined ("cannot get under the threshold"), and every
+later turn failed. Compacting by hand did not help either: it kept the six
+most recent messages — exactly that round.
+
+**Why:**
+- The caps were carried over as absolute values from a runtime with a
+  1M-token window. A 200 KiB read is small there and 40 % of the window
+  here. The @-attachment limit had the same origin.
+- The cap was per call, with none on the round: n parallel calls are n
+  caps.
+- The tail compaction keeps was counted, not sized, so the round that
+  overflowed was exactly the part compaction never touched.
+
+**How to apply:**
+- One round's tool results share a budget derived from the window: half
+  of what a compaction can make room for under the threshold, re-judged
+  before every call (a schema load mid-round grows the fixed part).
+  Divide by the calls still to run; what a small result leaves passes to
+  the later ones.
+- Convert the allotment to bytes at a ratio below the recorded 10th
+  percentile — CSV measured about 1.87 bytes per token — so it acts as a
+  bound, not an estimate.
+- When no compaction can run (off, or failing), keep the round under the
+  threshold; using the window up to the edge leaves no room for the
+  model's output or for estimate error. When the room is gone, end the
+  turn with the reason instead of letting the model call into the same
+  wall.
+- Hand the allotment to the tool and let each tool cut with its own
+  route ("offset=N reads on", "start_line=K reads on", "narrow the path
+  or pattern"); a cut with no route says the rest was not kept. A
+  sandboxed child process gets it as an explicit request field, not a
+  context value. Close the class with a test that requires every tool to
+  be classified.
+- Bound compaction's retained tail by size as well as count, with the
+  same value as the round budget, so the last round can always be kept
+  and the compaction gets under the threshold. Let the tail shrink down
+  to the last message that is not a tool result; a session already stuck
+  on an oversized round then recovers the next time the operator writes.
+- Measure the premise — does the model read on through the routes after
+  a cut? — on the real thing before accepting the design. Asking it to
+  quote each file's last line makes the answer checkable against the
+  files alone.
+
 ### Distinguish summary verification labels from source field values
 
 **Symptom:** A local LLM summarized a short conversation while retaining a

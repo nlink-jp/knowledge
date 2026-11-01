@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-01 (one round is bounded by the window)
+
+- **llm-integration** (ja + en): new entry — on a ~170k-token window a
+  round of four parallel whole-file reads (506 KB) overflowed, and
+  compaction could not help because the tail it keeps by count was that
+  round. Absolute caps carried over from a 1M window and a count-based
+  tail are the cause. Give one round a budget derived from the window
+  (half of what compaction can free, re-judged per call, converted below
+  the 10th-percentile bytes/token — CSV measured 1.87), let each tool cut
+  with its own route, bound the retained tail by the same size, and
+  measure that the model reads on through the routes.
+
 ## 2026-11-01 (a silent stream is not a dead connection)
 
 - **llm-integration** (ja + en): the entry "a function call arrives as one
