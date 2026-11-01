@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-02 (a reach denial can cover the project)
+
+- **security** (ja + en): new entry — a read lane that denied `~/Library`,
+  `/Volumes` and `/Network` for reach could not even `getcwd` in a project
+  in cloud storage (macOS keeps it in `~/Library/CloudStorage`) or on a
+  share. Re-allow the session's own roots strictly inside a denied tree,
+  never one that contains it, before the credential block; online-only
+  files materialise without extra allowances.
+
 ## 2026-11-01 (a working directory has one spelling)
 
 - **config-and-io** (ja + en): new entry — Go's `os.Getwd` returns

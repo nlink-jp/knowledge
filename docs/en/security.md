@@ -1934,6 +1934,41 @@ who can write a link.
   open descriptor and the kernel's name.
 - Test with a real FIFO and a real decomposed name (skip when the composed spelling does not `Stat`).
 
+## A reach denial can cover the project itself — macOS cloud storage lives under `~/Library`
+
+**Symptom:** An auto-approved, read-only shell lane denied reading
+`~/Library` (mail, cookies, tokens) and `/Volumes` / `/Network` (external
+and network mounts) wholesale, to limit its reach (2026-11). In a Google
+Drive project every command in that lane failed with `getcwd: Operation
+not permitted`. macOS File Provider storage (Google Drive, Dropbox,
+OneDrive, iCloud) lives in `~/Library/CloudStorage/`, so the project
+itself was inside the denied tree; projects on an external disk or an SMB
+share were the same.
+
+**Why:**
+- The reach denial is about what lies around the project, but nothing
+  considered a project inside it. The lane did not become narrower; it
+  could not run `pwd` or `ls` at all.
+- Directories the operator added already had a "read even under a denied
+  tree" exception; the project, the first root of all, was missing from
+  it.
+
+**How to apply:**
+- When a session's own root (project, work directory) lies **strictly
+  inside** a denied tree, re-allow reading that root's tree only.
+  Ancestors' metadata was measured and is not needed.
+- Never re-allow a root that is a denied tree or contains one: Seatbelt
+  is last-match-wins, so a project at the home directory would re-open
+  the whole of `~/Library`.
+- Put the re-allow before the credential denials, keeping that block the
+  profile's last read rule.
+- An online-only (dataless) file is materialised by the kernel asking the
+  provider, even for a read inside the sandbox; the reader needs no
+  `mach-lookup` or other allowance (measured).
+- Verify on the real thing: with an ordinary directory as the control,
+  run `pwd` / `ls` / a read under the lane profile in a directory under
+  `~/Library`, in cloud storage and on a network share.
+
 ## file:// in browser automation is not closed by checking arguments — arguments, the interception, and the entrance to reads
 
 **Symptom:** An MCP server driving Chrome over CDP (chrome-pilot-mcp) opened `file://` by default, so
