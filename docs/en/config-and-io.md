@@ -507,6 +507,45 @@ umask. But **respect umask for a file that did not exist** — forcing the defau
 files under a restrictive umask, which is the same defect pointed the other way. Inherit only
 the mode of the name being replaced, never a symlink target's.
 
+### Read the working directory from the kernel, not `$PWD` — one directory becomes two spellings
+
+**Symptom:** In a Go agent, resuming a session in the directory it was
+recorded in failed with "belongs to <path>, not <path>" — two paths that
+print the same (2026-11). The path had Japanese voiced kana: the record
+carried the on-disk spelling (decomposed, NFD, 121 bytes), this run the
+spelling an input method typed into `cd` (precomposed, NFC, 115 bytes).
+The same cause made the state directory's owner marker report a
+collision and hid the trust and allowlists a config file kept keyed by
+the path.
+
+**Why:**
+- Go's `os.Getwd` returns `$PWD` whenever `$PWD` names the current
+  directory. Its spelling is whatever the shell was given, not the one on
+  disk. `filepath.EvalSymlinks` also keeps the spelling it is given.
+- macOS (APFS) treats NFC and NFD as one name: `stat` finds either, and a
+  Seatbelt `subpath` rule matches across spellings. Only string
+  comparison disagrees.
+- The kernel's `getcwd` (`syscall.Getwd` in Go) returns the on-disk
+  spelling (measured with a throwaway directory created in each spelling
+  and entered in each).
+
+**How to apply:**
+- Read a path that stands for a project or workplace from the kernel,
+  not `$PWD`. Keep one function that does it and refuse every other
+  `os.Getwd` with an architecture test.
+- Where a path is a record key (transcripts, a state directory's marker,
+  config tables), never compare a recorded path with the current one by
+  `==`. Treat them as the same when equal or when both exist and
+  `os.SameFile` is true, in one function. Records written before the fix
+  in the other spelling are then found without rewriting anything. Send
+  writes to the entry that already exists, so one directory never gets
+  two tables.
+- Do not normalise the strings to NFC or NFD: it needs a normalisation
+  table, still disagrees with a case-insensitive volume, and either form
+  disagrees with the on-disk spelling for half the directories.
+- When measuring, remember your own `cd` spelling changes the condition
+  under test (`env -u PWD` aligns it with the kernel's).
+
 ## OAuth
 
 ### Treat refresh-less tokens as non-expiring — never fabricate an expiry

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-01 (a working directory has one spelling)
+
+- **config-and-io** (ja + en): new entry — Go's `os.Getwd` returns
+  `$PWD`, so a directory with Japanese voiced kana reached by a typed
+  (NFC) `cd` was a different string from its on-disk (NFD) record:
+  resume refused, a state marker reported a collision, keyed settings
+  vanished. Read the path from the kernel, compare recorded paths by
+  identity (`os.SameFile`), never normalise strings.
+
 ## 2026-11-01 (one round is bounded by the window)
 
 - **llm-integration** (ja + en): new entry — on a ~170k-token window a
