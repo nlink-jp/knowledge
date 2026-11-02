@@ -1546,6 +1546,17 @@ first to what the declared box can show (a photo re-encoded as PNG at full size 
 iTerm2's `File=` names no format and draws JPEG itself, so leave that path alone. Terminal drawing is
 judged only on a real terminal: of two runtimes sharing the code, record which one was actually checked.
 
+**When the box grows, re-measure the bytes (2026-11-02):** the two runtimes later drew a picture as large
+as the screen allows instead of at most 40 columns. The re-encode still assumed 20×40 pixels a cell —
+generous for a 40-column box — and a pre-release review measured every photo it tried (1600–3200 px
+JPEGs, real wallpapers) at 3–9 MB as PNG, past the 2 MiB ceiling, so kitty drew nothing again: the bug
+above, back through a constant nobody revisited. Scaling at one picture pixel per pixel the terminal
+reports for a cell (about 8×18 on Retina — logical units) put a 3200 px photo in a 149×45 box at about
+1 MB in about 0.1 s (measured); a second, smaller try covers what still does not fit. A ceiling that
+changes moves every quantity derived from it — bytes, time — so measure those on real data, not on
+the synthetic pictures the unit tests use, before release. Noise is PNG's worst case: if it fits, a
+photo does.
+
 ## When a dependency's cancel waits for the other side, keep the slot until it answers — and measure whether it does
 
 **Symptom:** spice-client finished a cancelled row at once and freed its transfer slot. The SPICE library
