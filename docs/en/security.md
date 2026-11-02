@@ -1940,8 +1940,9 @@ who can write a link.
 `~/Library` (mail, cookies, tokens) and `/Volumes` / `/Network` (external
 and network mounts) wholesale, to limit its reach (2026-11). In a Google
 Drive project every command in that lane failed with `getcwd: Operation
-not permitted`. macOS File Provider storage (Google Drive, Dropbox,
-OneDrive, iCloud) lives in `~/Library/CloudStorage/`, so the project
+not permitted`. macOS keeps cloud storage under `~/Library` (Google Drive,
+Dropbox and OneDrive in `~/Library/CloudStorage/`, iCloud Drive in
+`~/Library/Mobile Documents/`), so the project
 itself was inside the denied tree; projects on an external disk or an SMB
 share were the same.
 
@@ -1957,9 +1958,17 @@ share were the same.
 - When a session's own root (project, work directory) lies **strictly
   inside** a denied tree, re-allow reading that root's tree only.
   Ancestors' metadata was measured and is not needed.
-- Never re-allow a root that is a denied tree or contains one: Seatbelt
-  is last-match-wins, so a project at the home directory would re-open
-  the whole of `~/Library`.
+- Never re-allow a root that is a denied tree or contains **any** of
+  them: Seatbelt is last-match-wins, so a project at the home directory
+  would re-open the whole of `~/Library`. Checking only "strictly inside
+  some denied tree" is not enough: with the home itself under `/Volumes`
+  or `/Network` (a network home, a home moved to an external disk), a
+  project at the home lies inside `/Volumes` yet contains `~/Library`
+  (pre-release review).
+- Anchor the home-relative denials on the home's real path, resolved as
+  the project is. Seatbelt matches the real path; under a symlinked home
+  a `~/Library` or credential rule written with the link matches
+  nothing.
 - Put the re-allow before the credential denials, keeping that block the
   profile's last read rule.
 - An online-only (dataless) file is materialised by the kernel asking the
