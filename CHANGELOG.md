@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-03 (an in-house TOML decoder)
+
+- **testing** (ja + en): two new entries — test the comparator a conformance
+  harness uses (comparing offset date-times as instants let a parser that
+  rewrote every offset as Z pass all 681 toml-test documents; give it pairs
+  that must differ and must match, and pin rules the suite has no document
+  for); vendor an external conformance suite as data, fetched by commit,
+  each file checked against GitHub's blob hashes, a SHA256 manifest checked
+  on every run.
+- **shell-scripting** (ja + en): new entry — zsh's `path` is tied to `PATH`,
+  so `read … path` in a loop made every command "not found" and every item a
+  mismatch.
+
 ## 2026-11-03 (timing calls from an agent transcript)
 
 - **llm-integration** (ja + en): new entry — the gap between a tool call

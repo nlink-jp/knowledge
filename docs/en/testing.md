@@ -1979,3 +1979,59 @@ since an early release.
   `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
 - Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch
   directory, never the working tree).
+
+## Test the comparator itself — when it equates too much, the whole suite passes
+
+**Symptom:** an in-house TOML parser was checked against the conformance suite
+(toml-test, 681 documents for 1.1.0). Offset date-times were compared as the
+upstream runner compares them: equal when they name the same instant. Every
+document passed on the first run, so the harness was questioned. A copy with
+values shifted by one failed 76 documents and a copy without the duplicate-key
+check failed 15, so the harness worked; but a copy without one particular rule
+failed none (the suite has no document on it). A later independent review found
+another hole: a parser that rewrote `+09:00` as `Z` would also pass every
+document, because the instant is the same (lib-series TOML decoder, 2026-11).
+
+**Why:** what a comparison treats as equal is part of the test. When it is too
+broad, a parser that erases the difference it ignores passes whatever it does.
+The upstream runner's comparison suits the suite's purpose (many implementations
+passing), not measuring your implementation. And a rule the suite has no
+document for is not checked by a full pass.
+
+**How to apply:**
+- Give the comparator a test of **pairs that must differ** (the same instant at
+  different offsets, `0.0` and `-0.0`, integer `1` and float `1`) and **pairs
+  that must match** (`Z` and `+00:00`, `1e2` and `100`).
+- When everything passes on the first run, mutate a copy and confirm the suite
+  fails ("Check a guard by mutating a copy" above). A rule whose mutation fails
+  nothing is a rule the suite does not cover.
+- Decide such rules yourself, pin them with your own tests, and name them as
+  items for the independent review.
+- Pin the number of tests (for example, 681 for 1.1.0), so that a shorter list
+  cannot pass silently.
+
+## Vendor an external conformance suite as data, and verify both the fetch and the copy
+
+**Symptom:** under a policy of shipping no third-party code, the official TOML
+conformance suite was wanted. It is data (about 1,000 documents and expected
+JSON files) plus Go code that runs it (lib-series TOML decoder, 2026-11).
+
+**Why:** what the policy keeps out is code that reaches a shipped artifact or
+`go.mod`. Data read only by tests does not. But tampered data can make the tests
+pass while checking nothing, and the copy another library bundles is not the
+author's own distribution.
+
+**How to apply:**
+- Fetch from the author's repository **by commit hash**, into an empty
+  directory.
+- Compare every file's `git hash-object --no-filters` with the blob hash
+  GitHub's tree API returns for that commit. Copy into `testdata/` only when all
+  match, and take only the data and the LICENSE; write the harness yourself.
+- Add a SHA256 manifest of every file (`SHA256SUMS`) and a note of the origin
+  and how it was checked. Check the manifest on every test run, and fail on a
+  file the manifest does not list.
+- Bring the upstream `.gitattributes` along (for example `*.toml -text`) so CRLF
+  documents survive, and after adding the files confirm that your own index's
+  blob hashes match upstream.
+- Update by replacing the whole directory, verified the same way, in a commit
+  of its own.

@@ -415,3 +415,19 @@ app "sent" an empty payload (4 times).
 - Make paths absolute in the caller before passing them with `--args`
   (`"$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"`).
 - In the app, stop with an error when what it read is empty instead of carrying on.
+
+## zsh's `path` is tied to `PATH` — as a loop variable it makes every command disappear
+
+**Symptom:** `while read sha path; do h=$(git hash-object -- "$path"); ...; done < list`
+run in zsh printed `command not found: git` from the first line on, and all
+1,043 files were reported as mismatches (lib-series TOML decoder, 2026-11).
+
+**Why:** in zsh `path` is an array tied to `PATH`; assigning it rewrites `PATH`.
+Once `read ... path` stores the first file name in `path`, `PATH` is that file
+name alone. In bash it is an ordinary variable, so the same script works there.
+
+**How to apply:**
+- In scripts zsh may run, never name a variable `path` (nor `cdpath`, `fpath`,
+  `manpath` and the other tied arrays). Use `f` or `file`.
+- When a verification loop reports every item as a mismatch, first check that
+  the command producing the comparison ran at all (do not discard its stderr).
