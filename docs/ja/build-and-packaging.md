@@ -205,3 +205,22 @@ UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定
 
 **適用方法:** 層ごとに失敗させるフラグを明示する。わざとバグを入れたファイルで、各層が診断の文言つきで失敗することを
 `make test` の最初に確かめる。フラグが規則に入っているかは、動いている Makefile の `make -n` の出力で確かめる。
+
+## cgo のバイナリの最小 macOS は `MACOSX_DEPLOYMENT_TARGET` で決める — CGO_CFLAGS／CGO_LDFLAGS だけでは Go のランタイムがビルド機の OS のまま
+
+**事象:** Core Text を cgo で呼ぶ MCP サーバ（report-studio-mcp）の最小 OS を 26.0 にしようとして、
+`CGO_CFLAGS` と `CGO_LDFLAGS` に `-mmacosx-version-min=26.0` を渡した。ビルド機は macOS 27.2。
+リンカは「より新しい macOS 向けに作られたオブジェクト」という警告を出した。Go のランタイムの cgo
+オブジェクトが、ビルド機の OS 向けのまま作られていた（実測、2026-11-03）。
+
+**なぜ:** フラグは自分のパッケージの C のコンパイルとリンクにしか届かない。Go のツールチェーンが
+ランタイムの cgo 部分を作るときは、環境変数 `MACOSX_DEPLOYMENT_TARGET` を読む（観測した振る舞いからの推測。
+ツールチェーンのソースは読んでいない）。
+
+**適用方法:**
+- Makefile で `export MACOSX_DEPLOYMENT_TARGET := <版>` とし、全体を作り直す。上の例では警告が 0 件になった。
+- 確かめるのは `vtool -show-build <バイナリ>` の `minos`。期待した版であることを、リリースのたびに見る。
+- この変数が効くのは、外部リンカが走るとき（いずれかのパッケージが `import "C"` するとき）だけ。
+  cgo を使わない同じビルドは `minos 13.0` を報告した（実測）。
+- Homebrew の formula の雛形は最小 macOS を宣言しない。古い OS では、入るのに起動しない。
+  README に最小 OS を書く。

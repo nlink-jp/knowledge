@@ -1738,3 +1738,19 @@ position.
   original regex.
 - Adopt the original system's limit (mermaid's `maxTextSize`, 50,000 characters) and bound
   recursion depth. The limits are a backstop; the fix is the complexity.
+
+## Do not let parallel subagents use `pkill -f` — they stop each other's processes
+
+**Symptom:** A pre-release independent review ran as three subagents in parallel, each starting and
+exercising the same binary (an MCP server). One cleaned up with `pkill -9 -f <binary name>` and
+stopped a process another agent was in the middle of testing (observed once, 2026-11-04). The agent
+that lost its process then had to tell that failure apart from a bug in the subject.
+
+**Why:** `pkill -f` selects by matching the command line. Parallel agents start the same binary under
+the same name, so a name cannot tell which process is yours.
+
+**How to apply:**
+- In the brief for parallel agents, write: "stop only the processes you started, by their PID; do not
+  use `pkill` or `killall`".
+- Give each agent its own scratch directory too.
+- When a test sees an unexplained exit, suspect the parallel work first.

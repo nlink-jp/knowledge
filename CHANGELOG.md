@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-04 (a Core Text typesetting MCP server)
+
+- **build-and-packaging** (ja + en): new entry — a cgo binary's minimum macOS
+  is set by `MACOSX_DEPLOYMENT_TARGET`; `-mmacosx-version-min` in CGO_CFLAGS /
+  CGO_LDFLAGS left Go's runtime cgo objects at the build machine's OS. Check
+  `minos` with `vtool -show-build`.
+- **graphics-and-fonts** (ja + en): new entry — Core Text's line breaking slows
+  with the length of the string given (a 2 MiB paragraph took 487 s); set a
+  paragraph a window at a time, dropping each window's last line (0.9 s).
+- **development-process** (ja + en): new entry — parallel subagents must stop
+  only the PIDs they started; one agent's `pkill -f` killed another's process
+  under test.
+
 ## 2026-11-03 (an in-house TOML decoder)
 
 - **testing** (ja + en): two new entries — test the comparator a conformance

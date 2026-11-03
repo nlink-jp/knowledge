@@ -73,3 +73,25 @@ a convenience returning one of them, with no promise that it matches what the us
 - When nothing matches, list the face names in the file in the error, so the user can pick again.
 - Before writing "the same name the screen shows", check the screen in the user's language
   environment.
+
+## Core Text's line breaking slows with the length of the string it is given — set long paragraphs a window at a time
+
+**Symptom:** report-studio-mcp broke a paragraph into lines by repeating
+`CTTypesetterCreateWithAttributedString` → `CTTypesetterSuggestLineBreak`. An independent review
+measured 487 s for a manuscript that was one 2 MiB paragraph. Our own per-line offset work was
+quadratic too (it counted from the start each time to turn a UTF-16 offset into a character
+index), but with that made constant time, Core Text's own line breaking was still slow
+(measured, 2026-11-04).
+
+**Why:** The cost of one `SuggestLineBreak` grows with the length of the whole string it was given
+(measured behaviour; Core Text's internals are not documented). Handing it the whole paragraph for
+every line makes the total quadratic.
+
+**How to apply:**
+- Split the paragraph into windows of a few thousand UTF-16 units (4096 here) and set each window.
+  A window's last line may have been cut by the window's end, so drop it and start the next window
+  at that line's start. Never split a surrogate pair. The manuscript above took 0.9 s.
+- This rests on a line break depending only on that line's content. Compare in a test against the
+  whole paragraph set at once (make the window size a variable and shrink it). The line widths were
+  also checked against the width of the line actually drawn.
+- Do not count from the start per line in your own offset or decoration work either; ask once per line.

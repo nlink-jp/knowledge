@@ -229,3 +229,23 @@ with Apple clang 21:
 **How to apply:** give each layer its failing flags explicitly; at the start of `make test`, prove each layer fails,
 with its diagnostic text, on a file with a planted bug; check the flags are in the rules through `make -n` of the
 Makefile that is running.
+
+## A cgo binary's minimum macOS is set by `MACOSX_DEPLOYMENT_TARGET` — CGO_CFLAGS/CGO_LDFLAGS alone leave Go's runtime at the build machine's OS
+
+**Symptom:** To give an MCP server that calls Core Text through cgo (report-studio-mcp) a
+minimum OS of 26.0, `-mmacosx-version-min=26.0` was passed in `CGO_CFLAGS` and `CGO_LDFLAGS` on
+a macOS 27.2 build machine. The linker warned of objects "built for newer macOS": Go's runtime
+cgo objects were still built for the build machine's OS (measured, 2026-11-03).
+
+**Why:** The flags reach only your own packages' C compile and link. When the Go toolchain builds
+the runtime's cgo part it reads the `MACOSX_DEPLOYMENT_TARGET` environment variable (inferred
+from the observed behaviour; the toolchain source was not read).
+
+**How to apply:**
+- Put `export MACOSX_DEPLOYMENT_TARGET := <version>` in the Makefile and rebuild everything. In
+  the case above the warnings went to 0.
+- Check `minos` with `vtool -show-build <binary>`, and look at it on every release.
+- The variable takes effect only when the external linker runs (some package imports "C"). The
+  same build without cgo reported `minos 13.0` (measured).
+- The Homebrew formula template declares no minimum macOS, so on an older OS the tool installs
+  and then fails to start. State the minimum OS in the README.
