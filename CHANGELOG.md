@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-03 (timing calls from an agent transcript)
+
+- **llm-integration** (ja + en): new entry — the gap between a tool call
+  and its result in an agent transcript holds the risk review and the
+  person's wait at the approval prompt (median gap 4.9 s, median run 0.1 s
+  on real gem-agent data). Split at the decision records and guard the
+  record order with an anomaly count; count an omitted argument the way the
+  receiver's parser reads it (an empty shell lane is the read lane); list
+  record kinds from every writing function, not one.
+
 ## 2026-11-02 (a reach denial can cover the project)
 
 - **security** (ja + en): new entry — a read lane that denied `~/Library`,

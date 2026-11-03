@@ -1706,6 +1706,18 @@ scales with document size:
 - Take the prefixes of injected messages from the writer's source (constants such as a facts or resume prefix, and the format strings of injected notes), per runtime. Do not carry one runtime's list to another by analogy.
 - Check the turn count on real data against a separate count of messages a person typed. A runtime that starts injecting a new message inflates turns until its prefix is added, so keep the prefixes in one place with where each comes from.
 
+### Timing tool calls from an agent transcript: the gap holds approval waits — split at the decision records, and count an omitted argument the way the receiver reads it
+
+**Symptom:** A tool timed each tool call in agent transcripts as the gap from the previous record to the result. A third party's report showed MCP calls with a median of 9.5 s and a maximum of 36 hours, which could not decide whether parallel calls or notifications were worth building. The gap held the risk-review model call and the time a person took to answer the approval prompt. Split at the decision records (auto-approve and prompt), the maintainer's gem-agent MCP calls had a median gap of 4.9 s but a median run of 0.1 s (measured, 2026-11). The same work found two miscounts. (1) A shell call that named no lane was counted as possibly writing; both runtimes' argument parsing reads an empty lane as the read lane (read in their source), and 3 of 10 "other" responses on local lagent data were this (measured). (2) The record kinds a runtime writes were listed by grepping one logging function; kinds written through another function were missed and counted as unknown (read in the source).
+
+**Why:** A record's timestamp is only when it was written. Between a call and its result sit decisions by a model and by a person. An argument's default is set by the receiver (the runtime's parser), not the writer (the model). A program can write records along more than one path.
+
+**How to apply:**
+- Split time at the decision records that sit in between (call → last decision → result), and report the person's wait as its own item. The split relies on record order, so count decision records that do not name the first call awaiting its result as an anomaly; check on real data that the count is 0 first.
+- Leave calls that did not run (denied, stopped) out of the run time. Paths that refuse without leaving a record enter at almost zero; write that down as accepted residue.
+- Count an optional argument the way the receiver's parser reads it (default value, case, surrounding space). If the default differs by version, decide by the version in the record, and lean to the safe side when the version cannot be placed.
+- List the record kinds a program writes from every function that writes records. Check on real data, not only on synthetic fixtures, that unknown kinds come to 0.
+
 ## Documentation & licensing
 
 ### Never claim "fully offline" for tools running in an LLM session
