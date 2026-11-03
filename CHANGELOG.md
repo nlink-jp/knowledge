@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-04 (a path-validation library's writability probe)
+
+- **security** (ja + en): new entry — a check that refuses places must not
+  write to test them: a probe created and removed by name after a name check
+  landed in protected directories when a component was swapped for a link
+  (within 40 calls in every run, some leaving no file). Ask `access(2)` for
+  W_OK|X_OK; it asks permission, not the operation (a sandbox denying only
+  file creation passes it). A swap test watches mtime as well as entries and
+  fails when the guarded path was never reached.
+
 ## 2026-11-04 (a Core Text typesetting MCP server)
 
 - **build-and-packaging** (ja + en): new entry — a cgo binary's minimum macOS

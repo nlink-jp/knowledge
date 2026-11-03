@@ -308,6 +308,36 @@ output cap, so a sparse file could exhaust memory before the cap ran.
    on any path that passed the confinement check: each is the same
    hole again.
 
+### A check that refuses places must not write to test them — ask access(2) whether a directory is writable
+
+**Symptom:** A work-directory validation library judged a directory by name, then tested writability by creating a
+probe file and removing it, by name. An independent review (2026-11) swapped a path component between a real
+directory and a link to a protected directory while calling it repeatedly, and found an empty probe file left in the
+protected directory. Measured with a swap test, every run wrote into the protected directory within 40 calls
+(measured, macOS). Some of those writes created and removed the probe inside the link target, leaving no file and
+only a changed modification time on the directory.
+
+**Why:** The judgement, the create and the remove each resolved the name at a different moment. The check that exists
+to keep the refused places untouched was itself a path for writing into them. Creating the probe through a handle
+opened once (`os.Root`) stops the create and remove from diverging, but a component swapped between the judgement and
+the open still puts the probe inside the refused place (inferred from the code).
+
+**How to apply:**
+1. Test writability without writing. On Unix, ask `access(2)` for write and search permission (W_OK|X_OK). In Go
+   that is `syscall.Access`: libc `access` on darwin and `faccessat` with flags 0 on Linux, answering for the real
+   user ID (read in the source). Dropping search permission passes a directory that is writable but not searchable
+   (0600).
+2. `access(2)` asks about permission, not the operation. A sandbox rule that denies only creating files (Seatbelt's
+   `file-write-create`) passes it, and the actual create fails with EPERM; a rule denying `file-write*` is seen by
+   `access(2)` (both measured with `sandbox-exec`). Document the gap as a limit and let the server's first write
+   fail.
+3. The probe approach also left its file behind with no race at all: under an ACL denying delete_child, under
+   `uappnd`, and in a 0555 directory where an ACL grants add_file (measured).
+4. A swap test watches the protected directory's modification time as well as its entries: a probe created and
+   removed again leaves no file. And it fails when the guarded path was never reached (no call accepted); otherwise a
+   regression that refuses everything passes having measured nothing. On a filesystem with one-second modification
+   times a write in the same second is missed (APFS and ext4 keep nanoseconds).
+
 ### Clean up from what was created, not from what was planned — only an exclusive create's success enters the ledger, and only the ledger deletes
 
 **Symptom:** An external review of a macOS ZIP tool (2026-09) reproduced
