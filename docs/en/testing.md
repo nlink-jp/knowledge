@@ -932,6 +932,16 @@ it decides between "one more full pass" and "narrow it and finish".
   interactive TUI, the non-interactive REPL and one-shot mode ("asks",
   "footer", "`/auto`") is replaced by one true in all of them ("gated"). Every
   recurring wording defect had this shape.
+- **When a fix adds an exclusion rule, test it on what must not be excluded.** A
+  second case (a typesetting MCP server, 2026-11): the rule that keeps numbers in
+  table cells whole read the digits inside hashes as numbers, widened the column
+  and broke the real numbers. The fix, "digits in a word holding a letter are an
+  identifier", was re-reviewed and turned `100mg`, `1,234,567KB` and `US$1,234`
+  into identifiers too, which then broke silently (the same project's v0.1.0
+  re-review also found three regressions brought in by fixes). The tests held
+  only what should be excluded (hashes, UUIDs, CVE IDs). Put examples from both
+  sides of the boundary — to exclude and to keep — in the test before writing
+  the rule.
 
 ## A gate that only ever runs by hand needs a test of its own
 

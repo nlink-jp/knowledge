@@ -37,6 +37,18 @@
   file creation passes it). A swap test watches mtime as well as entries and
   fails when the guarded path was never reached.
 
+## 2026-11-04 (page breaks in a Core Text typesetting MCP server)
+
+- **graphics-and-fonts** (ja + en): two new entries — Core Text breaks a
+  number in a table cell inside its characters when the unit it cannot
+  separate is wider than the column, and full-width digits break whatever the
+  width (column minimums from the bound unit, WORD JOINER in the PDF only,
+  identifiers are not numbers but units are); keep-with-next must measure
+  with the computation that places, and a reuse key must include the style.
+- **testing** (ja + en): the "real defects right after a fix" entry gains a
+  second case — an exclusion rule added as a fix, tested only on what to
+  exclude, excluded numbers with units.
+
 ## 2026-11-04 (a Core Text typesetting MCP server)
 
 - **build-and-packaging** (ja + en): new entry — a cgo binary's minimum macOS

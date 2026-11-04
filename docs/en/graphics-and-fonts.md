@@ -95,3 +95,53 @@ every line makes the total quadratic.
   whole paragraph set at once (make the window size a variable and shrink it). The line widths were
   also checked against the width of the line actually drawn.
 - Do not count from the start per line in your own offset or decoration work either; ask once per line.
+
+## Core Text breaks a number in a table cell inside its characters when the unit it cannot separate is wider than the column — full-width digits break whatever the width
+
+**Symptom:** In a typesetting MCP server (2026-11), numbers in a wide table broke as `1,234,5`/`67` and
+`12.34`/`%`. Ten numbers were set in 13 contexts, 14 line positions and 3 column widths (macOS 27.2).
+
+- Half-width numbers (`1,234,567`, `12.34%`) have no break opportunity inside. Even so, when what Core Text
+  cannot separate from the number — an opening bracket before it, closing brackets and full stops after
+  it, letters run into it, and the character before a leading `-` — is wider than the column, it finds no
+  break and breaks inside the characters.
+- Full-width digits (`１，２３４`) can break between any two characters; they broke even with the column at
+  1.3 times the number.
+
+**Why:** Line-breaking rules (UAX #14 or equivalent) forbid breaks between half-width digits, separators
+and `%`, and attach brackets to the number. Full-width digits behave like ideographs and may break
+anywhere (measured behaviour; Core Text's internals are not documented).
+
+**How to apply:**
+- Make a column's minimum width at least its widest "number with what cannot be separated from it".
+- Put a WORD JOINER (U+2060) between the number's characters. Full-width digits then stay whole too
+  (0/42); the width does not change and PDFKit's text extraction does not return it (measured).
+- Do not put it in a .docx: Word keeps it as a real character and it comes along when the number is
+  copied.
+- Do not treat a word in which a letter comes before a digit (hash, UUID, CVE ID) as a number: counted in
+  the minimum width, a hash widens its column and breaks the real numbers. Letters after the digits
+  (`100mg`) are a unit and stay part of the number.
+- When it still cannot fit, warn and name the columns (never leave it broken silently).
+
+## Keep-with-next must measure with the same computation that places — and a reuse key must include the style
+
+**Symptom:** In the same server, a rule kept a heading on the same page as the start of the next block.
+Counting the start separately disagreed with the placement (it counted "two lines" of a paragraph that the
+widow/orphan rule never splits at three lines). Sharing the computation by reusing a paragraph's lines
+under a key (block and width) then drew the first paragraph of a quote after a heading in the body colour:
+it was measured in the body style and placed in the quote's, and the key had no style (found by an
+independent review).
+
+**Why:** The "start" is decided by the placement's own rules (widows and orphans, a table's header and
+first row, shrinking a figure). Counted separately, the rule lives in two places and only one changes.
+Reuse is correct only when every input of the computation (width, style) is in the key.
+
+**How to apply:**
+- Get a start's height from the same function that places the block; never set it a second way just to
+  measure.
+- Put every input that changes the result in the reuse key (block, width, style); take the entry out when
+  placing.
+- Measure a start inside a container (quote, list) in the style and width the container gives its children.
+- When two mechanisms guard the same result (the key and the style used to measure), break each alone in a
+  test.
+
