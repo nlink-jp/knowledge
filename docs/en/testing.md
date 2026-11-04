@@ -2035,3 +2035,23 @@ author's own distribution.
   blob hashes match upstream.
 - Update by replacing the whole directory, verified the same way, in a commit
   of its own.
+
+## Do not mix the test's clock with the code's — past the fixed date, the test silently checks nothing
+
+**Symptom:** The tests of a TUI dialog notice (gem-agent and lagent, 2026-11-04) injected a fake clock into the
+model and advanced it from a fixed date (12:00 UTC that day). One case, checking that a key counts even inside the
+grace window that drops keys arriving right after a dialog opens, set the dialog's opening time from the fake clock.
+The grace check, though, read the real clock (`time.Since`). Once the real time passed the fixed date by a few
+seconds, the key was no longer inside the grace window, and the test passed whether the code was right or wrong. A
+pre-release independent review showed it by moving the fixed date back one day: the mutation "do not count keys in
+the grace window" then passed every test (written that morning, it had caught it when written).
+
+**Why:** When one decision mixes a clock the test moves with one it does not, the difference between them depends
+on when the test runs. Checked only right after writing, the difference is small and the test looks right.
+
+**How to apply:**
+- Take the two times a test compares from the same clock. Where the code reads the real clock, build the input it
+  compares from the real clock (`time.Now()`) too.
+- Do not use the fake clock's base date for a value the code compares against the real clock.
+- Mutate a time-dependent test's code on purpose and see it fail. Green on the day it was written does not mean it
+  is still checking next week.

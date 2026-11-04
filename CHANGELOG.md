@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-04 (a notice test that stopped testing at noon)
+
+- **testing** (ja + en): new entry — do not mix the test's clock with the
+  code's: a case set a dialog's opening time from a fake clock fixed at noon
+  while the grace check read the real clock, so past noon it passed whatever
+  the code did (found by moving the date in a pre-release review). Take both
+  compared times from one clock, and mutate time-dependent tests on purpose.
+
 ## 2026-11-04 (notifying an operator from a TUI)
 
 - **config-and-io** (ja + en): new entry — call an operator who stepped away
