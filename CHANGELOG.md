@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-05 (the evidence copy route on a local model)
+
+- **llm-integration** (ja + en): two bullets added to the evidence-copy entry.
+  On a local model the same route was taken in 0 of 10 and 1–2 of 10 runs, and
+  correcting the facts line did not move it; record that as the model's
+  property instead of compensating in the runtime. A local server rejecting
+  requests makes runs a probe may count as valid "no evidence"; check each
+  run's server errors first.
+
 ## 2026-11-04 (skills bundled with three MCP servers)
 
 - **testing** (ja + en): new entry. Hold a bundled skill to its server with a
