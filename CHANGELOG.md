@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-04 (moving 27 repositories to an in-house TOML decoder)
+
+- **config-and-io** (ja + en): new entry — after making config decoding strict, find
+  the callers that load it best-effort (`if err == nil`); image-forge's subcommands would
+  otherwise have worked on the default models directory once one unknown key discarded the
+  config.
+- **release-engineering** (ja + en): new entry — a script releasing many repositories in a
+  row checks each one's targets (`make dist` vs `make package`), makes every step
+  idempotent (a tag pushed right after main can be rejected with "missing necessary
+  objects"), runs under bash, and keeps tap writes sequential.
+
 ## 2026-11-04 (a notice test that stopped testing at noon)
 
 - **testing** (ja + en): new entry — do not mix the test's clock with the

@@ -253,6 +253,26 @@ test that a typo field is rejected.
 ignored for backward compatibility; see the machine-local-ID entry). The
 distinction matters.
 
+### After making config decoding strict, find the callers that load it best-effort
+
+**Symptom:** the organization's TOML loading moved to a decoder that refuses unknown keys
+(27 repositories, 2026-11). In image-forge, most subcommands loaded the config at start with
+`if conf, err := config.Load(); err == nil { … }` only to apply `models_dir`. With strict
+decoding, one unknown key discarded the whole config, and `models gc` or `models rm` **silently
+worked on the default models directory**. While decoding was lenient this happened only on a
+syntax error.
+
+**Why:** "use it if it loads" treats the error as rare. Strict decoding makes errors more common,
+and an error that is thrown away turns into a silent fallback to defaults. Checking that the loader
+returns its error proves nothing if the caller drops it.
+
+**How to apply:**
+- Before making decoding strict, find every caller that loads the config as `err == nil {` or
+  `_ = Load`.
+- Ask what happens when it carries on with defaults. If that changes where data goes or what is
+  deleted, stop there (exempt only what does not depend on the config, such as `version` or `help`).
+- Add one test: with an invalid config, the dependent subcommands stop and `version` still answers.
+
 ### Changing a "where to store" setting does not move already-persisted absolute paths
 
 **Symptom:** Installed asset files were moved to another volume and the setting

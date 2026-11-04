@@ -644,3 +644,26 @@ nothing has checked.
   on the built artifact.
 - Before upload, read `go version <binary>` for **every** platform's artifact. A cross-build container can sit on a
   different patch from the host build.
+
+## A script that releases many repositories in a row checks each one's steps and can resume any step
+
+**Symptom:** 24 repositories carrying the same change were released by one script, in order
+(2026-11). It stopped three times. (1) A tag pushed right after main was rejected with
+`! [remote rejected] … (missing necessary objects)`; main had arrived, the tag had not. (2) lite-rag
+builds its release with `make dist`, not `make package`, and the script stopped on
+`No rule to make target 'package'`. (3) In zsh, `for a in $assets` treated three file names as one,
+and the upload failed (the shell-scripting entry on zsh expansion, again).
+
+**Why:** release steps differ slightly per repository, and a batch that cannot resume where it
+stopped needs its state checked by hand after every stop. GitHub accepts a tag ref only once the
+objects of the push just before it have propagated; timing decides whether it is rejected.
+
+**How to apply:**
+- Before running, check mechanically that every repository's Makefile has the targets the script
+  calls (`package`, `verify-release`, `brew`). Route the ones that do not to their own procedure.
+- Make each step idempotent: do not re-create an existing tag, retry the tag push a few times, do not
+  re-create an existing release. A stopped run then resumes from that step.
+- Stop at the first failure and print which repository and which step in one line; print DONE per
+  repository on success.
+- Write the script for bash and run it with bash; do not rely on word splitting in zsh.
+- Do not run steps that write to a shared destination, such as the tap (`make brew`), in parallel.
