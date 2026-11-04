@@ -1028,6 +1028,38 @@ use did.
 - Write the tests with Japanese bodies. English-only tests pass the
   default tokenizer's defect through.
 
+### Call an operator who stepped away with a BEL — tmux drops OSC 9, and Terminal.app discards it silently
+
+**Symptom:** An agent's TUI sat at an approval prompt for minutes to hours. A BEL and an OSC 9 desktop
+notification were the candidate signals, but what each terminal does with them could not be settled from
+documentation.
+
+**Why:** Terminals differ (measured 2026-11-04, reading the screen back and recording the bytes a client
+received). tmux 3.8 (default `bell-action any`, `allow-passthrough off`) passes a BEL to the outer terminal
+but swallows OSC 9 and OSC 777. Terminal.app drops OSC 9 and posts nothing even from a background window.
+iTerm2 (profile notifications on) marks a BEL with 🔔 in the window title and turned an OSC 9 from a
+background window into a notification banner. kitty 0.50 registered with macOS as a notification sender on
+its first OSC 9. No terminal printed the body of an OSC it did not act on. The reaction of Terminal.app and
+kitty to a BEL was not observed.
+For comparison, Claude Code 2.1.311 measured the same way notified an approval prompt by checking every six
+seconds from the moment it opened and notifying once at the first check with no keystroke in the six seconds
+before it (keys at 4.3 s and 8.3 s, notice at 18 s: a keystroke makes the next check pass rather than
+restarting a timer). Its question dialog got the same type at six seconds, and the wait after a turn one
+notice at 60 seconds. Inside tmux, Claude Code itself wrote no BEL and no OSC.
+
+**How to apply:**
+- Make the BEL the signal. If an OSC 9 is added, end it with ST (`ESC \`) and follow it with a separate BEL;
+  ended by BEL, that BEL is consumed as the terminator, and a terminal that drops OSC 9 rings nothing.
+- Give it a fixed body. Text from the turn would add one more route for outside text to reach the terminal.
+- Keep an operator at the screen from being rung: check at a fixed interval against the time of the last
+  keystroke. A generation number per dialog opening keeps an old check from ringing for an answered or later
+  dialog.
+- In an inline TUI, not in `View()` (it rings on every repaint): write it on its own, serialised with the
+  renderer's flushes, from outside the update loop. A plain line REPL cannot see keystrokes before Enter, so
+  it cannot keep that timing.
+- Leave posting to the terminal application. A CLI posting OS notifications by another route shows the
+  operator two streams of notices from different sources.
+
 ## Do not gate the next send on an acknowledgement the peer is not obliged to send
 
 **What happened:** A remote-desktop client sent the guest a monitors

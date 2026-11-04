@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-04 (notifying an operator from a TUI)
+
+- **config-and-io** (ja + en): new entry — call an operator who stepped away
+  with a BEL: tmux 3.8 passes BEL but swallows OSC 9/777, Terminal.app drops
+  OSC 9, iTerm2 turns a background OSC 9 into a banner (measured). End an OSC 9
+  with ST and add a separate BEL; time the notice like Claude Code's measured
+  permission prompt (a six-second check that a keystroke makes pass).
+
 ## 2026-11-04 (a path-validation library's writability probe)
 
 - **security** (ja + en): new entry — a check that refuses places must not
