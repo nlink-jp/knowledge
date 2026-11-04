@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-04 (evidence an agent re-typed instead of copying)
+
+- **llm-integration** (ja + en): new entry — when an agent keeps a tool result as
+  evidence, give it a copy route at the same approval tier as writing: a shell copy needed
+  a person while the write tool was automatic, so lagent copied 0 of 10 times and 6 of its
+  8 re-typed files had wrong values. Save every result under its hash, let the write tool
+  copy (`from`), and score by hash — 20/20 copies in gem-agent afterwards.
+
 ## 2026-11-04 (moving 27 repositories to an in-house TOML decoder)
 
 - **config-and-io** (ja + en): new entry — after making config decoding strict, find

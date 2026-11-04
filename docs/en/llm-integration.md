@@ -1718,6 +1718,17 @@ scales with document size:
 - Count an optional argument the way the receiver's parser reads it (default value, case, surrounding space). If the default differs by version, decide by the version in the record, and lean to the safe side when the version cannot be placed.
 - List the record kinds a program writes from every function that writes records. Check on real data, not only on synthetic fixtures, that unknown kinds come to 0.
 
+### When an agent keeps results as evidence, put the copy route at the same approval tier as re-typing — a re-typed file cannot show where it came from, even with every value right
+
+**Symptom:** Asked to "save this as evidence", an agent re-typed the values it could see in context from a database MCP server's result into a file. A small result existed nowhere as a file, only in context. Even with a result over the size limit that had been spilled to the work directory (26.6 KB), lagent copied it in 0 of 10 valid runs. It re-typed it in 8, and in 6 of those values moved to another row's values or a row went missing. The other 2 saved nothing (measured, 2026-11, a sqlite-backed stub shaped like the BigQuery MCP server, real binaries run unattended). The cause was the approval tier. A shell `cp` is in the write lane and goes to a person; the file-writing tool is approved automatically inside the project. The one run that tried `cp` was refused because nobody was there to approve it.
+
+**Why:** A model takes the cheaper route. If only the right route (copying) needs an approval, the runtime is steering it to the wrong one (re-typing). And a re-typed file cannot be shown to be what the server returned, even when every value is right: text in context has passed through wrapping and truncation and is not the returned bytes. Making re-typing more accurate leaves that problem in place.
+
+**How to apply:**
+- Save every server result, whatever its size, named by its content's sha256. Record what was saved (path, size, hash) in the transcript as structured data, and have the runtime draw the model's note about it outside the untrusted-data wrapping, so a server cannot forge one by writing the same shape into its text.
+- Give the file-writing tool an argument that copies an existing file whole (`from` on gem-agent's `write_file`), judged exactly like a write of content. Read the copy back, check its hash, and return the hash in the result. Refuse a copy whose source is credential material.
+- Score the effect by hash: byte-identical to a saved record is "copied", computed from it is "derived", anything else is "regenerated". With both changes in gem-agent, a small result and a spilled one, 10 runs each, gave 20/20 copies through that argument, all 20 matching the recorded hash (measured, 2026-11, one model). The same runtime's baseline before the change was not measured, and an instruction alone forbidding re-typing was not tried.
+
 ## Documentation & licensing
 
 ### Never claim "fully offline" for tools running in an LLM session
