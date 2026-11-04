@@ -82,6 +82,38 @@ of a minimal fix and ask for a decision. Restructuring costs are recovered in
 maintenance savings — but full restructures need approval; don't do them
 unilaterally.
 
+### Scope a cross-cutting guide by the problem it guards against, not by what its members are
+
+**Symptom:** An MCP tactics guide for not alerting the party under
+investigation (2026-07) defined its scope as "every in-house MCP server". The
+production servers (audio, video and image generation) have no place on the
+axis it guards — who can see a query — yet they were in from the first
+release. The following problems then came from that one line (2026-11):
+- their triggers took room in the description
+- call sequences inside one server crept into the guide
+- a new production server had no tier to sit in, and its writing skill had
+  no home
+
+While fixing this, the definition of "strategy" was widened to keep them,
+up to a general three-layer theory of tool guidance. The user stopped it
+with "a strong sense that something is wrong", and the fix went back to the
+original scope.
+
+**Why:** A scope drawn by what things are (an MCP server, a CLI) admits
+members that have no position on the axis the guide protects. With nothing
+to say about them in the guide's own terms, their entries fill with the
+details of using each one. A general theory added to justify the scope then
+turns the mistake into an organization rule.
+
+**How to apply:**
+- When creating a cross-cutting guide (tactics, index, checklist), write in
+  one sentence the failure it prevents, and scope it to what that failure
+  involves.
+- Each time a member is added, ask where it sits on the guarded axis; if
+  there is no answer, it is out of scope.
+- If a fix starts widening a definition so that existing members can stay,
+  go back to how the scope was drawn.
+
 ### Don't change defaults for a minority complaint — rescue via opt-in flag
 
 **Symptom:** A "the default implicit behavior hurt me" report prompted strict
