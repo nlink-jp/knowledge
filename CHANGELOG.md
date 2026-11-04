@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-04 (skills bundled with three MCP servers)
+
+- **testing** (ja + en): new entry. Hold a bundled skill to its server with a
+  closed vocabulary derived from the server: its tools, schema properties, codes,
+  tags and the keys its parser accepts. Also run the skill's templates and
+  examples through the server's parsers. This found three unusable templates and
+  a code missing from get_usage. One-word names cannot be told from prose, so say
+  they are not checked.
+- **release-engineering** (ja + en): new entry. Make a separate release asset a
+  prerequisite of make package and verify-release. verify-release fails on a
+  missing, extra-file, stale or -dirty zip. One skill had reached 2 of 19
+  releases while its build step lived only in prose.
+
 ## 2026-11-04 (evidence an agent re-typed instead of copying)
 
 - **llm-integration** (ja + en): new entry — when an agent keeps a tool result as

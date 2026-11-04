@@ -667,3 +667,27 @@ objects of the push just before it have propagated; timing decides whether it is
   repository on success.
 - Write the script for bash and run it with bash; do not rely on word splitting in zsh.
 - Do not run steps that write to a shared destination, such as the tap (`make brew`), in parallel.
+
+## Make a separate release asset part of make package and verify-release — a step written only in the checklist gets skipped every time
+
+**Symptom:** An MCP server's bundled skill was to ship as a release asset separate from the binary
+(2026-07). `make package-skill` existed but was part of neither the release steps nor `make package`. The
+skill reached a release twice; the seventeen releases after carried the binary only. Users who installed the
+skill from a release kept one that taught an argument the server no longer accepted (found by an issue,
+2026-11).
+
+**Why:** `verify-release` required the binary zip; nothing required the skill zip. A step that only prose
+asks for is the first one skipped in a hurried release.
+
+**How to apply:**
+- Make the asset a prerequisite of `make package`, so it is built with the binary.
+- Put a target that checks it among `verify-release`'s prerequisites. It fails when:
+  - this version's file is missing;
+  - its contents differ from the files `git ls-files` tracks (an extra file, a missing one) — compare the
+    zip's listing;
+  - its contents differ from the working tree — unpack it and `cmp`;
+  - the version is `-dirty`, which would ship uncommitted content under the tag's name.
+- Make developer installs (`make install-skill`) unpack the built zip too. Copying the source tree hides a
+  packaging defect from the developer.
+- A local check cannot see whether the asset was uploaded. Say "upload it with the binaries" in AGENTS.md,
+  and accept that as the remaining gap.

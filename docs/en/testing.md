@@ -1192,6 +1192,42 @@ Related: "If a design document says a rule applies to all N, write the test that
 enumerates N in the same commit." That one pins the coverage of the application points;
 this one pins the coverage of the **explanations**.
 
+### Hold a bundled skill to its server with a closed vocabulary — "is it mentioned" and a retired-name list let wrong names through
+
+**Symptom:** Bundled skills were added to three MCP servers (2026-11). The check was written as a closed
+vocabulary: every identifier the skill puts in backticks must exist in the server. Every name comes from the
+server itself: registered tools, input schema properties, error-code constants, the json/toml tags of the
+server's own types, and front-matter keys the parser accepts. The templates and examples shipped with the
+skill were run through the server's own parsers. This found:
+- three existing templates that stopped at `casting_unresolved` as written: their scripts used a style
+  missing from the casting table, or a character left commented out;
+- another server's skill using an upstream server's argument that no hand-kept list had;
+- a hole in the existing "get_usage names every code" test. It read only some of the forms that raise a
+  code, so it missed a code that is returned but not documented.
+
+The independent review then showed that one-word names (`captions`, `classification`, `toc`) could be
+changed and still pass.
+
+**Why:** A test that "the required names are mentioned" passes extra, misspelled and retired names. A
+retired-name list guards only what someone remembered. With a closed vocabulary, a name fails as soon as the
+server drops it. But it can only check forms that can be told from prose: snake_case, the key of a
+`key: value` example, a fixed syntax. A one-word name looks like any other word.
+
+**How to apply:**
+- Check from skill to server. Derive the vocabulary from the server's registrations, constants, tags and
+  parsers; keep no copied list.
+- List the names outside the vocabulary with their owner: fields of the skill's own material, the calling
+  client's tools, an upstream server's arguments. Also test that the list matches actual use, so an entry
+  the skill no longer uses fails too.
+- Do not compare templates and code examples as strings; run them through the server's parsers. Check how
+  templates fit together (do the script's characters resolve in the casting table?) and placement rules
+  (is the caption paired with its table?) with the real functions.
+- Say in the README and the ADR which forms are not checked (one-word names). Do not write "every name is
+  checked".
+- Inject errors and watch the test fail: a misspelling, a retired name, a key inside an example, and a
+  misspelled directive.
+
+
 ### Verify WebKit authorization at the actual callback boundary
 
 **Symptom:** During a macOS client port, JavaScript navigation produced click-like
