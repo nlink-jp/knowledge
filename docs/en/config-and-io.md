@@ -1051,8 +1051,8 @@ notice at 60 seconds. Inside tmux, Claude Code itself wrote no BEL and no OSC.
 - Make the BEL the signal. If an OSC 9 is added, end it with ST (`ESC \`) and follow it with a separate BEL;
   ended by BEL, that BEL is consumed as the terminator, and a terminal that drops OSC 9 rings nothing.
 - Give it a fixed body. Text from the turn would add one more route for outside text to reach the terminal.
-- Keep an operator at the screen from being rung: check at a fixed interval against the time of the last
-  keystroke. A generation number per dialog opening keeps an old check from ringing for an answered or later
+- Spare an operator who is working the dialog: check at a fixed interval against the time of the last
+  keystroke (one reading without pressing a key is still rung — so is Claude Code's). A generation number per dialog opening keeps an old check from ringing for an answered or later
   dialog.
 - In an inline TUI, not in `View()` (it rings on every repaint): write it on its own, serialised with the
   renderer's flushes, from outside the update loop. A plain line REPL cannot see keystrokes before Enter, so
