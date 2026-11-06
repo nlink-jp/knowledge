@@ -2101,3 +2101,23 @@ on when the test runs. Checked only right after writing, the difference is small
 - Do not use the fake clock's base date for a value the code compares against the real clock.
 - Mutate a time-dependent test's code on purpose and see it fail. Green on the day it was written does not mean it
   is still checking next week.
+
+## After measuring in a synced folder, check later that what you removed has not come back
+
+**Symptom:** For a write measurement, a dedicated folder and files were created in a
+Dropbox synced folder and removed afterwards (the remove command succeeded). Later
+the folder and its files were there again (2026-11; observed once; the cause was not
+established — a sync conflict or a restore is inferred). The same steps in Google Drive
+and iCloud Drive left nothing.
+
+**Why:**
+- A removal in a synced folder does not end with the local operation: the item can come
+  back through the provider before it has taken the removal. A successful remove command
+  does not show that the place is clean.
+- The cleanup had already been reported as done, and the report had to be corrected.
+
+**How to apply:**
+- Measure in a dedicated empty folder, and after the cleanup check again, some time
+  later, before reporting it clean.
+- Tell the user that removed items may remain in the provider's web-side trash or
+  history, which cannot be checked from the machine.

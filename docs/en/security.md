@@ -2007,6 +2007,70 @@ share were the same.
 - Verify on the real thing: with an ordinary directory as the control,
   run `pwd` / `ls` / a read under the lane profile in a directory under
   `~/Library`, in cloud storage and on a network share.
+- **The same shape appears for writes.** The rule for which added directories may be
+  written refused everything under `~/Library`, to protect files such as `LaunchAgents` that
+  run outside the sandbox — so no synced folder could be a write directory (2026-11), while
+  the same folder opened as the project was written. Carve out only what lies **strictly
+  inside** `~/Library/CloudStorage/` (a provider's account folder and below) and iCloud
+  Drive itself, `~/Library/Mobile Documents/com~apple~CloudDocs/`. The rest of
+  `Mobile Documents` is app containers: measured, its 168 entries included Automator, Script
+  Editor, Shortcuts and an Obsidian vault (which carries plugins) — places whose contents an
+  app runs. `CloudStorage` itself stays refused: it covers every account and any provider
+  added later. The carve-out went in after measuring, under real `sandbox-exec`, that the
+  lanes write in Dropbox, Google Drive and iCloud Drive and that the credential and
+  persistent-file denials hold inside.
+- **A probe file left in a synced folder does not stay local.** The startup check dropped,
+  in silence, a failure to remove the files it creates. In a shared drive that lets you create
+  but not delete, its probe directory holding a `.env` would stay and sync to everyone who
+  shares the drive. Report each leftover to the operator by path, on a channel apart from the
+  notes: a note can end up in what the model reads (the first implementation returned a
+  refused request's error, leftover paths included, to the model; the implementation review
+  found it).
+
+## Rewrite a path typed through a link outside the roots once, where the call comes in — when the verdict and the run each resolve it, a swap in between gets past the verdict
+
+**Symptom:** An agent's file tools checked first that the typed path lay *lexically*
+inside a root (the project, an added directory) and resolved links afterwards
+(2026-11). The roots are kept as real paths, so a path through a link in the home such
+as `~/Dropbox` → `~/Library/CloudStorage/Dropbox` failed even after approval with "path
+escapes the project directory", and even a read was refused (measured: all five cases —
+links to a write root, a read root and the project, and a link leading out — were
+refused). The shell lanes were unaffected: the kernel resolves the link.
+
+**Why:**
+- Checking containment lexically first is what stops a link *inside* a root from
+  leading out (a second step checks the real path too). A link *outside* every root that
+  leads in had not been considered.
+- The first fix, "resolve at each use", failed an independent design review: the
+  decision point and the run each resolved the link, so swapping it after the verdict (a
+  write-lane command can place links in a shared temporary directory) let a call
+  auto-approved as an ordinary file write `AGENTS.md`. The verdict and the run were not
+  reading the same string.
+
+**How to apply:**
+- Rewrite once, where the tool call comes in, and use the rewritten call for display,
+  the verdict, hooks, the run and the audit. Keep the model's own message in the history
+  as it sent it (calls and responses pair by id). The outside link is never consulted
+  again.
+- Resolve **the parent only**. When the last element is a link, it keeps the treatment
+  any link inside a root gets (judged on its real name, written by replacement, not
+  through). Resolving all the way writes through the link into its target.
+- Leave the spelling that spelling-based floors (credential names) judge untouched.
+- Resolving a path the model named, before approval, is I/O. Do not resolve under
+  `/Volumes`, `/Network`, or the automounter's `/net` and `/home`. Comparing the
+  typed spelling is not enough: a chain of links, a relative link behind another
+  link, the data volume's spelling (`/System/Volumes/Data/home`) and a case variant
+  (`/VOLUMES`) all got through (pre-release review, measured). Walk the path one element at
+  a time onto a prefix that is already real, and judge that real prefix against the trees —
+  case-folded, in both spellings — before reading into it. `Lstat` then reads only that one
+  element, and a link's target is always judged as a real path.
+- Rewrite only arguments known to be paths. An argument's name does not make it a path
+  (one tool's `from` is a time zone; implementation review). Anything not listed is left
+  as typed and refused as before, which fails safe.
+- Do not add I/O to the rule tier (the layer that judges strings only); fix the
+  resolution in front of it.
+- Test that swapping the link after the rewrite does not move the write, by actually
+  swapping it.
 
 ## file:// in browser automation is not closed by checking arguments — arguments, the interception, and the entrance to reads
 
