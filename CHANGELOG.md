@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-07 (TLS certificate refusals in Go)
+
+- **security** (ja + en): new entry. Explain a refused certificate from the
+  certificate the server sent, not from the error type. On macOS with the
+  system verifier, expired, not-yet-valid and client-only self-signed
+  certificates also come back as "unknown authority", and Go reports
+  not-yet-valid with `Reason: x509.Expired`. A CN-only certificate is refused
+  whoever issued it, so pointing at the CA setting sends the operator round a
+  second failure. Measured from opencti-lookup against a production instance
+  and its tests.
+
 ## 2026-11-05 (the evidence copy route on a local model)
 
 - **llm-integration** (ja + en): two bullets added to the evidence-copy entry.

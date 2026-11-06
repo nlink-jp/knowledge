@@ -2221,3 +2221,18 @@ included.
 - Accept a free-form value by its shape: a version is a release tag or `git describe` output (digits and a commit hash only); a model id is a name with at most one publisher prefix (one `/` at most, no `@`). Everything else becomes `other`.
 - A value the user chose (a model id) can still identify something even when its shape fits. Say so in the README and ask the user to read it before sending, or show it only on request like other names.
 - Plant the test marker inside values a looser pattern would pass, not only in values that fail every pattern. Put the pattern back to the loose form once and check that the test fails.
+
+## Explain a Go TLS certificate refusal from the certificate the server sent, not from the error type — on macOS, defects other than the issuer also come back as "unknown authority"
+
+**Symptom:** A Go read-only client connected to a production OpenCTI instance with a self-signed certificate (measured, 2026-11-07, macOS, Go 1.27.3). The first attempt failed with `certificate signed by unknown authority`. With the certificate set as `ca_file`, as advised, it failed again with `x509: certificate relies on legacy Common Name field`. The certificate named its host only in the Common Name and had no subjectAltName, which Go refuses whoever issued it. That `ca_file` could not fix it only showed on the second failure. A fix that chose the message by error type then had three faults reproduced by an independent review (measured, same environment):
+- On macOS with `RootCAs` nil (the system verifier), an expired, a not-yet-valid and a client-only (EKU clientAuth only) self-signed certificate all come back as `x509.UnknownAuthorityError`. Only once `ca_file` is set does the real reason's type appear.
+- A not-yet-valid certificate also comes back as `x509.CertificateInvalidError{Reason: x509.Expired}`, with the text `certificate has expired or is not yet valid`. Calling it "expired" from `Reason` alone misleads a machine whose clock is wrong.
+- Deciding that a host is an IP because it holds only hex digits, `.` and `:` takes a name like `cafe.be` for an IP.
+
+**Why:** Which error type comes back depends on where the platform's verifier stopped first; it is not a list of the certificate's defects. Trust in the issuer tends to be checked first, so it hides the rest.
+
+**How to apply:**
+- Build the explanation from the certificate taken out of the error (`tls.CertificateVerificationError.UnverifiedCertificates[0]`, else `HostnameError.Certificate`, `CertificateInvalidError.Cert`, `UnknownAuthorityError.Cert`), checked in order: the validity period (compare `NotBefore` and `NotAfter` with the current time, and tell not-yet-valid from expired), whether it has a subjectAltName, `VerifyHostname`, and the EKU (none, serverAuth or any is fine). Only when none of these applies, say the issuer is not trusted and point at the CA setting.
+- For defects other than the issuer, say plainly that setting a CA cannot fix them, and list what to ask the operator for (a subjectAltName `IP:…`/`DNS:…`, a renewal, a server certificate) next to the option of skipping verification and its price.
+- Decide whether a host is an IP with `net.ParseIP`, after dropping square brackets and an IPv6 zone (`%…`).
+- Test with a self-signed certificate served by `httptest`, checking the message both with and without the CA set. Read the current time through a replaceable variable and test the validity boundaries in isolation too.

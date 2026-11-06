@@ -1877,3 +1877,18 @@ binary・HTML・JSONのupload→thread/history→downloadで元バイトとの�
 - 自由な値は形で受け入れる。版数はリリースのタグか `git describe` の出力（数字とコミットハッシュだけ）、モデル ID は発行元の前置きが高々 1 つの名前（`/` は 1 つまで、`@` なし）。それ以外は `other` にする。
 - 利用者が自分で付けた値（モデル ID など）は、形が合っても何かを特定しうる。README にそう書いて送る前に確かめるよう案内するか、ほかの名前と同じく指定したときだけ出す。
 - 試験の目印は、全パターンに落ちる値だけでなく、緩いパターンなら通る値の中にも仕込む。パターンを一度緩い形に戻し、試験が落ちることを確かめる。
+
+## Go の TLS 証明書エラーは型ではなく、相手が出した証明書の中身で説明する — macOS では発行者以外の欠陥も「不明な認証局」になる
+
+**事象:** 自己署名証明書の本番 OpenCTI に、Go 製の読み取りクライアントから繋いだ（実測、2026-11-07、macOS・Go 1.27.3）。初回は `certificate signed by unknown authority` で失敗し、案内どおり `ca_file` に証明書を指定すると、今度は `x509: certificate relies on legacy Common Name field` で失敗した。証明書は名前を Common Name にしか持たず、subjectAltName が無かった。Go はこの形を発行者に関係なく拒む。`ca_file` では直らないことが、2 回目の失敗で初めて分かった。エラーの型で文面を分けて直したところ、独立検証で次の 3 点が再現された（同じ環境で実測）。
+- macOS で `RootCAs` が nil（システムの検証器を使う）のとき、期限切れ・有効期間前・サーバ用でない（EKU が clientAuth だけ）自己署名証明書も、すべて `x509.UnknownAuthorityError` として返る。`ca_file` を設定して初めて本当の理由の型になる。
+- 有効期間前の証明書も `x509.CertificateInvalidError{Reason: x509.Expired}` で返る。文面は `certificate has expired or is not yet valid`。`Reason` だけで「期限切れ」と言うと、時計がずれた端末に誤った案内を出す。
+- 接続先が IP かどうかを「16 進数字・`.`・`:` だけか」で判定すると、`cafe.be` のような名前を IP と誤る。
+
+**なぜ:** どのエラーの型が返るかは、プラットフォームの検証器が最初に止まった所で決まり、証明書の欠陥の一覧ではない。発行者の信頼は最初に調べられがちなので、それ以外の欠陥が隠れる。
+
+**適用方法:**
+- 拒否の説明は、エラーから証明書を取り出して（`tls.CertificateVerificationError.UnverifiedCertificates[0]`、無ければ `HostnameError.Certificate`・`CertificateInvalidError.Cert`・`UnknownAuthorityError.Cert`）、中身を順に調べて組み立てる。順序は有効期間（`NotBefore`・`NotAfter` を現在時刻と比べ、開始前と期限切れを言い分ける）、subjectAltName の有無、`VerifyHostname`、EKU（無し・serverAuth・any なら可）。どれにも当たらないときだけ「発行者が信頼されていない → CA を指定」と案内する。
+- 発行者以外の欠陥には「CA の指定では直らない」と明記し、運用者に頼むもの（subjectAltName `IP:…`/`DNS:…`、更新、サーバ用の証明書）と、検証を外す選択肢とその代価を並べる。
+- IP かどうかは `net.ParseIP` で判定する（角括弧と IPv6 のゾーン `%…` は先に落とす）。
+- テストは自己署名証明書を `httptest` で立て、CA の指定あり・なしの両方で文面を確かめる。現在時刻は差し替えられる変数から読み、有効期間の境目は単体でも確かめる。
