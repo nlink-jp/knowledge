@@ -2121,3 +2121,20 @@ and iCloud Drive left nothing.
   later, before reporting it clean.
 - Tell the user that removed items may remain in the provider's web-side trash or
   history, which cannot be checked from the machine.
+
+## A `\u` escape in agent-written source turns into the raw character — stop it with a test over the source text
+
+**Symptom:** In a test of making terminal output inert, a right-to-left override meant to be written as `\u202e` landed
+in the source as a raw U+202E (2026-11, a lookup tool for OpenCTI; twice, the second time even through a Python
+write). A sibling tool had recorded it three times. When the expected value turns raw too, the test passes with its
+meaning unchanged — vacuously.
+
+**Why:** The input to the writing tool is interpreted on the way, and the six characters `\u202e` become the character
+itself.
+
+**How to apply:**
+- Keep a test that refuses raw control characters, bidirectional controls, a BOM and the replacement character in every
+  source file — not only `.go` but `.md`, `.py`, `.graphql`, `.sh`. It also stops a "Trojan Source" change.
+- When writing an escape, assemble the backslash (`chr(92) + "u202e"` in Python) instead of typing `\u` directly.
+- When the test fails, replace the raw character with the assembled escape; the meaning is the same, so nothing else
+  breaks.

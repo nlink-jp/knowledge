@@ -459,3 +459,22 @@ machine with no config file, it runs on the new default.
 - Test on a machine that has a config file made from the old template. A clean machine hides this bug.
 - The warning can only tell "older than the default", not "unsupported": an unsupported odd release line can
   be newer than the default. Do not make the tool judge support; keep the default on a supported line instead.
+
+## When a published image is gone, rebuild the pinned release from official source — podman-compose stops silently on an unpullable image
+
+**Symptom:** Bringing up an OpenCTI 6.7.4 development stack on Podman, nothing happened for 23 minutes (2026-11, a lookup tool for OpenCTI).
+The MinIO image the stack pinned could no longer be pulled from Docker Hub or quay.io: the upstream repository was
+archived on 2026-04-24 and its images removed. OpenCTI's current compose had moved to a community fork's `latest`.
+
+**Why:** podman-compose did not surface the failed pull; it kept waiting for the dependent services. With no error and
+no exit, it looks like a slow start.
+
+**How to apply:**
+- Watch start-up for container state changes and health, with a deadline. When it stalls, first check that the images
+  were pulled (`podman images`, `podman manifest inspect`, the registry API).
+- Do not substitute a community fork or `latest`. Build the pinned release from official source yourself: pin the base
+  images by digest, and check that the fetched source is the commit the tag points at before building.
+- For an annotated tag, GitHub's refs API (`git/ref/tags/<tag>`) returns the tag object's id. Verify against the sha
+  from `commits/<tag>` — mixing them up fails the check on the right source.
+- A healthcheck that relies on a client bundled in the upstream image (MinIO's `mc`) does not survive the rebuild.
+  Replace it with the service's own liveness URL.

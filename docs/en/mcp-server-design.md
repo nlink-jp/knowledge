@@ -873,3 +873,47 @@ against the runtime.
   record the measured JSON size in the project's gotchas.
 - Tool text carries trigger and contract only (when to call, what `truncated`
   means); no defensive prose — that layer belongs to the runtime.
+
+### Do not trust upstream `hasNextPage`: count what remains from the total, and bind cursors to their query
+
+**Symptom:** OpenCTI 6.7.4's GraphQL silently cut `first` above 5,000 to 5,000 and answered `hasNextPage: false`; a
+nested list answered `hasNextPage: true` with a total of 2 (2026-11, a lookup tool for OpenCTI). The first measurement
+had only 1,379 rows, never reached the ceiling, and recorded it as "unmeasured" until an independent pass overturned
+it. The tool's own cursor was not bound to its query either, which the pre-release review found:
+- the continuation command the CLI printed dropped the filters and returned page 2 of a different list
+- a cursor from another list produced an upstream DATABASE_ERROR
+- a time-window list was open at the top, so later arrivals entered the total and "n remaining" had no continuation
+
+**Why:** Upstream paging fields were taken as proof that nothing was missing, and the cursor held only how far it had
+read, not what it continued.
+
+**How to apply:**
+- Decide whether an answer is short by the upstream total minus what was received, never by `hasNextPage`. Carry
+  "rows handed out so far" in the cursor.
+- Put a fingerprint of the query (object id, filters, kind) in the cursor and refuse it, before sending, on any other
+  query.
+- Close a time-window list at the first page's time, carried in the cursor, and validate every value in a cursor as
+  input (a forged time gives a silent zero, an upstream error, or a window past its bound).
+- Measure the page ceiling with more data than the ceiling; with less you never reach it and record it as absent.
+- A continuation command shown to people repeats every filter and the page size.
+
+### A saved name built from a third-party file name needs a hash next to the reduced name
+
+**Symptom:** A tool saving a report's attachment into a work directory named the file "server name + start of the
+object id + original name reduced to safe characters". Two different attachments got one name, and the later one
+silently replaced the earlier (2026-11, a lookup tool for OpenCTI; found by the pre-release review):
+- non-ASCII was dropped, so `報告書.pdf` and `別紙.pdf` both became `…-pdf` (losing the extension too)
+- the id came from the caller's string, so a `report--…` id gave `report0a`, useless for telling objects apart
+
+The `abs_path` and sha256 returned earlier now pointed at another document.
+
+**Why:** Reducing a name is not injective, and every safety step (drop the path, keep safe characters) adds collisions.
+
+**How to apply:**
+- Put a few characters of a hash of the original name (and the object id) in the saved name; the reduced part is only
+  for people to read.
+- Use the resolved internal id, not the form the caller passed, so the same attachment always gets the same name and
+  a re-download replaces it.
+- Keep the extension; a bare trailing `.` (Windows drops it), an overlong one, or one with non-ASCII is not an extension.
+- Test properties — pairs that must not collide, determinism, no path and no leading dot — rather than listing reduced
+  names: an expected value written from the reduction pins the defect as correct.
