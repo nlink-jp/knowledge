@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-07 (custom-header keys across redirects)
+
+- **security** (ja + en): a bullet added to "A credential may follow a redirect
+  only within the domain the request started in". Go strips `Authorization`,
+  `WWW-Authenticate` and `Cookie` on a cross-domain redirect but not a custom
+  header such as `api-key`, so a client that sends its key that way to an API
+  that never redirects should refuse to follow. Reproduced by malware-lookup's
+  pre-release independent review.
+
 ## 2026-11-07 (TLS certificate refusals in Go)
 
 - **security** (ja + en): new entry. Explain a refused certificate from the

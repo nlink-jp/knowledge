@@ -1810,6 +1810,13 @@ chosen by the server, not by the client.
 - A cross-host redirect is testable without DNS: give the transport a `DialContext` that dials
   one listener for every hostname. To `http.Client` it is a real cross-host redirect (it strips
   the header); to the test it is one server.
+- **A key in a custom header is not stripped.** On a redirect to another domain Go drops only
+  fixed names such as `Authorization`, `WWW-Authenticate` and `Cookie`; a custom header like
+  `api-key` or `X-Api-Key` reaches whatever host the redirect names, plain `http://` included
+  (reproduced on Go 1.27 by malware-lookup's pre-release independent review, 2026-11). A client
+  that sends its key in a custom header to an API that never redirects should refuse to follow:
+  return `http.ErrUseLastResponse` from `CheckRedirect` and report the 3xx as an error. Do not
+  share the key-carrying `http.Client` with other lookups.
 
 ## Compare places by identity, not by name — this disk does not distinguish case
 
