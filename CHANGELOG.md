@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-07 (a lenient parser rebuilt; Authentication-Results; library moves)
+
+From moving four mail tools onto the shared mail parser and rebuilding its
+lenient address reader.
+
+- **security** (ja + en): two new entries. A lenient parser written by
+  searching and slicing strings took six review rounds that each added a hole;
+  write it as a lexer and a small grammar, state the output contract, and hold
+  it with a property test on random hostile input. Receiving servers add
+  Authentication-Results on top, so judge from the top field; in 12 real
+  messages, 10 had several fields that disagreed through honest forwarding.
+- **testing** (ja + en): new entry. A `strings.Builder` held by value in an
+  element of a slice that append grows panics on the next write (found by
+  fuzzing); the regression test must write before the copy.
+- **development-process** (ja + en): new entry. Don't split a move onto a
+  shared library into one independent agent per consumer: shared plan first,
+  library fixes first, implement and release in one place, check the
+  irreversible steps with a local tag.
+
 ## 2026-11-07 (reading attacker-composed mail)
 
 From mailparse's development and its two independent pre-release reviews.

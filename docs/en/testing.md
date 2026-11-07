@@ -2165,3 +2165,21 @@ input was suspected; the stalls disappearing once minimizing was capped settled 
 - When the execution count is low or 0/sec persists, rerun with minimizing capped first; only if it still stalls,
   suspect a slow input.
 - With minimizing capped, a failing input stays large. To investigate a failure, rerun with minimizing on.
+
+## Don't put a `strings.Builder` held by value in elements of a slice that append grows — the next write after growth panics
+
+**Symptom:** A compressed-RTF reader pushed a struct holding a `strings.Builder` by value onto a slice for each open
+`\field` group. A 60-second fuzz run hit the panic "strings: illegal use of non-zero Builder copied by value"
+(2026-11, Go 1.27.3). It reproduced with 40 nested `\field` groups where each outer field gets one character from
+`\uN` before the next opens. A crafted .msg could stop the consumer's process.
+
+**Why:** When append reallocates, elements are copied by value. A `strings.Builder` remembers its own address and
+panics when written after being copied (nothing happens if it was never written, so only inputs that write to the
+outer field first trigger it).
+
+**How to apply:**
+- Don't give slice elements or structs passed by value a `strings.Builder` (or any noCopy type). Use `[]byte`, or
+  make the elements pointers.
+- Build the regression test from an input that writes before the copy. An input where the copy happens before any
+  write does not fail (the first regression test written here passed on the unfixed code for that reason). Check
+  that the test fails on the code before the fix.

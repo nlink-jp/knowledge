@@ -1793,3 +1793,27 @@ the same name, so a name cannot tell which process is yours.
   use `pkill` or `killall`".
 - Give each agent its own scratch directory too.
 - When a test sees an unexplained exit, suspect the parallel work first.
+
+## Don't split a move onto a shared library into one independent agent per consumer — write the shared plan first, then do it in one place
+
+**Symptom:** Moving four tools onto a new shared mail-parsing library was handed to a separate agent session per
+tool, "each at the tool's own judgment" (2026-11). Two tools whose code had been byte-for-byte identical ended up
+judging by different policies, and two tools whose output had been identical ended up printing different JSONL.
+Half the tools kept their own formatting and so did not use the spoofing fix the library provided. Consumers were
+released before the library's fixes, one of them twice in a day, and a session inside a sandbox created the tag and
+the release before stopping at signing, publishing a "Latest" with no assets. All four were reverted to before the
+library and the move was redone.
+
+**Why:** Spreading the decisions without a shared plan breaks what comes in pairs (identical code, identical
+output). The irreversible steps were delegated without checking that the environment could finish them (signing,
+notarizing).
+
+**How to apply:**
+- Before the move, write the shared plan as one document: the library APIs every consumer must use (no reimplementing
+  them), the judgment and output shapes, and pairs kept identical as pairs. Ask the owner the open decisions first.
+- Fix the library's defects first and release it; release each consumer once, after. Write no workarounds in the
+  consumers.
+- Implement and release in one place, in order. Use subagents only for read-only independent review, and check the
+  pairs there (compare the files that should be identical).
+- Before the irreversible steps (pushing the tag, creating the release), check with a local tag that signing,
+  notarizing and the asset checks all pass.

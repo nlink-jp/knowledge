@@ -2328,3 +2328,58 @@ changes with one charset guess.
   values cut out afterwards, such as display names.
 - A "make it readable" preprocessing step can change structure. Move it after parsing, especially for charsets in which
   a delimiter can be part of a two-byte character (Shift_JIS, Big5, GBK).
+
+## Don't write a lenient parser by searching and slicing strings — make it a lexer and a small grammar, and hold its output to a contract with a property test
+
+**Symptom:** A mail-parsing library re-read address fields that do not parse as RFC 5322 (the lenient reader) by
+searching a masked copy of the string for `<` `>` `@`, cutting values out by byte position and tidying them with
+trims and comment removal. After independent reviews it was fixed in the same function six rounds running, and each
+fix brought a new hole (2026-11; every finding came with an input and its result). Examples: a second address with
+no comma before it vanished; a comment's domain became the address's domain (`ceo@corp.example(@evil.example)`); 16
+unclosed `(` in front made an address inside a quoted display name real; the mask character `_` could not be told
+from an input `_`, turning `john_doe@` into `johndoe@`; dropping a comment glued two words into a domain that was
+never written (`co(x)rp.example` → `corp.example`). The owner pointed out that fixing one place again and again is
+treating symptoms of something broken underneath, and it was rebuilt.
+
+**Why:** There was no grammar and no stated output. While structure is decided by searching the string and values
+are made by cutting it, every fix is a local "for this input" decision, and another cut lets other text through.
+Writing the mask into the string itself (an in-band marker) makes it indistinguishable from the same character in
+the input.
+
+**How to apply:**
+- Cut even a lenient reader's input into tokens once (quoted-strings, comments, literals, words, specials,
+  whitespace) and read them with a small grammar. A delimiter that never closes is a one-byte token (compute where
+  each closes beforehand: no rescans, nothing quadratic).
+- State the output contract in prose at the top of the code (for example: "an address is a run of tokens that is an
+  addr-spec as written; every part is a word written in the field"). What fits nothing stays out of the result,
+  in the raw value and a warning only.
+- Turn the contract into a property test on random hostile input, with an oracle written independently of the code
+  under test, and check that the test fails when the code is broken on purpose (mutation testing). Here the test
+  caught two holes in the rebuilt version right after it was written.
+- Keep the oracle from sharing the implementation's token definitions. Keeping the old implementation as a reference
+  and comparing against it finds shifts in meaning mechanically.
+- When review findings land on the same function two rounds running, stop before the third patch and classify the
+  cause (the pattern of "An independent pass converges in rounds — and the author's fix is where the next defect
+  is" in [development-process](development-process.md)).
+
+## Receiving servers add Authentication-Results on top — the top field is the recipient's own, and a forged one sits below it
+
+**Symptom:** A suspicious-mail analyzer changed how it treats several Authentication-Results fields, on the premise
+that "reading only the first lets an attacker put a fake `pass` on top", to "read them all, and flag conflicting
+when they disagree". Measured on 12 real messages, 10 carried several fields and all 10 disagreed (2026-11, locally
+received mail: the first receiver wrote spf=pass, the receiver after forwarding through a provider such as Google
+wrote spf=fail — the honest shape of forwarding). Most honest forwarded mail became conflicting, and the "all
+authentication passed" cue to the LLM vanished. Another version took the most severe verdict, so a lower field's
+fail overrode the top field's pass.
+
+**Why:** Each receiving server adds its field above the ones already there (as with Received). A field the sender
+forged was written at sending time and sits below the receiver's. The top one is forged only when the receiving
+server adds no field of its own. The options had been put to the owner without measuring the premise.
+
+**How to apply:**
+- Judge SPF, DKIM and DMARC from the top field (the recipient's own). Where your receiving system's authserv-id is
+  known, decide trust by it.
+- Keep the lower fields as raw values and only report a disagreement (no verdict, no alert count): forwarding
+  produces it honestly.
+- Before offering "an attacker could do this" as grounds for a decision, measure its frequency and position on real
+  mail; if it cannot be measured, say "not measured".
