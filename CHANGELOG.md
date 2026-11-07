@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-07 (a key the upstream accepts silently)
+
+- **mcp-server-design** (ja + en): new entry. An API that answers an invalid
+  key like an unregistered caller cannot confirm from a response that the key
+  took effect; a key placement that looks safer (the POST body) was silently
+  ignored. Confirm through the account's usage counter, expecting it to lag,
+  and pin the placement in the client. Measured while building vpn-lookup.
+
 ## 2026-11-07 (custom-header keys across redirects)
 
 - **security** (ja + en): a bullet added to "A credential may follow a redirect

@@ -677,6 +677,30 @@ close it as a kind.
   parameter, a parent ID that does not exist. The documentation may say they are refused; the
   measurement decides.
 
+### A key the upstream accepts silently: confirm it takes effect from the account's counter, not from a response
+
+**Symptom:** An IP-intelligence API answered an invalid key — in the URL or in the POST body —
+with 200 and a normal-looking result, as it answers an unregistered caller (2026-11, a lookup
+tool layering two such APIs). Nothing in a response said whether the key was read. The
+documentation showed the key in the URL; sending it in the body seemed equivalent and kept it
+out of logs. It was not: the dashboard's daily query counter, which updated about an hour
+late, counted only the queries with the key in the URL. Every body-key query had run on the
+anonymous tier (lower quota, shared CDN cache).
+
+**Why:** When an invalid key and a valid one produce the same answer, "it works" proves
+nothing about the key, and a placement that looks safer can silently drop it. A tool built on
+that would run anonymously forever and only fail when the anonymous quota ran out.
+
+**How to apply:**
+- Before choosing where a key goes, send a deliberately invalid key in each candidate place.
+  If none is refused, the response cannot tell you; find a counter the account exposes
+  (a usage or stats API, the dashboard) and watch which queries it counts.
+- Expect the counter to lag; send a few marked queries, then read it again an hour later
+  rather than concluding "not counted" after minutes.
+- Once the placement is known, pin it in the client's comments and tests with the date. If
+  the key must go in the URL, every error path strips the URL (Go's `url.Error` quotes it) and
+  the client refuses redirects — see the security entries on both.
+
 ### Upstream's "no data" arrives in the shape of a positive — let neither a negative nor a positive be mistaken
 
 **Symptom:** An exposure-footprint API answered a CVE it does not track with `exposed_hosts: 0`
