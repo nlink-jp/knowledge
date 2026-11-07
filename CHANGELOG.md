@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-07 (upstream error text; call-scoped state on long-lived servers)
+
+- **security** (ja + en): new entry. An upstream API's error message can quote
+  the credential that was sent (a bad-key 401 repeated the key's leading part);
+  build error text from the status and a machine code only, and measure each
+  keyed API's bad-key response before writing the client.
+- **mcp-server-design** (ja + en): new entry. State meant for one call must be
+  cleared at the start of each call, or carry an expiry: a rate-limit block
+  kept on an engine lasted an MCP server's whole life after one 429. Found by
+  cert-lookup's pre-release review.
+
 ## 2026-11-07 (config syntax errors quote the value)
 
 - **security** (ja + en): new entry. The TOML decoder's syntax error quotes up

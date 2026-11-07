@@ -751,6 +751,29 @@ that reports a syntax error.
 - When porting a config loader, check this path in the source too — a defect copied with the
   skeleton is in every sibling made from it.
 
+### An upstream API's error message can quote the credential you sent — build your own error text
+
+**Symptom:** A certificate-search API answered a wrong key with 401 and a JSON body whose
+`message` repeated the leading part of the key that was sent ("The provided API key (…_********)
+is not recognized"). A client that wraps upstream's message — the usual way to make an error
+informative — puts part of the credential on stderr, into an MCP result, and from there into the
+client's logs and the model's context (2026-11, measured live before the first line of the client
+was written; the shipped tool never passes the message through).
+
+**Why:** An upstream's error text is written for the account owner reading their own console, where
+echoing the key helps them find which one is wrong. It is free text the client does not control,
+and the most likely moment for it to carry the credential is exactly the bad-key error.
+
+**How to apply:**
+- Never pass upstream error text through. Build the message from the HTTP status and, at most,
+  upstream's machine-readable code — kept only if it is a short token (letters, digits,
+  underscores).
+- Measure the bad-key response of every keyed API before writing the client (send a key of the
+  right length made of one repeated character), and pin it in a test that fails if the message
+  reaches the output.
+- The same holds for bodies that look harmless now: a free-text error field is a channel the
+  client cannot audit.
+
 ## Detection-logic quality
 
 ### SPF/DMARC fail alone as a suspicion signal breeds false positives

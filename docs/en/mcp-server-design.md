@@ -868,6 +868,27 @@ doubt their own action.
 - For firing conditions like enabled/disabled, state the **consequence**, not
   just the value (enabled: false → "this rule will not fire").
 
+### Call-scoped state on a long-lived server must end with the call, or carry an expiry
+
+**Symptom:** An engine shared by a CLI and an MCP server remembered, on the engine itself, that a
+query kind had hit the upstream's rate limit, so the rest of the batch would not send more of it.
+In the CLI the process ends with the call. The MCP server builds one engine for its whole life —
+days — so after a single 429 every later call of that kind answered "rate limited, not sent" with
+the old Retry-After, until restart. Unit tests ran one call per engine and passed (2026-11, found
+by the pre-release independent review; fixed before release).
+
+**Why:** "For the rest of this call" was implemented as "for the rest of this object's life", and
+the two only coincide in a short-lived process. The same code under a stdio MCP server is a daemon.
+
+**How to apply:**
+- State meant for one call is cleared at the start of each call. State meant to outlast it (a
+  block until the upstream's Retry-After) stores the expiry time and is checked against the
+  clock, never kept as a bare flag.
+- A refused key stops sending to that source for the call only — the operator may fix it while the
+  server keeps running.
+- Test it with two calls on one engine and an injected clock: inside the window the second call
+  sends nothing; past it, it sends again.
+
 ### Page a fetched document by character offset, hold it in memory for the turn, and return a document id so the caller knows when the basis moved
 
 **Symptom:** A server returning page text had to bound its response for a
