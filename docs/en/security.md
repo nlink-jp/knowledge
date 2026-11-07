@@ -726,6 +726,31 @@ request URL leaks it along the same path.
 - Refuse a setting that puts credentials in a URL at all (a `base_url` with userinfo, a query
   or a fragment is an error) — and keep the value out of that message too.
 
+### A config decoder's syntax error quotes the token it could not parse — an unquoted key goes to stderr
+
+**Symptom:** A lookup tool's config loader wrapped the TOML decoder's error as it was. The
+decoder (the organization's own, nlink-jp/toml) quotes up to 40 characters of the token it
+cannot parse, so `api_key = 7f3a9c…` — a key written without quotes, starting with a digit —
+printed `invalid number "7f3a9c…"` whole; one starting like a date printed `invalid datetime`.
+It went to stderr from the CLI and from the MCP server, whose clients keep server stderr in
+log files (2026-11, found by the pre-release review of a new tool; the sibling the loader was
+ported from had the same defect and was fixed in a release of its own).
+
+**Why:** A decoder's error is written to help find the mistake, so it shows the offending
+text — and in a credentials file the most likely unquoted token is the credential itself. A
+loader that is strict about unknown keys and empty values still leaks through the one path
+that reports a syntax error.
+
+**How to apply:**
+- For a file that holds credentials, report where it is wrong, not what is there: take the
+  parse error apart (`errors.As`) and print the line and column; for a type mismatch the line
+  (and the key's name, which is not secret); for anything else, withhold the details.
+- Make it a test: an unquoted value starting with a digit, one starting like a date, a bare
+  word and a wrong-typed value each produce an error that names the line and does not contain
+  the value.
+- When porting a config loader, check this path in the source too — a defect copied with the
+  skeleton is in every sibling made from it.
+
 ## Detection-logic quality
 
 ### SPF/DMARC fail alone as a suspicion signal breeds false positives

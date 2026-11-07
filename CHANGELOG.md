@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-07 (config syntax errors quote the value)
+
+- **security** (ja + en): new entry. The TOML decoder's syntax error quotes up
+  to 40 characters of the token it could not parse, so an API key written
+  without quotes reached stderr and MCP client logs. Report line and column
+  only, test it, and check the path when porting a loader. Found by
+  vpn-lookup's pre-release review; opencti-lookup fixed in v0.1.2.
+
 ## 2026-11-07 (a key the upstream accepts silently)
 
 - **mcp-server-design** (ja + en): new entry. An API that answers an invalid
