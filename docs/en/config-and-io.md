@@ -1277,3 +1277,18 @@ zlib does not include `infback9`, zlib's contrib module for Deflate64 (checked i
   number, not as a raw enum value.
 - Test data can be made with 7-Zip (`7zz a -tzip -mm=Deflate64`), but it never emits length code 285 (second
   instance under "Verify the fixture before blaming the code" in testing).
+
+## Undeclared ISO-2022-JP is 7-bit, so it passes both an ASCII check and a UTF-8 check — look for its escapes first
+
+**Symptom:** text with no declared charset was read as "US-ASCII if all ASCII, UTF-8 if valid UTF-8, otherwise guess
+Japanese", and an ISO-2022-JP body came back as US-ASCII with its `ESC $ B` sequences still in it (2026-11, a
+mail-parsing library; found by a test of .msg code page 50220, and the .eml path had the same hole).
+
+**Why:** every byte of ISO-2022-JP is 0x7F or below; Japanese is switched in by escape sequences. It passes the ASCII
+check and the UTF-8 validity check, so the guess that keys on 8-bit bytes is never reached.
+
+**How to apply:**
+- Before calling undeclared text ASCII or UTF-8, look for the ISO-2022-JP escapes (`ESC $ B`, `ESC $ @`, `ESC ( J`) and,
+  if present, try a strict ISO-2022-JP decode; on success, record that the charset was guessed.
+- For the same reason, take an "all ASCII needs no conversion" shortcut only when the declared charset is
+  ASCII-compatible (ISO-2022-JP and UTF-16 are not).

@@ -2138,3 +2138,30 @@ itself.
 - When writing an escape, assemble the backslash (`chr(92) + "u202e"` in Python) instead of typing `\u` directly.
 - When the test fails, replace the raw character with the assembled escape; the meaning is the same, so nothing else
   breaks.
+
+**Further cases (2026-11, a mail-parsing library, five times):** an RTF `\u12354` written inside a Go raw string turned
+its first `\u1235` into the character U+1235, leaving the `4` behind. A shell heredoc mangled it the same way. The
+result was not a control character, so the check let it through and the test's input itself had changed (it failed
+against the expected value, which is how it was noticed). Another was a soft hyphen (U+00AD), missing from a list of
+bidirectional controls.
+- Hold the refusal as a Unicode class, not a list (in Go, `unicode.Is(unicode.Cf, r)` plus C0, C1 and U+FFFD, and NBSP,
+  which reads as a space). A list misses the next character.
+- A character that is not a control passes any such check. When writing `\u` followed by four or more hex-looking
+  characters, print the line back after writing it.
+
+## Go fuzzing with seeds of tens of KB stalls for seconds minimizing each new input — cap `-fuzzminimizetime`
+
+**Symptom:** a 60-second fuzz run of a compound-file (MS-CFB) reader made 39,850 executions, its progress lines
+alternating between 0/sec and hundreds of thousands per second (Go 1.27.3, macOS, 2026-11). Each stretch of about
+15 seconds at 0/sec ended with "new interesting" going up by one. With `-fuzzminimizetime 1x`, 30 seconds made
+11.88 million executions and found 152 new inputs. Neither run failed.
+
+**Why:** a newly found input is minimized before it is kept, and minimizing does not count as executions. With seeds of
+tens of KB (built compound files), one minimization takes seconds to tens of seconds. It looks stuck but is not (a slow
+input was suspected; the stalls disappearing once minimizing was capped settled it).
+
+**How to apply:**
+- Fuzz with large seeds using `-fuzzminimizetime 1x` (or a short time), and put it in the Makefile's `fuzz` target.
+- When the execution count is low or 0/sec persists, rerun with minimizing capped first; only if it still stalls,
+  suspect a slow input.
+- With minimizing capped, a failing input stays large. To investigate a failure, rerun with minimizing on.

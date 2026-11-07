@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-07 (reading attacker-composed mail)
+
+From mailparse's development and its two independent pre-release reviews.
+
+- **security** (ja + en): two new entries. Go's `mime.ParseMediaType` drops
+  every parameter when one is malformed and decodes RFC 2231 only for UTF-8,
+  so an attacker can hide an attachment's name; and converting 8-bit values
+  before tokenizing lets a Shift_JIS trail byte 0x5C eat a quoted-string
+  escape and add a mailbox.
+- **config-and-io** (ja + en): new entry. Undeclared ISO-2022-JP is 7-bit and
+  passes ASCII and UTF-8 checks; look for its escape sequences first.
+- **testing** (ja + en): new entry on Go fuzz runs stalling while minimizing
+  large inputs (`-fuzzminimizetime`); the `\u`-escape entry gains cases (raw
+  strings, heredocs, a soft hyphen past an enumerated list — refuse by
+  Unicode class).
+- **development-process** (ja + en): the independent-pass convergence entry
+  gains a case: about 45 findings, then 10 on the fix diff, two of them
+  regressions the fixes introduced.
+
 ## 2026-11-07 (upstream error text; call-scoped state on long-lived servers)
 
 - **security** (ja + en): new entry. An upstream API's error message can quote

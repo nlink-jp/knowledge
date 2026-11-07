@@ -2291,3 +2291,40 @@ included.
 - For defects other than the issuer, say plainly that setting a CA cannot fix them, and list what to ask the operator for (a subjectAltName `IP:…`/`DNS:…`, a renewal, a server certificate) next to the option of skipping verification and its price.
 - Decide whether a host is an IP with `net.ParseIP`, after dropping square brackets and an IPv6 zone (`%…`).
 - Test with a self-signed certificate served by `httptest`, checking the message both with and without the CA set. Read the current time through a replaceable variable and test the validity boundaries in isolation too.
+
+## Go's `mime.ParseMediaType` drops every parameter when one is malformed — an attacker can hide an attachment's name
+
+**Symptom:** for `Content-Disposition: attachment; filename="invoice.pdf.exe"; x` the filename came back empty, with no
+warning. `filename*=shift_jis''...` (RFC 2231 in a charset other than UTF-8) and a doubled `filename` emptied it too
+(2026-11, an independent review before the first release of a mail-parsing library; run on Go 1.27.3 to confirm).
+A consumer checking attachments by extension stops seeing the executable.
+
+**Why:** `mime.ParseMediaType` returns an error and no parameter map (only the type) when any single parameter fails
+to parse. It decodes RFC 2231 values only for UTF-8 and US-ASCII and silently drops parameters in any other charset.
+A caller that treats the error as fine because the type was read loses every parameter.
+
+**How to apply:**
+- For values an attacker writes, use a parser that reads each parameter leniently: keep every parameter that reads,
+  take the first of a duplicate, decode RFC 2231 in any charset, return a warning per problem (and treat `*0` and `*00`
+  as the same section when detecting duplicates).
+- Warn when a plain `filename` and the RFC 2231 `filename*` differ: different readers show different names.
+- The same trap (a standard parser that discards everything over one fault) is in `net/textproto` header reading: one
+  malformed line fails the whole message (measured in the same library).
+
+## Convert 8-bit values after tokenizing — a Shift_JIS trail byte 0x5C eats a quoted-string escape and adds an address
+
+**Symptom:** to make raw Shift_JIS display names readable, a whole From value was guessed as Shift_JIS and converted to
+UTF-8 before the address parser ran. `From: "\x83\" <ceo@corp.example>, " <attacker@evil.example>` then gave two
+mailboxes, `ceo@corp.example` first; parsed before conversion it gave one, `attacker@evil.example` (2026-11, a
+mail-parsing library; shown by a probe in the second independent review and confirmed by a test after the fix). The
+property that an encoded display name cannot smuggle in an address was broken.
+
+**Why:** 0x5C (`\`) is a valid second byte of a two-byte Shift_JIS character. Tokenized as bytes, `\"` escapes the quote;
+converted first, 0x83 0x5C becomes one character and the following `"` closes the quoted string. Where the addresses are
+changes with one charset guess.
+
+**How to apply:**
+- Tokenize structure (quotes, angle brackets, separators) on the bytes as received. Convert 8-bit characters only in the
+  values cut out afterwards, such as display names.
+- A "make it readable" preprocessing step can change structure. Move it after parsing, especially for charsets in which
+  a delimiter can be part of a two-byte character (Shift_JIS, Big5, GBK).

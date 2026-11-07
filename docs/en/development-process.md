@@ -1632,6 +1632,13 @@ original. Judge convergence by severity across rounds (regression → pre-existi
 by retry → wording), not by the count of findings. Triage every finding against the code before
 acting; write down the ones you decline and why.
 
+**Another case (2026-11, before the first release of a library that reads attacker-composed mail):** four passes split by
+area found about 45 issues (memory not bounded by the limits, content that could be hidden, misleading values). After
+fixing all of them, a fresh reviewer given **only the fix diff** found 10, two of them regressions the fixes introduced
+(converting 8-bit values before parsing reopened address injection; a stricter detector rejected ordinary minimal
+mail). The author's tests and fuzzing passed both. The second round's severity was lower (nothing high), so the passes
+stopped there, and the record says the second round's fixes were checked by tests and fuzzing only.
+
 ## A pair-parity check does not resolve references — follow the links, from the document's own directory
 
 **Symptom:** eleven records were moved and translated, and a structure comparison of each pair
