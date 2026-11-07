@@ -1817,3 +1817,24 @@ notarizing).
   pairs there (compare the files that should be identical).
 - Before the irreversible steps (pushing the tag, creating the release), check with a local tag that signing,
   notarizing and the asset checks all pass.
+
+## Before building a tool, check whether it is "not visible" or "not installed" — and test its skill with an ordinary request, naming nothing, in a fresh session
+
+**Symptom:** an agent kept reaching for headless Chrome, mermaid.js from a CDN or hand-drawn SVG to turn mermaid into an
+image (2026-11). The first diagnosis was "our own engine exists but is not visible", and an MCP server, discovery by
+name, steering by server instructions and user-scope registration were stacked onto the design. In fact no command on
+PATH turned mermaid into an image: the engine was a library and its only command a debugging tool that was never
+distributed — the earlier decision "no distributed CLI" was itself the cause. The session transcripts used as evidence
+had also been misread, from the first request alone.
+
+**Why:** inferring a mechanism's defect (discoverability) from a symptom (odd means) grows fixes shaped to that
+inference. Whether the tool can run on this machine now is answered by one command, yet it is not asked first.
+
+**How to apply:**
+- When a missing tool is suspected, look first at `command -v` and at the past decision not to build or ship it.
+- When session transcripts are the evidence, read up to what was said just before the fumbling, not only the first
+  request.
+- Once the tool and its skill are installed, start fresh sessions with ordinary requests that name neither the tool nor
+  the trial — one scene the tool handles and one it does not. Count from the transcripts' tool calls whether the skill
+  was loaded, whether the tool was used, and whether other means were reached for. Here both scenes loaded the skill
+  first and drew with the tool alone, and the unsupported type ended in a question with choices.

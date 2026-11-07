@@ -527,6 +527,43 @@ umask. But **respect umask for a file that did not exist** — forcing the defau
 files under a restrictive umask, which is the same defect pointed the other way. Inherit only
 the mode of the name being replaced, never a symlink target's.
 
+### A CLI that builds its output in memory should write it in place, as a shell's `>` does — write-and-rename works against the user's files
+
+**Symptom:** a CLI that turns mermaid into PNG (mermaid-to-png, 2026-11) placed its output by writing a temporary file
+beside it and renaming it in. An independent review found: a read-only destination silently replaced, `0600` widened to
+`0644`, the umask ignored, a symbolic link replaced by a regular file while its target stayed old, a hard-link pair
+split, and `-o /dev/stdout` failing as it tried to create a temporary file in `/dev`.
+
+**Why:** replace-by-rename exists so that a crash never leaves a half-written file, and it discards the replaced name's
+inode, mode, links and write-permission check all at once. A CLI user names the output with `>` in mind, and behaviour
+that differs from it shows up as a defect. When the content is complete in memory before the file is opened, only the
+disk itself can fail midway, so the rename buys little.
+
+**How to apply:**
+- If the output is complete before the file is opened, write it in place with
+  `OpenFile(path, O_WRONLY|O_CREATE|O_TRUNC, 0666)`: the umask, an existing file's mode and links, and the refusal of a
+  read-only file all behave as with `>`. A failure while writing leaves the output unusable, as with `>`; document it.
+- Rename is for files and settings other processes read at the same time (see "Replace-by-rename drops the file mode"
+  above and "Place marker/flag files other processes read with temp+rename" below).
+- When the output is standard output itself (`/dev/stdout`), write through the open stream instead of reopening it —
+  `os.SameFile(stdout.Stat(), os.Stat(path))`. Reopening can truncate, on Linux, the file `>>` appends to.
+- Refuse an output that is the file a redirected standard input reads (`-o d.mmd < d.mmd`), comparing only regular
+  files: `/dev/null` or a terminal is not overwritten by a write, and comparing them refuses legitimate runs.
+
+### Go's `flag` stops at the first non-flag — agents write `file -o out`, so resume parsing after each file name
+
+**Symptom:** in the same CLI, `mermaid-to-png d.mmd -o x.png` was a usage error ("one input at a time (got 3)",
+2026-11). The bundled skill said only that `-o name.png` names the output, not where it goes. Agents tend to put the file
+name first and fail on their first try.
+
+**Why:** the standard `flag` package stops at the first non-flag argument; everything after it is positional.
+
+**How to apply:**
+- Take one positional argument at a time and `fs.Parse` the rest again. Everything after `--` is a file name.
+- Recognising `--` as "the previous argument was `--`" also reads the value in `-o --` as the separator. If that only
+  produces a refusal and never a wrong write, accept it and document it.
+- Return usage errors before reading any input; pin it in a test with a standard input whose `Read` calls `t.Error`.
+
 ### Read the working directory from the kernel, not `$PWD` — one directory becomes two spellings
 
 **Symptom:** In a Go agent, resuming a session in the directory it was

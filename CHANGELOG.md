@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-08 (a mermaid CLI and its skill)
+
+From building mermaid-to-png, the command-line front end to the organization's
+mermaid engine, with a bundled skill.
+
+- **config-and-io** (ja + en): two new entries. A CLI whose output is complete
+  in memory should write it in place as a shell's `>` does: write-and-rename
+  replaced read-only files, widened modes, ignored the umask, broke links and
+  `/dev/stdout`. Go's `flag` stops at the first non-flag, and agents write
+  `file -o out`: resume parsing after each file name.
+- **development-process** (ja + en): new entry. Check "not installed" before
+  "not visible" (`command -v`, and the past decision not to ship), read
+  transcripts up to the fumbling, and test a skill with ordinary requests that
+  name neither the tool nor the trial, in fresh sessions.
+
 ## 2026-11-07 (a lenient parser rebuilt; Authentication-Results; library moves)
 
 From moving four mail tools onto the shared mail parser and rebuilding its
