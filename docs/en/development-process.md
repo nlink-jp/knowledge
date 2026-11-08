@@ -369,6 +369,55 @@ fix the class" never fired. There was no stop condition.
 - Treat a test that has the user repeat manual steps as a sign of a design
   problem in itself.
 
+### Do not go from the RFP straight to code — an unwritten practice drops out as the work follows the written rules
+
+**Symptom:** A tool that takes suspicious mail apart and returns facts (2026-11,
+unpublished) had its purpose and scope fixed by its RFP. The "plan" that
+followed was a list of principles and a table of build steps; URL reading was
+one row. Implementation began seven minutes after that plan was committed.
+What to read and how far was decided in the triage of independent reviews,
+each finding becoming a design change. "Every message is written by an
+attacker" — a robustness rule for the reader — was read as "miss nothing a
+browser would see"; every round added a defence (a work meter, per-document
+allowances, a separate reading merged back, a re-read on exhaustion), and each
+defence brought the next round's regressions. Six rounds did not converge and
+the maintainer judged the project unrecoverable. A week earlier, a lenient
+address reader in the same line of work had been rewritten after six rounds of
+patches.
+
+**Why:** The design step was a practice, never a rule (checked against each
+repository's history). In 2026-04, projects wrote an architecture (decisions
+with alternatives), a detailed design (packages, errors, test design) and a
+development plan (Phase 1 = design, with completion criteria) after the RFP. In
+2026-06 – 07 only decision records were written at the start; in 2026-08 – 09
+no record preceded the first code; in 2026-10 – 11 there was only the RFP (and a
+Phase 0 measurement). The organization's development-plan template read
+"Phase 1: core functionality + tests", and the RFP skill's next step was
+"proceed to scaffolding". Following the written rules faithfully skipped
+design, so the skipping never surfaced as a violation and no check could see
+it. Without a design, the review question "is there a hole?" always has an
+answer, and every answer becomes design.
+
+**How to apply:**
+- After the RFP (the requirements) and before scaffolding or code, write an
+  architecture (components, which carries each requirement, each one's
+  contract, out of scope, decisions with alternatives), a detailed design (per
+  component: inputs, outputs, procedure, bounds, error and hostile-input
+  handling, test design) and a development plan (Phase 1 = design; completion
+  criteria per step). Size them to the tool, but never skip them.
+- Have an independent pass check the design against the requirements (every
+  requirement to a component and back; what each component must decide is
+  decided), and get the maintainer's approval before implementing.
+  Implementation follows the design; a finding that asks for behaviour the
+  design does not define is a design change request, not a defect.
+- Do not read a robustness rule (do not break, bound resources, do not
+  misrepresent) as a demand for functional completeness.
+- When a practice that is being followed turns out to be missing from the
+  rules, write it back where the work actually looks — the rules' templates,
+  a skill's next step. Recording it as knowledge alone lets it drop out the
+  same way again.
+- Organization rule: [ADR-029](https://github.com/nlink-jp/.github/blob/main/adr/029-design-before-implementation.md).
+
 ### Changing a borrowed machine's state needs the change and its removal stated first — "harmless" is not a reason to leave it
 
 **Symptom:** At the same project's withdrawal, the development Mac held Launch
@@ -1618,7 +1667,7 @@ to map from the **base ref's copy of the document**, pair citations by position,
 do not guess — a cited line that was itself edited or a document whose citations were added or
 removed. Run it twice; the second run must move nothing.
 
-## An independent pass converges in rounds — and the author's fix is where the next defect is
+## Bound an independent pass before it starts — and since the author's fix is where the next defect is, review the fix diff once
 
 **Symptom:** a fix for a record that went wrong after a failed write was blocked by review as
 worse than the shipped code; its replacement was blocked again, on a path the first review had
@@ -1626,11 +1675,24 @@ made visible; the third design held. Both withdrawn fixes had tests, passing, an
 messages stated the opposite of what the code did. None of it was found by the author, who had
 read the code, run the suite and mutated it.
 
-**How to apply:** give each release candidate to a reviewer that has not seen the reasoning,
-with instructions to break it rather than to describe it, and re-review the *fix*, not only the
-original. Judge convergence by severity across rounds (regression → pre-existing path reachable
-by retry → wording), not by the count of findings. Triage every finding against the code before
-acting; write down the ones you decline and why.
+**How to apply:** give the release candidate to a reviewer that has not seen the reasoning.
+Before the pass starts, decide what is checked against what (the implementation against the
+detailed design; the design against the requirements), how many passes, and when to stop. The
+default is one pass before release and one pass over the *fix* diff only. The reviewer may attack
+the work, but against the contract the design states. A third pass needs the maintainer's
+go-ahead and a reason. A high finding in the fix-diff pass sends the work back to the design, not
+into another round of patches. Triage every finding against the code before acting —
+non-conformance (fix), design gap (a design change request), out of scope (record) — and write
+down the ones you decline and why.
+
+**Correction (2026-11):** this entry used to say "instruct the reviewer to break it, and judge
+convergence by severity across rounds". Made the default with no design to compare against, it
+let a mail-dissection tool run six rounds without converging — the open question "is there a
+hole?" always had an answer, and each answer became design and the surface of the next round
+("Do not go from the RFP straight to code";
+[ADR-029](https://github.com/nlink-jp/.github/blob/main/adr/029-design-before-implementation.md)).
+The case below, "the second round's severity was lower, so the passes stopped there", still
+stands as a bounded pass.
 
 **Another case (2026-11, before the first release of a library that reads attacker-composed mail):** four passes split by
 area found about 45 issues (memory not bounded by the limits, content that could be hidden, misleading values). After

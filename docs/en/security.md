@@ -2359,8 +2359,8 @@ the input.
 - Keep the oracle from sharing the implementation's token definitions. Keeping the old implementation as a reference
   and comparing against it finds shifts in meaning mechanically.
 - When review findings land on the same function two rounds running, stop before the third patch and classify the
-  cause (the pattern of "An independent pass converges in rounds — and the author's fix is where the next defect
-  is" in [development-process](development-process.md)).
+  cause (the pattern of "Bound an independent pass before it starts — and since the author's fix is where the next defect is, review the fix diff once" in
+  [development-process](development-process.md)).
 
 ## Receiving servers add Authentication-Results on top — the top field is the recipient's own, and a forged one sits below it
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-08 (design before implementation; bounded independent passes)
+
+From a mail-dissection tool that went from its RFP to code and did not converge
+in six review rounds, and the retrospective behind ADR-029.
+
+- **development-process** (ja + en): new entry. Do not go from the RFP straight
+  to code: write an architecture, a detailed design and a development plan,
+  check the design against the requirements, and get it approved first; an
+  unwritten practice (it existed in 2026-04) drops out as the work follows the
+  written rules, so write it back into the templates and skills.
+- **development-process** (ja + en): "An independent pass converges in rounds"
+  revised and renamed — a pass is bounded before it starts (what against what,
+  how many, when to stop; default one plus one over the fix diff), with a
+  correction note; the reference in **security** follows the new title.
+
 ## 2026-11-08 (a mermaid CLI and its skill)
 
 From building mermaid-to-png, the command-line front end to the organization's
