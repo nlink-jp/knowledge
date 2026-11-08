@@ -2383,3 +2383,35 @@ server adds no field of its own. The options had been put to the owner without m
   produces it honestly.
 - Before offering "an attacker could do this" as grounds for a decision, measure its frequency and position on real
   mail; if it cannot be measured, say "not measured".
+
+## Building a tree with x/net/html allocates quadratically for some inputs — cut attacker HTML down before the parser
+
+**Symptom:** A tool that read suspicious mail's HTML as a `golang.org/x/net/html` tree (2026-11, withdrawn) rested on "the
+parser is fast; the cost is in our reading", measured on one kind of input only. An independent review refuted it with
+other kinds. Measured again locally (x/net v0.52.0, Go 1.27.3, Apple M2 Max; `TotalAlloc` and elapsed time of one
+`html.Parse`):
+
+| Input | Size | Allocated | Time |
+|---|---|---|---|
+| `"x</q>"` repeated | 64 KiB → 128 → 256 → 512 KiB | 87 → 346 → 1,423 → 5,557 MiB | 0.02 → 0.04 → 0.12 → 0.44 s |
+| `<p><b a0=0 … a{k}=0>x` + `<p>x` × k | k = 1,000 → 2,000 → 4,000 (11 → 23 → 47 KB) | 47 → 189 → 753 MiB | 0.01 → 0.06 → 0.17 s |
+
+Doubling the input quadruples the allocation; a 47 KB document allocates 753 MiB.
+
+**Why:** Two places in tree construction are not proportional to the input (inferred from the source; the measurements
+have the shape the inference predicts). Text appended to a preceding text node is concatenated again, so text broken up
+by end tags is quadratic. Each reconstruction of active formatting elements (`b` and the like) clones the element with
+its attribute list, so many attributes times many reconstructions multiply. Both happen inside `Parse`, before any
+reader code runs, so a meter that counts the reader's own work cannot stop them. Also, past 512 open elements `Parse`
+returns an error (`open stack of elements exceeds 512 nodes`) and no tree (confirmed in the same environment).
+
+**How to apply:**
+- To rely on someone else's parser's complexity, list the worst kinds of input from its construction and measure all of
+  them. One kind being fast is not a premise.
+- To build a tree from attacker-written HTML, cut its size before `Parse`. Allocation grows with the square of the
+  size; derive the limit from the table (about 1.4 GiB allocated at 256 KiB). Read the remainder some other way, without
+  a tree, and record in the result that it was cut.
+- Treat a `Parse` error as "no tree" and record that it could not be read (an attacker can trigger the 512-level
+  refusal).
+- The cost of token-only reading (`html.NewTokenizer`) was not measured here; measure its worst inputs the same way
+  before using it instead.

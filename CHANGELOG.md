@@ -14,6 +14,10 @@ in six review rounds, and the retrospective behind ADR-029.
   revised and renamed — a pass is bounded before it starts (what against what,
   how many, when to stop; default one plus one over the fix diff), with a
   correction note; the reference in **security** follows the new title.
+- **security** (ja + en): new entry. Building a tree with `golang.org/x/net/html`
+  allocates quadratically for some inputs (text broken by end tags; formatting
+  elements with many attributes reopened many times — measured on v0.52.0), and
+  `Parse` refuses past 512 open elements: cut attacker HTML down before the parser.
 
 ## 2026-11-08 (a mermaid CLI and its skill)
 
