@@ -2423,3 +2423,25 @@ partial-result note changed, position did not change behaviour — there was no 
   the clock on each reload moves the "started" day after midnight).
 - Together with the earlier entry where a local model followed a directive placed in the first user message rather
   than the system prompt, "a near position in the conversation" held for a cloud model too.
+
+### Print the sub-agent's output contract from the schema — a parent that retypes the field names drops some
+
+**Symptom:** In the code-audit skill's fourth E2E run (2026-11-08) six of twelve
+verifiers returned trace entries without `kind` and `scope`. The cause was the
+parent's prompt, which named only three fields ("file, line, description").
+The brief already printed the required fields per verdict from the schema, but
+not those of the entry types. Six re-asks cost about 0.5M tokens.
+
+**Why:** The parent retypes the contract from memory. Inside a long procedure
+the list of field names shrinks and drifts from the schema the validator reads.
+A sub-agent follows the list it was given, so the gap appears in the return and
+becomes a refusal and a re-ask.
+
+**How to apply:**
+- Print the contract a sub-agent gets (required fields, types, ranges)
+  mechanically from the schema the validator reads, and have the parent quote
+  it. Nested types (entries, items) go in the same table.
+- When re-asks repeat the same gap, suspect the parent's wording, not the
+  sub-agent.
+- Budget a re-ask rate in the cost estimate and update it from measurements
+  (22% in this run, six of them from the parent's wording).

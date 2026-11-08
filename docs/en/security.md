@@ -124,6 +124,16 @@ application could have swayed the LLM.
 Attackers cannot know the nonce in advance, so they cannot forge a closing tag
 to inject instructions.
 
+**Put the nonce on the closing tag too.** With the nonce only on the opening
+tag (`<target-data nonce="N">…</target-data>`), the closer is a fixed string and
+target-derived text closes the wrapper by writing `</target-data>` (the
+code-audit skill, found by the commit-time review on 2026-11-08). Where a script
+composed the document it broke every spelling of the closer (case, inner
+spaces, line breaks); logs and briefs the parent pasted depended on the
+parent's procedure. The real fix is `<target-data-N>…</target-data-N>`, the
+nonce on both sides; where a script assembles the text, keep breaking closers
+as defence in depth.
+
 **How much the wrapping helps varies enormously with the attack's shape.** Measured against task-consistent payloads that dictate one field of the output, the outcome split 92%→0.3%, 100%→14% and 100%→100% depending only on which field was targeted. Choosing this mechanism and claiming a number for its effectiveness are separate acts (see "Measuring injection resistance with loud attacks overstates it").
 
 ### Place defense instructions at the top of the system prompt
@@ -651,6 +661,34 @@ reproduction.
   it even if an ADR says otherwise.
 - **Add a regression test**: fail if the output contains home-directory or
   volume path prefixes. Guard with tests, not good intentions.
+
+### Sub-agent returns spell the operator's login and absolute paths — refuse them in the scripts where artifacts bound for a shared place enter the books
+
+**Symptom:** In the code-audit skill's fourth E2E run (2026-11-08) two hunters'
+returns spelled the build machine's login (it was written in the target
+repository's CHANGELOG) and one also an absolute path on the auditing side; a
+verifier's record referred to it in prose. The prompt said "repository-relative
+paths". The artifacts were meant for a shared records repository, with a rule
+that no absolute path or login enters them.
+
+**Why:** An agent quotes what it read. When the target spells a personal
+identifier, spelling it as evidence is the natural behaviour, and a prose rule
+is skipped. If the artifacts leave the machine, the stop has to sit where they
+enter the books.
+
+**How to apply:**
+- At every entry where a return or record enters the books (recording, merging
+  the critic, adding a finding, notes, the parent's own reason texts), refuse
+  anything that carries the operator's login (`getpass.getuser()`, when three
+  characters or longer, whole word, case-insensitive) or an absolute local path
+  in its common spellings (`/Users`, `/home`, `/root`, `/Volumes`,
+  `/private/var/folders`, `/tmp`, with `file:///` or `//` prefixes), and print
+  the re-ask. The refusal goes to the operator's terminal only.
+- Every role's contract says: describe personal identifiers and local paths at
+  `file:line` ("the builder's login at CHANGELOG.md:12"), never spell them. The
+  script is the backstop; the contract is the first control.
+- State the residual: hostnames, `~/`, percent-encoding, Windows drive letters
+  and Unicode confusables are not caught mechanically.
 
 ### When the credential is more powerful than the use, put the restraint in the client
 
