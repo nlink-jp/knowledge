@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-09 (a repository audit of the agent runtime; the audit skill's release)
+
+From code-audit's first full run on gem-agent (standard profile) and the fixes,
+accepted limits and one reversal that followed, and from the audit skill's four
+end-to-end runs before its own release.
+
+- **development-process** (ja + en): new entry. Before fixing an audit finding,
+  ask whose act makes it happen and whether the behaviour is specified: a high
+  on piped stdin was the documented script path, composed by the operator like
+  `curl … | bash`, and was withdrawn after two review rounds; when offering
+  options, include "not a defect".
+- **security** (ja + en): three new entries. What a privileged build trusts
+  must sit outside every allow — a Seatbelt denial by name does not survive
+  renaming a writable ancestor (measured with `sandbox-exec`); an approval
+  prompt must carry the whole call, and no layout can prove which row is which
+  (tabs under `Hardwrap`, clipping a joined string, `%v`); a directory a
+  sandboxed lane can write and a resume reuses is refused if it has become a
+  link (`MkdirAll` succeeds on a link; measured).
+- **security** (ja + en): two new entries from the audit skill. The nonce goes
+  on the closing wrapper tag as well as the opening one; a sub-agent return
+  that spells the operator's login or an absolute local path is refused where
+  artifacts bound for a shared place enter the books.
+- **llm-integration** (ja + en): new entry. Print a sub-agent's output contract
+  from the schema — a parent that retypes the field names drops some.
+
 ## 2026-11-08 (design before implementation; bounded independent passes)
 
 From a mail-dissection tool that went from its RFP to code and did not converge
