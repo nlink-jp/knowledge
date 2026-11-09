@@ -2472,3 +2472,9 @@ A helper written for one-line event rows (each argument clipped) was also the on
 - `%v` is not an unambiguous rendering: two different lists print alike and a large number changes form. Render non-strings as JSON.
 
 A promise that content cannot pose as another argument or as the dialog's own rows could not be kept: indentation and a gutter are lost or bypassed by wrapped rows and other model-written fields, and the text is the model's. Promise only what is finite: every argument is present, short ones come before long ones so a long body cannot push them off the first screen, and what is left out is stated.
+
+## A directory a sandboxed lane can write and a resume reuses must be refused if it has become a link
+
+A resumed session recreated its work, scratch and cache directories with `os.MkdirAll` and resolved the result into the next sandbox profile. `MkdirAll` succeeds on a link to a directory, so a command in the writable lane could replace one of those directories with a link, and the next resume granted the lane whatever the link led to. Measured under real `sandbox-exec`: a directory that was denied became writable. The same path also fed an unsandboxed startup probe, which wrote through a planted link.
+
+**How to apply:** after creating a directory that a sandboxed process can write and that later becomes part of a profile, `Lstat` it and refuse anything that is not a real directory. A runtime's own probes in such a directory use a new randomly named directory and exclusive creates, and remove only what they created.
