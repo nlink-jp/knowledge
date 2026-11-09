@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-09 (certificate pinning in mcp-bridge)
+
+From adding a certificate pin for devices on a local network, and the
+independent review that found a way around it.
+
+- **security** (ja + en): new entry. Pin the certificate of a device that cannot
+  pass verification rather than turning verification off; pair
+  `InsecureSkipVerify` with an exact match on the leaf, and refuse redirects off
+  `https`, because Go keeps `Authorization` across a redirect to the same host
+  whatever the scheme (reproduced against Go 1.27.3).
+
 ## 2026-11-09 (lagent's added directories)
 
 From the design and pre-release reviews of porting gem-agent's added directories.

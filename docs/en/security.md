@@ -2330,6 +2330,20 @@ included.
 - Decide whether a host is an IP with `net.ParseIP`, after dropping square brackets and an IPv6 zone (`%…`).
 - Test with a self-signed certificate served by `httptest`, checking the message both with and without the CA set. Read the current time through a replaceable variable and test the validity boundaries in isolation too.
 
+## Pin the certificate of a device that cannot pass verification, rather than turning verification off — pair `InsecureSkipVerify` with the comparison, and close the redirect to `http`
+
+**Symptom:** a Go MCP bridge connected to a KVM device on a local network (mcp-bridge, 2026-11, measured on macOS with Go 1.27.3). The certificate was self-signed and issued only to `localhost` and the loopback IPs, not to the name used to reach the device. Adding a CA would have left the name mismatch, so verification was replaced by an exact match on the certificate's SHA-256, and that worked against the real device. An independent review then reproduced a way around it: when the genuine device answered 307 to `http://` on the same host, the body and `Authorization` were re-sent in cleartext, with no error.
+
+**Why:** Go decides whether to keep `Authorization` across a redirect from the host name alone, ignoring the scheme and port. A certificate pin only acts on TLS connections, so a connection that skips TLS was never in its reach. Over `http://` to another host, `Authorization` is dropped but a custom header such as `X-Api-Key` still arrives.
+
+**How to apply:**
+- The credential for a device of this kind is often control of the machine attached to it. Choose a pin over a switch that disables verification: the code is about the same size and it adds one step at setup.
+- Always pair `InsecureSkipVerify: true` with an exact match in `VerifyConnection` on the same `tls.Config`. Compare only the leaf (`PeerCertificates[0]`). A certificate further up the chain is public, and anyone can present it.
+- Give the pinned client a `CheckRedirect` that refuses anything but `https`. A redirect to another `https` server needs no rule, since it fails the pin. Setting `CheckRedirect` removes the default limit of 10, so keep your own.
+- An `https://` proxy gets the same `TLSClientConfig`, so the proxy's own certificate is compared with the pin. It fails closed, but the error's advice then shows the proxy's fingerprint. An `http://` proxy only tunnels TLS and is unaffected.
+- Show both the presented and the configured fingerprint in the mismatch error, because replacing the value is the repair when a device regenerates its certificate. Have the first fingerprint read over a trusted path, and do not build a feature where the tool records whatever it sees first.
+- Test with a certificate that is self-signed, misnamed and expired, served by `httptest`. Count that it is refused without a pin (the control), that a wrong pin lets no request reach the handler, and that nothing reaches the target of a redirect to `http`.
+
 ## Go's `mime.ParseMediaType` drops every parameter when one is malformed — an attacker can hide an attachment's name
 
 **Symptom:** for `Content-Disposition: attachment; filename="invoice.pdf.exe"; x` the filename came back empty, with no
