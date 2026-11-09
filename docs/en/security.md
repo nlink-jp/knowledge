@@ -2453,3 +2453,22 @@ returns an error (`open stack of elements exceeds 512 nodes`) and no tree (confi
   refusal).
 - The cost of token-only reading (`html.NewTokenizer`) was not measured here; measure its worst inputs the same way
   before using it instead.
+
+## What a privileged build trusts must be outside every allow — a Seatbelt denial by name does not survive renaming a writable ancestor
+
+An agent runtime separated the cache of its unasked sandbox lane from the cache of its approved lanes with an environment variable only: both directories were under the path the unasked lane may write, so a command that named the other path wrote there, and Go does not verify a cache entry's content on read. Two later placements failed in measurable ways.
+
+- A sibling inside the session's work directory: the shell route closes, but the file tools write that directory without asking. List every writer that runs unasked, not only the sandboxed one.
+- A per-process directory in the temporary root, denied to the lane by name: with the temporary root under a directory the lane may write, the lane renamed an ancestor, wrote the entry, and renamed it back, measured under real `sandbox-exec`. The denial matched the path, and the path was moved out from under it. A concurrent process's directory was not named at all, and every session's approved lane could write every other session's.
+
+**How to apply:** put such a directory where no lane's allow reaches it and no file-tool root contains it, and allow it only in the profiles of the session that owns it. Keep a denial by name as a second line, and state that it does not hold against a writable ancestor.
+
+## An approval prompt must carry the whole call — and no layout can prove which row is which
+
+A helper written for one-line event rows (each argument clipped) was also the only text the approval gate received, so a long command could put its effect past what the operator saw. Give the gate its own rendering. Three things went wrong while building it, each measured.
+
+- `ansi.Hardwrap` counts a tab as zero cells and the renderer as several, so a row with tabs outgrows the box and its end is cut with no sign. Expand tabs before wrapping.
+- A size cap applied to the joined text falls on whichever arguments sort last. Cut per value, keep each value's end (where a command's effect can be), and state the omission on the first line, since a mark further down warns nobody who does not scroll.
+- `%v` is not an unambiguous rendering: two different lists print alike and a large number changes form. Render non-strings as JSON.
+
+A promise that content cannot pose as another argument or as the dialog's own rows could not be kept: indentation and a gutter are lost or bypassed by wrapped rows and other model-written fields, and the text is the model's. Promise only what is finite: every argument is present, short ones come before long ones so a long body cannot push them off the first screen, and what is left out is stated.

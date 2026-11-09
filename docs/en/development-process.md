@@ -1900,3 +1900,9 @@ inference. Whether the tool can run on this machine now is answered by one comma
   the trial — one scene the tool handles and one it does not. Count from the transcripts' tool calls whether the skill
   was loaded, whether the tool was used, and whether other means were reached for. Here both scenes loaded the skill
   first and drew with the tool alone, and the unsupported type ended in a question with choices.
+
+## Before fixing an audit finding, ask whose act makes it happen and whether the behaviour is specified
+
+An audit rated as high that piped stdin without `-p` runs as typed input, `!` commands included. It was implemented as a breaking refusal and taken through two reviews before the question was asked of it: this was the specification, recorded in an ADR, and it happened only when the operator composed the pipe themselves, the shape of `curl … | bash`. It was withdrawn and documented instead. The same audit's finding that an unasked sandbox lane could write what approved builds trust needed nobody's act and broke a recorded guarantee, and fixing it was right.
+
+**How to apply:** before proposing a fix, answer two questions: does this happen unasked, or does the operator have to compose it, and is there a decision record for the behaviour? When the operator's own act is required, the default is to state the behaviour where it is read and record the residual. When offering choices, include "this is not a defect", not only ways to fix it.
