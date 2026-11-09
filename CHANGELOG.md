@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-09 (lagent's added directories)
+
+From the design and pre-release reviews of porting gem-agent's added directories.
+
+- **config-and-io** (ja + en): new entry. A list in the global config applies to
+  every project, so a refusal that depends on this session skips with a note.
+  The `prog.Send` entry gains the case of sending while holding a lock Update
+  takes.
+
 ## 2026-11-09 (a repository audit of the agent runtime; the audit skill's release)
 
 From code-audit's first full run on gem-agent (standard profile) and the fixes,

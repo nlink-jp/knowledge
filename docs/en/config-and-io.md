@@ -962,6 +962,10 @@ fine.
   is a program at all.
 - Review heuristic: **enumerate every caller of `prog.Send`** and ask of each
   "can this run synchronously from Update?". One yes is a freeze.
+- A send from another goroutine freezes the same way if it **holds a lock Update
+  takes**. Queue the notices and send them after the unlock (reproduced in
+  lagent's directory grant with a channel nobody reads). Ctrl+C goes through
+  the same loop, so only a kill ends it.
 - Pin it with a sender that never returns, and assert the caller returns
   anyway. The synchronous version fails that on a timeout. Unit tests stay
   green while the UI dies, so without this shape the next one is found on real
@@ -1329,3 +1333,13 @@ check and the UTF-8 validity check, so the guess that keys on 8-bit bytes is nev
   if present, try a strict ISO-2022-JP decode; on success, record that the charset was guessed.
 - For the same reason, take an "all ASCII needs no conversion" shortcut only when the declared charset is
   ASCII-compatible (ISO-2022-JP and UTF-16 are not).
+
+## A list in the global config applies to every project — a refusal that depends on this session skips, not stops
+
+**Symptom:** with `write = ["~/notes"]` in the global file, starting under `~/notes` stopped with "contains the project", and a path on an unmounted volume stopped every start in every project (found from the code by lagent's design review; the note and the continued start were confirmed live after the fix).
+
+**Why:** "the operator typed it, so a refusal stops the start" is the reasoning of a flag typed for this run. A config file is written once and applies to every project, so a refusal that depends on the current project or on what is mounted now does not mean the entry is wrong.
+
+**How to apply:**
+- Separate by type "the path itself is invalid" from "this session's circumstances" (missing, not openable, holds the project, already covered).
+- From the config, skip the second kind with a note; from a flag, stop. A path invalid wherever you start, such as `/` or the home, stops either way.
