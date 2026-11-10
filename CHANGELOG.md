@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-11 (a SPICE client reaching guests through an HTTP CONNECT proxy)
+
+From adding a virtualisation platform's proxy route to a macOS SPICE client,
+measured against a real node before designing and again after implementing.
+
+- **macos-gui** (ja + en): two new entries. A Network framework proxy
+  configuration is bypassed without a word when the target is one of the
+  machine's own addresses; a refusal by an HTTP CONNECT proxy stops at `waiting`
+  with a POSIX error and never reaches `failed`.
+- **testing** (ja + en): new entry. Do not check an interoperating peer more
+  strictly than the reference implementation does; read a number in an error as
+  a byte count before a dimension.
+
 ## 2026-11-11 (a cached-input price carried over as a ratio)
 
 From adding a second new-generation model to a usage aggregation tool's rate

@@ -2183,3 +2183,29 @@ outer field first trigger it).
 - Build the regression test from an input that writes before the copy. An input where the copy happens before any
   write does not fail (the first regression test written here passed on the unfixed code for that reason). Check
   that the test fails on the code before the fix.
+
+## Do not check an interoperating peer more strictly than the reference implementation does — servers that pad exist
+
+**Symptom:** A SPICE client library required a cursor's data length to equal the size it computed. One server
+implementation (it serves a terminal over SPICE) declares its 8×16 32-bit cursor as 640 bytes, 128 more than the
+pixels; a comment in its source says the X drivers add the same and that the client breaks otherwise. The library
+rejected the message with `invalidSize(640)` and the whole session ended, without a single frame (2026-11, measured
+against the real server). The reference client reads what it needs from the front and never looks at the rest. With
+the check changed to "at least, use only the front" the same server went through display and input. That was the
+only cause.
+
+**Why:** "The length follows from the format" is a correct reading of the specification, but servers that exist add
+padding. The peers the library had been tested against (another server implementation, another guest driver)
+happened to send none, so the strict check had never been exercised.
+
+**How to apply:**
+- Before demanding "exactly" on the receiving side of a protocol, read in the reference implementation's source how
+  it reads the field. If it reads only the front, accept the excess and cut it off. Keep rejecting data that is too
+  short.
+- Keep the limits (dimensions, total bytes). Accept excess only inside them.
+- **When an error carries a number, read it as a byte count before reading it as a dimension.** 640 also looks like
+  a row of 80 columns of 8 pixels, and decoding bitmaps was suspected first. It was the cursor's length
+  (512 + 128). Listing every place in the source that emits that error, then comparing against the constants in
+  the peer's implementation, is the fast way.
+- In a test environment with one implementation of the peer, such a check has not been shown to pass. When a
+  peer of another implementation becomes available, run it once as far as a displayed frame.

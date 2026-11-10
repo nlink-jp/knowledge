@@ -1970,3 +1970,40 @@ data protection keychain, whose access groups need entitlements authorised by a 
 - Confirm where an item went with `security find-generic-password -s <service> -a <account>` (no `-g`, so no value is
   printed) and read `keychain: ".../login.keychain-db"`.
 - Unit-test the rules around the Keychain with an in-memory stand-in, so tests never write to the user's login keychain.
+
+## A Network framework proxy configuration is silently bypassed when the target is one of the machine's own addresses
+
+**Symptom:** A `ProxyConfiguration(httpCONNECTProxy:)` was put in `NWParameters.PrivacyContext.proxyConfigurations`
+and the connection made with `NetworkConnection(to:using: .parameters(initialParameters:))` (macOS 27.2, 2026-11,
+measured).
+- With another host as the target, by IP or by name, the proxy received `CONNECT <host>:<port> HTTP/1.1` and
+  `Host: <host>:<port>`. A proxy that itself listens on 127.0.0.1 is used.
+- **With 127.0.0.1 or the machine's own LAN address as the target, the connection went direct, not through the
+  proxy.** The state became `ready`, with no error and no warning. Setting `allowFailover` to false changed nothing.
+- With the proxy unreachable, no direct connection was made to a target that cannot be resolved.
+
+**Why:** No documented reason was found (not investigated). Presumably traffic to the machine itself is exempt from
+proxying by default.
+
+**How to apply:**
+- In a product that tells its user "through a proxy", guarantee by validating the shape of the target that it cannot
+  be one of the machine's own addresses. Having set a proxy configuration is not evidence that the proxy was used.
+- A test of the proxy route that targets 127.0.0.1 tests a direct connection, and passes. Use a token that cannot be
+  resolved as the target, and establish the route from the number of requests the test proxy received.
+
+## A refusal by an HTTP CONNECT proxy, and an unreachable one, never reach `failed`: they stop at `waiting` with a POSIX error
+
+**Symptom:** In the same setup, when the proxy answered `401` and closed, the connection's state became
+`waiting(POSIX 57: Socket is not connected)` and never went on to `failed`. With nothing listening on the proxy's
+port it was `waiting(POSIX 61: Connection refused)` (macOS 27.2, 2026-11, measured against both a real Proxmox VE
+spiceproxy and a local listener). The HTTP status code cannot be read through the API.
+
+**Why:** Presumably `waiting` means "retry when the path changes" and the OS treats a proxy's refusal as transient
+too (not investigated).
+
+**How to apply:**
+- An establishment that waits only for `ready` and `failed` waits out its whole deadline when a proxy says no. For a
+  connection that names a proxy, treat a `waiting` state carrying a POSIX error as final and fail at once.
+- Give that failure a type of its own. Folded into the same "connection failed" as TLS failures and timeouts, it
+  leaves no way to tell the user apart "obtain a new ticket" and "check the certificate".
+- Where a time-limited ticket is handed to a proxy, this is how "expired" shows up.
