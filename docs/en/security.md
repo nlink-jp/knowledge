@@ -2492,3 +2492,18 @@ A promise that content cannot pose as another argument or as the dialog's own ro
 A resumed session recreated its work, scratch and cache directories with `os.MkdirAll` and resolved the result into the next sandbox profile. `MkdirAll` succeeds on a link to a directory, so a command in the writable lane could replace one of those directories with a link, and the next resume granted the lane whatever the link led to. Measured under real `sandbox-exec`: a directory that was denied became writable. The same path also fed an unsandboxed startup probe, which wrote through a planted link.
 
 **How to apply:** after creating a directory that a sandboxed process can write and that later becomes part of a profile, `Lstat` it and refuse anything that is not a real directory. A runtime's own probes in such a directory use a new randomly named directory and exclusive creates, and remove only what they created.
+
+## Unprivileged Linux sandboxing cannot refuse the creation of a file that does not exist yet by its name — a design resting on Seatbelt's denial by name does not carry over
+
+Whether an agent runtime could move from macOS to Linux was measured. On macOS its write lane denies the files later sessions trust (instruction files, the MCP configuration, git hooks) by name, at any depth, whether or not they exist yet. On two Linux machines, unprivileged, with probes that each have a control (the probe must first succeed without the mechanism):
+
+- A **Landlock** rule only names a hierarchy to allow. There are no deny rules and no name patterns, so one file inside a writable tree cannot be left out. A kernel can be built with Landlock and still not offer it when it is missing from the LSM list (`landlock_create_ruleset` answers `EOPNOTSUPP`); one of the two kernels was like that.
+- With **a user namespace and a mount namespace**, a read-only bind over an existing file refuses writing, unlinking and renaming it. An existing secret file is hidden by a bind of `/dev/null`, a directory by an empty filesystem. With a second user namespace nested inside, so the command holds no capability, it cannot remove what was mounted (`umount2` answers `EPERM`).
+- With either, **refusing the creation of a new file because of its name** was not possible, and neither was refusing the rename of a directory that holds a protected file. Nothing can be mounted over a name that is not there.
+- A connection to a UNIX socket at a path went through under a network namespace and under Landlock's scoping. Abstract sockets and TCP are stopped.
+
+**Why:** Seatbelt matches the path against a regular expression at each operation. The unprivileged Linux mechanisms decide by a permission attached to a tree or by how mounts are arranged; nothing looks at a name.
+
+**How to apply:** before carrying a guarantee that rests on Seatbelt's denial by name to Linux, check whether it is enough for it to hold for what already exists. If names that do not exist yet must be covered, the same guarantee cannot be built: decide between shipping a weaker one and not shipping, and record why. The mechanisms on hand differ by machine (a kernel without Landlock, a distribution that restricts user namespaces), so measure on that machine at startup.
+
+Origin: a feasibility study for a Linux port of an agent runtime (2026-11). The port was declined.

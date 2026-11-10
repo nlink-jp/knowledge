@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-11 (a Linux port of an agent runtime, declined)
+
+From measuring whether a sandbox built on Seatbelt's denial by name could be
+reproduced on Linux.
+
+- **security** (ja + en): new entry. Unprivileged Linux sandboxing (Landlock,
+  user and mount namespaces) protects a file that exists and cannot refuse the
+  creation of a new one by its name; a path UNIX socket stays reachable.
+
 ## 2026-11-09 (certificate pinning in mcp-bridge)
 
 From adding a certificate pin for devices on a local network, and the
