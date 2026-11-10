@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-11 (a cached-input price carried over as a ratio)
+
+From adding a second new-generation model to a usage aggregation tool's rate
+table, where the pre-release review found the first one's cached input priced
+at twice the page's figure.
+
+- **llm-integration** (ja + en): new entry. Pin a rate table's secondary
+  columns as the prices the page prints, not as a shared ratio; hand a reviewer
+  raw page figures; a too-high price raises no warning, so point users at the
+  recompute.
+
 ## 2026-11-11 (a Linux port of an agent runtime, declined)
 
 From measuring whether a sandbox built on Seatbelt's denial by name could be

@@ -321,6 +321,38 @@ confuses anyone reconciling the two.
   existing entry uses the same mechanism, treat both alike rather than one at
   list price.
 
+### Pin a rate table's secondary columns (cached input and the like) as the prices the page prints, not as a ratio
+
+**Symptom:** A usage aggregation tool kept cached input as one shared ratio,
+"input price × 0.1", and its test checked that ratio for every model. When a
+new-generation model was added, only its input and output prices were compared
+with the pricing page and the ratio was inherited — but that page's
+new-generation rows list cached input at 0.05× input ($0.10 against $2 input).
+The first new-generation model shipped for about four weeks charging cached
+tokens at twice the page's figure; the independent pre-release review for the
+second one found it, as a mismatch between the page figures quoted in its brief
+and the ratio in the code (usage aggregation CLI, 2026-11; confirmed by
+repricing real data).
+
+**Why:** "Every row has the same ratio" was an observation about the generations
+checked at the time, not a rule of the page. A test that asserts the ratio only
+pins that assumption; it never compares anything with the page. When the sync
+procedure is "check input and output", the secondary column goes unread and the
+previous generation's value is carried over.
+
+**How to apply:**
+- In the rate-table test, write **the prices the page prints** for each model
+  (input, output, cached input) as the expectation. Check that the product
+  matches the page's figure, not that the ratio is the expected one.
+- When adding a model of a new generation, read every price column. Do not
+  assume the same columns or ratios as the previous generation.
+- Hand an independent reviewer the figures read from the page as **raw values,
+  not as the conclusion (a ratio)**. This mismatch was found because the raw
+  values were in the brief.
+- After the fix, point users at the way to recompute stored history (a
+  `reprice`). No warning is raised, since nothing was unpriced — records that
+  were merely priced too high are ones a user cannot notice alone.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
