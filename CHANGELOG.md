@@ -8,10 +8,13 @@ measured against a real node before designing and again after implementing.
 - **macos-gui** (ja + en): two new entries. A Network framework proxy
   configuration is bypassed without a word when the target is one of the
   machine's own addresses; a refusal by an HTTP CONNECT proxy stops at `waiting`
-  with a POSIX error and never reaches `failed`.
-- **testing** (ja + en): new entry. Do not check an interoperating peer more
-  strictly than the reference implementation does; read a number in an error as
-  a byte count before a dimension.
+  with a POSIX error and never reaches `failed`, and so does a missing Local
+  Network permission, with a different code that must not be taken for a refusal.
+- **testing** (ja + en): two new entries. Do not check an interoperating peer
+  more strictly than the reference implementation does; read a number in an
+  error as a byte count before a dimension. Reaching a LAN peer from
+  `swift test` is not evidence that the application can: the Local Network
+  permission belongs to whatever launched the process.
 
 ## 2026-11-11 (a cached-input price carried over as a ratio)
 

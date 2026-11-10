@@ -1991,19 +1991,27 @@ proxying by default.
 - A test of the proxy route that targets 127.0.0.1 tests a direct connection, and passes. Use a token that cannot be
   resolved as the target, and establish the route from the number of requests the test proxy received.
 
-## A refusal by an HTTP CONNECT proxy, and an unreachable one, never reach `failed`: they stop at `waiting` with a POSIX error
+## A refusal by an HTTP CONNECT proxy, and an unreachable one, never reach `failed`: they stop at `waiting` with a POSIX error — and so does a missing permission
 
 **Symptom:** In the same setup, when the proxy answered `401` and closed, the connection's state became
 `waiting(POSIX 57: Socket is not connected)` and never went on to `failed`. With nothing listening on the proxy's
 port it was `waiting(POSIX 61: Connection refused)` (macOS 27.2, 2026-11, measured against both a real Proxmox VE
 spiceproxy and a local listener). The HTTP status code cannot be read through the API.
+**An application without the Local Network permission also ends up in `waiting`, with POSIX 50 (Network is down)**
+(same system, measured with the application itself started by `open`). The unified log shows the path to the proxy
+as `unsatisfied (Local network prohibited)`. The value differs from the `.dns(-65570)` a connection without a proxy
+reports.
 
 **Why:** Presumably `waiting` means "retry when the path changes" and the OS treats a proxy's refusal as transient
 too (not investigated).
 
 **How to apply:**
 - An establishment that waits only for `ready` and `failed` waits out its whole deadline when a proxy says no. For a
-  connection that names a proxy, treat a `waiting` state carrying a POSIX error as final and fail at once.
+  connection that names a proxy, treat as final **only the two measured values (57 and 61)** and fail at once.
+- **Do not make every `waiting` state with a POSIX error final.** That was the first implementation: a missing
+  permission (50) was taken for a proxy refusal and reported as "the ticket expired", and because it failed at once
+  the retry the OS performs after the user allows access never happened. Every first-time user hits this on the
+  first attempt. Leave 50 to the OS, and only if the deadline passes first say "allow local network access".
 - Give that failure a type of its own. Folded into the same "connection failed" as TLS failures and timeouts, it
   leaves no way to tell the user apart "obtain a new ticket" and "check the certificate".
 - Where a time-limited ticket is handed to a proxy, this is how "expired" shows up.

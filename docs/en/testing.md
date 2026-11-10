@@ -2184,6 +2184,30 @@ outer field first trigger it).
   write does not fail (the first regression test written here passed on the unfixed code for that reason). Check
   that the test fails on the code before the fix.
 
+## Reaching a LAN peer from `swift test` is not evidence that the application can — the Local Network permission belongs to whatever launched the process
+
+**Symptom:** A macOS application gained a route to virtual machines through a proxy on the LAN. The real-node check
+ran from `swift test` and went as far as a received frame and sent input, against a container and a VM. The
+documents said "verified on a real node". When the user opened the built application from Finder, the first
+connection failed at once. The unified log held `unsatisfied (Local network prohibited)` (macOS 27.2, 2026-11).
+
+**Why:** The Local Network permission attaches to the "responsible application" that launched a process. A child of
+`swift test` runs on the terminal's (or editor's) permission; the application itself is launched by LaunchServices
+and needs its own. The test was checking one layer outside the one the user uses.
+
+**How to apply:**
+- Do not write "verified" for anything that reaches a peer on the LAN until the built application, started with
+  `open`, has done it.
+- Where a human step such as a confirmation screen is in the way, make a temporary build that approves the candidate
+  by itself and writes the outcome to standard error, and start it with
+  `open -n --stderr <file> -a <App> --args …`: that measures automatically under the application's own permission.
+  Do not ship that change (leave no entry in the product that skips confirmation).
+- The state without the permission can only be produced by the user switching it off in System Settings. If there is
+  a value to measure, build the means of measuring first and ask second (here the asking came first, the means
+  turned out insufficient, and the user was asked three times).
+- In zsh `log` is a builtin, and `log show …` ends without printing anything. Read the unified log with
+  `/usr/bin/log`.
+
 ## Do not check an interoperating peer more strictly than the reference implementation does — servers that pad exist
 
 **Symptom:** A SPICE client library required a cursor's data length to equal the size it computed. One server
