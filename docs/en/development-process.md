@@ -1939,3 +1939,28 @@ independently of the rule.
 - Before adding a rule where two copies of the same computation exist, **make them one, and first confirm the
   existing tests pass with their expectations unchanged and the rule not yet in**. A rule added to one copy makes
   two commands disagree about the same number.
+
+## "Out of scope" in a verification bounds the question; it is not a reason to leave a defect that was found
+
+**What happened:** A pre-release independent verification reported three defects outside the question it was
+asked (an infinite loop that predated the change, a config value that overflowed, a screen's colours left
+stale). They were left unfixed as "older than this change", "not a realistic value" and "outside the design",
+the release went out, and they were listed at the end of the report as remaining. The owner's response: leaving
+a defect you know of, or a potential one, is a wrong.
+Fixing them turned up one more while looking into the first three (a `NaN` in the config classified nothing),
+and the next verification, asked also to "list any other defect you notice", listed seven (a misspelt config key
+skipped without a word, a false warning on every call after a fresh install, and so on).
+
+**Why:** Narrowing the question put to a verifier to "conformance to the design" is what makes verification
+converge. That line had been reread as permission to ship defects that had been found. Shipping with the defect
+located is worse than shipping without knowing.
+
+**How to apply:**
+- Keep the question to the verifier narrow, and **ask separately for "any defect noticed in what you read, one
+  line each"**. Defects outside the question then arrive without being mixed into the findings.
+- A defect that is listed is **reproduced, fixed and tested within that piece of work** and goes into the same
+  release.
+- What may be left is what is not a defect (a request to change the design, a preference). What is to be
+  accepted as a design residual is written into the design with its reason and an upper bound on its size, and
+  put to the owner. Do not decide "accepted" yourself.
+- The discipline of not widening scope is about **features and design**. It does not apply to fixing defects.

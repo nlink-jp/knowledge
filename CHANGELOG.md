@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-11 (defects a verification found outside its question)
+
+From a work-time logger's release, where defects reported outside the
+verification's question were first left and then fixed.
+
+- **testing** (ja + en): new entry. A loop that advances by rebuilding a time
+  from calendar fields stops on the night the clocks go back; advance by adding
+  to the instant, split local hours on UTC quarter-hours, and test zones the
+  development machine is not in.
+- **development-process** (ja + en): new entry. "Out of scope" bounds the
+  question put to a verifier, not what gets fixed; ask separately for defects
+  noticed, and fix them in the same release.
+
 ## 2026-11-11 (a neighbour-dependent rule added at aggregation time)
 
 From counting the minutes between leaving a desk and the display sleeping as

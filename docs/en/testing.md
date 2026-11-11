@@ -2233,3 +2233,32 @@ happened to send none, so the strict check had never been exercised.
   the peer's implementation, is the fast way.
 - In a test environment with one implementation of the peer, such a check has not been shown to pass. When a
   peer of another implementation becomes available, run it once as far as a displayed frame.
+
+## A loop that advances by rebuilding a time from its calendar fields stops on the night the clocks go back — advance by adding to the instant you have
+
+**What happened:** Code that splits a span at every local hour found the next hour with
+`time.Date(y, m, d, hour, 0, 0, 0, loc).Add(time.Hour)` (Go). On the night summer time ends and the 1 o'clock
+hour happens twice, `time.Date` resolves the repeated time to its **first** occurrence. Called from inside the
+second one, it returns "the first 01:00 plus an hour" — the second 01:00 it is already in — which equals the
+start, and the loop never advanced. An aggregation command looped forever over any range containing that night
+(reproduced with America/New_York on 2026-11-01; it cannot happen in Japan time, so it never showed on the
+development machine).
+The first fix ("add what is left of the hour to the current instant") stopped the hang, and verification then
+found the next case: **where the clocks change part-way through an hour** (Pacific/Chatham changes at 03:45) the
+next local hour is not sixty minutes away, and one piece spanned two local hours.
+
+**Why:** A function that builds a time from calendar fields rounds a repeated or non-existent local time one way
+or the other. The result is not guaranteed to be later than the instant you hold.
+
+**How to apply:**
+- A loop that advances through time **adds a positive duration to the current instant, and does not rebuild
+  from calendar fields**. Shape it so that having advanced can be checked inside the loop.
+- To split at local boundaries, walk the UTC quarter-hours and stop at the first that "begins a local hour" or
+  "carries a different UTC offset". Every offset in current use is a multiple of fifteen minutes, so every local
+  hour start and every clock change falls on one (historical local mean time is another matter).
+- Test **the night the clocks go back, the night they go forward, a zone that shifts by thirty minutes (Lord
+  Howe) and one that changes part-way through an hour (Chatham)** across a year, judging "every piece lies
+  inside one local hour" and "the lengths sum to the whole". An infinite loop stops the test run, so run it in
+  another goroutine and fail on a timeout.
+- A defect that cannot happen in the development machine's time zone is found only if the tests name other
+  zones.
