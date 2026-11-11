@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-11 (a neighbour-dependent rule added at aggregation time)
+
+From counting the minutes between leaving a desk and the display sleeping as
+absence, in a work-time logger that stores only raw samples.
+
+- **development-process** (ja + en): new entry. A rule that judges a span by its
+  neighbours answers differently at the edges of what was read; padding and
+  clipping to fix that changes the output even with the rule off; a rewritten
+  list can mislead a routine that used it as a marker; and two copies of a
+  computation are made one before a rule is added to either.
+
 ## 2026-11-11 (a day-column chart whose labels were never thinned)
 
 From redrawing a work-timeline chart so that 90 day-columns fit one window.

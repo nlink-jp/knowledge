@@ -1906,3 +1906,36 @@ inference. Whether the tool can run on this machine now is answered by one comma
 An audit rated as high that piped stdin without `-p` runs as typed input, `!` commands included. It was implemented as a breaking refusal and taken through two reviews before the question was asked of it: this was the specification, recorded in an ADR, and it happened only when the operator composed the pipe themselves, the shape of `curl … | bash`. It was withdrawn and documented instead. The same audit's finding that an unasked sandbox lane could write what approved builds trust needed nobody's act and broke a recorded guarantee, and fixing it was right.
 
 **How to apply:** before proposing a fix, answer two questions: does this happen unasked, or does the operator have to compose it, and is there a decision record for the behaviour? When the operator's own act is required, the default is to state the behaviour where it is read and record the residual. When offering choices, include "this is not a defect", not only ways to fix it.
+
+## A rule that judges by its neighbours answers differently at the edges of what was read — and machinery to fix the edges changes the output even with the rule off
+
+**What happened:** A rule was added at aggregation time over a list of recorded spans: "a no-input span of at
+most ten minutes directly followed by an absence counts as the absence". The rule looks at the neighbouring
+span, so a span straddling the start of the read looks shorter than it is, and a span just past the end is not
+seen. The first draft of the design removed this by padding the read on both sides and clipping to the window.
+An independent verification (the design against the existing code, one pass) found:
+- The padding needed is longer than drafted (behind: the rule's limit + its confirmation time + the largest
+  sample gap).
+- Padding and clipping **change the output even with the rule set to 0**. The existing totals counted only "from
+  the first to the last sample inside the window"; clipping newly counts the fractions at both ends and a sleep
+  straddling the window's start.
+- A span that looks short at the head of a read, once rewritten by the rule, fuses with its neighbour into "a
+  long absence that is not there" and misleads another routine that uses such an absence as its marker (deciding
+  how far back to read).
+
+**Why:** A context-dependent rule over a windowed list lacks context at the window's edges. Machinery that
+fills the gap touches the foundation — what is read and how it is totalled — so it changes behaviour
+independently of the rule.
+
+**How to apply:**
+- If the edge disagreement is "rare and bounded", **leave it and record it in the design as a residual**. Here
+  it arose only when the change fell exactly across a day boundary, and by at most the limit each time. Keep
+  padding-and-clipping as a rejected alternative, with the reason.
+- If you promise "turned off, the output is what it was", write **not touching the read window or how totals
+  are taken** into the design as an item. The promise breaks in the read path, not in the pure functions' tests.
+- At design time, look for any routine that uses the rewritten list as **a marker for a different purpose**. If
+  there is one, have it judge on the list before the rewrite (and when the rewrite is one-directional, say which
+  direction is the safe one).
+- Before adding a rule where two copies of the same computation exist, **make them one, and first confirm the
+  existing tests pass with their expectations unchanged and the rule not yet in**. A rule added to one copy makes
+  two commands disagree about the same number.
