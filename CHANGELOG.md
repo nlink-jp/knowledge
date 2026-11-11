@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-11 (a day-column chart whose labels were never thinned)
+
+From redrawing a work-timeline chart so that 90 day-columns fit one window.
+
+- **macos-gui** (ja + en): new entry. A Swift Charts string axis labels every
+  category whatever `AxisMarks(values:)` is given, a label wider than its column
+  is truncated unless it has a fixed width, and a gradient on a bar spans that
+  bar's own extent — found only by rendering the widest case and looking.
+
 ## 2026-11-11 (a SPICE client reaching guests through an HTTP CONNECT proxy)
 
 From adding a virtualisation platform's proxy route to a macOS SPICE client,

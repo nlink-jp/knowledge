@@ -2015,3 +2015,27 @@ too (not investigated).
 - Give that failure a type of its own. Folded into the same "connection failed" as TLS failures and timeouts, it
   leaves no way to tell the user apart "obtain a new ticket" and "check the certificate".
 - Where a time-limited ticket is handed to a proxy, this is how "expired" shows up.
+
+## A Swift Charts string axis is not thinned by `AxisMarks(values:)`, and a label wider than its column is truncated
+
+**What happened:** In a bar chart with one column per day (x is a date string), passing a thinned array to
+`AxisMarks(values:)` to get about twelve labels still labelled every column, at 30 days and at 90. Deciding inside
+the closure — emit `AxisValueLabel` only when the value is in the set to show — did thin them (macOS 27.2,
+2026-11, measured by writing an `NSHostingView` hosted in a window out as an image).
+Once thinned, a label wider than its column (about 9pt at 90 days) was truncated to one or two characters.
+`.fixedSize()` on the `Text` changed nothing; `AxisValueLabel(collisionResolution: .disabled)` together with a
+fixed `.frame(width:)` on the `Text` showed the whole label (both were changed at once, so which one mattered was
+not isolated). The rightmost label runs past the plot area and is cut, so the chart was given trailing padding.
+
+Confirmed in the same work: a `LinearGradient` given to a `BarMark` through `foregroundStyle` spans **that bar's
+own extent**, not the whole plot area (checked numerically: the colour at a bar's top matched the data of that
+bar's first slice).
+
+**Why:** Not investigated. A string axis appears to place a mark on every category and fit each label to its
+band (inferred).
+
+**How to apply:**
+- To thin the labels of a string axis, do not rely on `values:`; decide inside the closure what to emit.
+- Where columns get narrow, give labels a fixed width and leave padding for the label at the edge.
+- Whether an axis setting took effect cannot be read from the code. **Render the screen at the largest column
+  count and look at it.** This defect was invisible in the wide-column 7-day view, and every existing test passed.
