@@ -2262,3 +2262,31 @@ or the other. The result is not guaranteed to be later than the instant you hold
   another goroutine and fail on a timeout.
 - A defect that cannot happen in the development machine's time zone is found only if the tests name other
   zones.
+
+## "The output did not change" is the wrong yardstick when the old output came from a partial read — compare with what the whole record gives
+
+**What happened:** A work-time logger's commands each read a slice of the record (the window asked for, plus a
+fixed margin) and applied rules that judge a span by its neighbours. To make two commands agree, the read was
+extended with the one sample before it and the one after it. The design said the other commands' output would
+not change, and the tests pinned exactly that. A fuzz run in verification (600 random records, 7,200 runs)
+found 221 changed outputs. Every one of them equalled the result derived from the **whole** record: the old
+read had been wrong wherever a break longer than the margin cut it short, and the change had corrected it. The
+tests were pinning the old error.
+Two further defects came from the added samples themselves. A neighbour inserted with its real state became a
+sliver of a session at the head of the read; and when the read held nothing else, a neighbour inserted as a
+marker was reported as the current state.
+
+**Why:** "Unchanged from before" measures the distance from the previous implementation, not from the truth. For
+a function over a partial read, the truth is defined: it is the same function over everything, cut to the
+window.
+
+**How to apply:**
+- When a command reads part of a record, write the test as **"the output equals the derivation from the whole
+  record, cut to the window"**, over random records that include breaks longer than the read margin. Keep
+  "unchanged" only as a check on real data, and treat a difference there as a question, not a failure.
+- State in the design what a change to the read *is allowed to* change, and where. "Nothing changes" is a claim
+  to be measured before it is written.
+- A sample added only to give the rules a neighbour is a **marker**: give it the neutral state the gap already
+  implies, never let it stand alone as data, and test the read that contains nothing but the marker.
+- Keep every rule's reach (the longest span it can look across) inside the read margin by limiting the settings;
+  a setting longer than the margin makes the same day answer differently by window.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-12 (a partial read compared with the whole record)
+
+From making a work-time logger's totals and its timeline read the same samples.
+
+- **testing** (ja + en): new entry. "The output did not change" pins the old
+  error when the old output came from a partial read; test against the
+  derivation from the whole record, treat a sample added as a neighbour as a
+  marker, and keep each rule's reach inside the read margin.
+
 ## 2026-11-11 (defects a verification found outside its question)
 
 From a work-time logger's release, where defects reported outside the
