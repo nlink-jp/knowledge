@@ -2039,3 +2039,44 @@ band (inferred).
 - Where columns get narrow, give labels a fixed width and leave padding for the label at the edge.
 - Whether an axis setting took effect cannot be read from the code. **Render the screen at the largest column
   count and look at it.** This defect was invisible in the wide-column 7-day view, and every existing test passed.
+
+## In a Swift Charts horizontal bar chart, the string axis labels were drawn on top of the bars
+
+**What happened:** A per-item horizontal bar chart (y is the item name as a string, x an amount) emitted
+`AxisValueLabel` from `AxisMarks(position: .leading)`. The labels were drawn **inside** the plot area rather than
+to its left, pushed to the top of each band, over the bars and over the amount annotated at each bar's end, at
+every window size (macOS 27.2, built against the macOS 27 SDK, 2026-11; confirmed by capturing a window that was
+actually on screen). `AxisMarks(preset: .extended, position: .leading)` with `AxisValueLabel(centered: true)` moved
+the labels out to the left, but they did not line up with the band centres and a long item name took the width,
+squeezing the bars to a few points. The chart was dropped for plain SwiftUI rows — name and amount on one line,
+the bar as that row's background — which read in a box about 170pt wide and depend on no axis behaviour.
+
+The same code sat unchanged in a sibling app forked from the same skeleton, with the same overlap. Both had been
+shipping for months, and every test passed.
+
+**Why:** Not investigated. How it was drawn when it was written (against an older SDK) was not checked.
+
+**How to apply:**
+- For a per-item breakdown in a narrow box, rows of name, value and a background bar are more dependable than a
+  chart with an axis. If nothing needs an axis, do not use a chart.
+- As with the entry above (thinning a string axis), whether an axis setting took effect is not known until the
+  screen is seen. After moving to a new SDK, capture the screens that hold charts in a real window and look.
+- After fixing a display defect in an app made by forking, grep the same place in the fork's source and its other
+  forks, and capture those the same way.
+
+## An overlay that depends on a selection follows the condition the loaded data belongs to, not the selected value
+
+**What happened:** A screen had a picker for the period (7 days, 30 days, this month, …) and a chart whose data
+for that period loads asynchronously. "Draw the budget limit line only for this month" was decided from the
+picker's value. The picker changes the moment it is clicked while the data stays the previous period's until the
+load finishes, so in between — and for good if the load fails — this month's budget line sat across a 90-day
+running total. A pre-release independent review found it by reading the code (a menu-bar usage app, 2026-11).
+
+**Why:** The selection and the data change at different times. A heading that is briefly out of step does little
+harm, but **a line meant to be read against the data** (a limit, a target, an average) shows a false comparison
+for as long as they disagree.
+
+**How to apply:**
+- When data is loaded, keep the condition it was loaded for alongside it, and decide anything drawn over the data
+  from that.
+- Make the decision a pure function and test it, including the case where nothing has been loaded yet.

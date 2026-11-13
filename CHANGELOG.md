@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-13 (labels over bars, and an overlay that followed the picker)
+
+From two menu-bar usage apps' analysis windows.
+
+- **macos-gui** (ja + en): two new entries. A Swift Charts horizontal bar
+  chart drew its string-axis labels on top of the bars, in an app and in the
+  fork it came from; and an overlay read against asynchronously loaded data
+  must follow the condition the data was loaded for, not the picker's value.
+
 ## 2026-11-13 (a patched vendored dependency, and a workaround that did not reach)
 
 From an image-generation CLI's release, where a pre-release review found a
