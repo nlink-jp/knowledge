@@ -2562,5 +2562,8 @@ written down as data.
   anything displayed or recorded. An error that is not an API error is not transient by its text.
 - Set the jitter explicitly, as a fraction of the base, in one constructor every retry loop shares, and pin
   the lower bound of the first wait with a test over many samples.
+- Pin the call sites in the source as well (one constructor, and each loop calls it). A timing assertion on
+  the loop cannot do it: a loop put back on the old jitter passed such a test in 8 of 40 runs, because a wait
+  drawn from the old range lands inside the new bounds a quarter of the time.
 - When recording an upstream failure, keep the status code and the machine-readable status token only. The
   message is free text that can quote back what was sent (see the security entry on upstream error text).
