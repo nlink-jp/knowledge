@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-13 (a patched vendored dependency, and a workaround that did not reach)
+
+From an image-generation CLI's release, where a pre-release review found a
+regression the catalog models could not show.
+
+- **build-and-packaging** (ja + en): two new entries. A local patch to a
+  vendored dependency needs applying, rebuilding and verifying checked
+  separately, and in a nested submodule the defaults fall short of each; and a
+  workaround through a dependency's settings leaves what the settings do not
+  reach, found by building an input that meets exactly one condition.
+
 ## 2026-11-12 (a partial read compared with the whole record)
 
 From making a work-time logger's totals and its timeline read the same samples.

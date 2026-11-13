@@ -249,3 +249,70 @@ from the observed behaviour; the toolchain source was not read).
   same build without cgo reported `minos 13.0` (measured).
 - The Homebrew formula template declares no minimum macOS, so on an older OS the tool installs
   and then fails to start. State the minimum OS in the README.
+
+## A local patch to a vendored dependency needs applying, rebuilding and verifying checked separately — in a nested submodule none of the defaults is enough
+
+**Symptom:** An image-generation CLI (image-forge) patched one function in a submodule of the C++
+library it vendors. The patch was kept as a file, applied before the build, and checked for
+presence. An independent review found three gaps in that arrangement (each measured in a throwaway
+repository and with `make -n`, 2026-11-13).
+
+1. **The library was rebuilt "when older than the patch file".** Moving the submodule pointer does
+   not change the patch file's time. The library is not rebuilt, and the old one can be linked as
+   it is.
+2. **The check looked only at the patched directory, against the index.** A hand edit in the outer
+   library's sources, a local commit in the inner checkout and an untracked file all passed.
+3. **`ignore = dirty` in `.gitmodules` also removed `-dirty` from the version.** The setting is
+   needed, because the patch makes the working copy differ from the pinned commit at all times.
+   With it, `git describe --dirty` returns a clean version however the vendored tree is edited.
+
+**Why:** All three come from building the arrangement around "apply the patch" alone. Make's file
+times know nothing of git pointers. `git diff` compares the working tree with the index by default.
+`ignore = dirty` quiets status output, and does not let you choose what goes quiet.
+
+**How to apply:**
+- Run the vendored library's build every time and let its own build system (cmake, say) decide
+  what is stale. An up-to-date tree costs a few seconds. Apply the patches just before it, every
+  time (a no-op when they are applied).
+- Verify the vendored checkout and every submodule inside it. For each: it sits on the commit its
+  parent records (the line prefix of `git submodule status --recursive`), it has no untracked
+  file, and its difference from the pinned commit (`git diff HEAD --numstat`) equals what its
+  patches change. A directory with no patch must show no difference.
+- Once `ignore = dirty` is in use, treat the version string as no longer reflecting the vendored
+  tree, and put the check above on every path that produces a binary.
+- Write the order for moving the pointer (remove the patches, move it, build) at the top of the
+  verification script. `git submodule update` with a patch applied is either refused or carries
+  the edit across unexamined.
+- If the check compares only names and line counts, say so. The document that said "a hand edit
+  cannot be linked into a binary" claimed more than the check implemented.
+
+## Working around a dependency's defect through its settings leaves what the settings do not reach — build an input that meets exactly one condition and measure
+
+**Symptom:** After updating the same library, the GPU backend aborted on models holding one weight
+format (one-byte FP8). The library has a setting that converts tensors matching a name rule to
+another type as they are read, and that was used to convert the affected files. Every catalog model
+worked. The independent pre-release review read in the library's source that some tensors are
+exempt from any rule. No real file of that kind was at hand. A copy of an existing checkpoint with
+a single tensor rewritten in that format aborted on the new version and rendered on the released
+one (measured). That settled it as a regression; the settings workaround was dropped and the
+function at the cause was patched.
+
+Before that, the reason for the abort itself was invisible. The library discards every log line,
+its backend's errors included, unless a receiver is registered. Only with one registered did the
+name of the missing kernel appear (measured).
+
+**Why:** A setting reaches only as far as the dependency arranged. That extent is in the
+dependency's source, and when your own test subjects (the catalog models) happen to sit inside it,
+every check passes.
+
+**How to apply:**
+- When avoiding a dependency's defect through a setting, read in its source the conditions under
+  which the setting is **not applied**: exemption lists, branches on type, alternative paths.
+- If nothing at hand meets such a condition, make it. A copy of an existing input with one element
+  rewritten can often be produced by rewriting the header and appending data. Run it through both
+  the new version and the released one; if only one fails, it is a regression.
+- When something "just crashes with no reason", first check whether the dependency is discarding
+  its logs. A library that needs a callback registered says nothing without one.
+- Once the setting is known not to reach, switch to fixing the place of the cause (a patch, an
+  upstream report). Enumerating the unreached cases on your side and refusing them means carrying
+  a copy of the dependency's exemption list.
