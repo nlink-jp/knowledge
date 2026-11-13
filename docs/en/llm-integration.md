@@ -2502,3 +2502,65 @@ request that failed.
   README as things the tool's figures do not include.
 - Hand an independent verifier the **text that was read**, not the conclusion, and have the numbers derived from
   it again. A gap in the reading then shows to the verifier as a gap in the text.
+
+## When an agent session is slow and costly, count where the prompt went before changing anything — the cache follows the age of the previous request, and a large context outlasts it
+
+**Symptom:** An agent runtime on a hosted frontier model felt slow and its bill was mostly input tokens. A
+read-only count over the operator's own transcripts (one account, 30 days, a little over 200 main-loop calls, almost all
+on one model) found: 88% of the list-price cost was prompt tokens *not* served from the provider's implicit
+cache; output and thinking together were 5%; the tools themselves were 1% of the waiting time and the model
+87%. Sorting the calls that repeat the previous call's prompt by how long before their start the previous
+call *started*, the share that hit the cache fell steadily — 98% under 30 s, 85% to 60 s, 69% to 120 s, 52%
+to 300 s, 10% past 900 s — while sorting by how long ago the previous call *ended* showed misses even when the
+next request went out within 30 s (27% of those calls). At contexts over 150k tokens one call took 45–137 s,
+so the next request already found an old prefix: a miss made the call slow, and the slow call made the next
+miss. One call after a tool list changed re-read the whole context at full price, every time (4 of 4).
+
+**Why:** The provider's documents describe the implicit cache as best-effort and do not state how long a
+prefix is kept; what the account showed is an observation of one month, not a rule. What is documented, and
+was not known to the runtime's design, is that the same provider's newest model family does not support
+explicit (paid, guaranteed) caching at all, and that its pay-as-you-go tier gives that family a quarter of
+the prioritised tokens-per-minute of the cheaper family — a single request from a long session can exceed it.
+A design decision taken on an older, faster model ("the implicit cache hits 97% of the time, so explicit
+caching is not worth building") had quietly stopped being true when the model changed, and nothing in the
+runtime's own display said so, because a hit rate averaged over a session hides that the misses cluster.
+
+**How to apply:**
+- Count before designing: cost by cached / uncached input, output and thinking; waiting time by model, judge
+  calls, tools and operator; main-loop calls by prompt size and by time since the previous call. All of it is
+  in the transcripts if every model call writes a usage record with the cached count.
+- Sort cache hits by time measured **to the call's start**, from the previous call's start and from its end,
+  as two tables. A table that measures to the call's own end sorts slow calls by their own length (see the
+  testing entry on self-selecting buckets).
+- Separate the calls whose prefix was necessarily new (session start, compaction, resume, a changed tool list
+  or system prompt) from the ones that repeat. Only a miss among the repeats is a question.
+- Re-read the provider's model page when the model family changes: caching modes, throughput tiers, token
+  limits and rejected parameters are per family, and "it runs" does not show which of them moved.
+- Write the mechanism as a hypothesis with its counts. The lever that does not depend on the hypothesis —
+  a smaller context makes calls shorter and cheaper whether or not the cache behaves as observed — is the one
+  to pull first.
+
+## A retry loop decides from the error's status, never from digits in its text — and a backoff's default jitter can exceed its base
+
+**Symptom:** A pre-release review of a new "this call was retried" record found two defects in the retry
+loops it was about to describe. (1) One loop decided whether to retry by searching the error's text for
+"429", "500", "502", "503", "504". A transport error quotes the request's address and port, and an API
+refusal can mention another status in its message, so `read tcp 10.0.0.5:50234` was a "502" and was sent
+again up to four times; the cause reported for a real 503 that mentioned a 429 was "429". (2) Both loops
+built their backoff with a 500 ms base and the helper library's default jitter of a full second either way.
+The first wait was therefore uniform over −0.5 … 1.5 s clamped at zero: one first retry in four fired with no
+wait at all. A test that asserted a positive delay failed in about half its runs, which is how it was found.
+
+**Why:** The text check predates a typed error from the SDK and was never revisited; it works on every error
+a developer tries by hand. The jitter default is sensible for the library's own default base of several
+seconds and was inherited without looking at the ratio. Neither shows up in normal use — an immediate retry
+on a 429 mostly just fails again and the next step waits — and both become visible the moment the retry is
+written down as data.
+
+**How to apply:**
+- Take the status from the error value (`errors.As` to the SDK's API error) for both the decision and
+  anything displayed or recorded. An error that is not an API error is not transient by its text.
+- Set the jitter explicitly, as a fraction of the base, in one constructor every retry loop shares, and pin
+  the lower bound of the first wait with a test over many samples.
+- When recording an upstream failure, keep the status code and the machine-readable status token only. The
+  message is free text that can quote back what was sent (see the security entry on upstream error text).

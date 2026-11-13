@@ -2290,3 +2290,28 @@ window.
   implies, never let it stand alone as data, and test the read that contains nothing but the marker.
 - Keep every rule's reach (the longest span it can look across) inside the read margin by limiting the settings;
   a setting longer than the margin makes the same day answer differently by window.
+
+## A table whose buckets are measured to the row's own completion sorts the slow rows by themselves — measure to the start
+
+**Symptom:** A usage report sorted model calls by "seconds since the previous call" to show how cache hits
+fall with time. The gap ran from the previous call's end to *this call's end*, because that is where the
+record is written. A pre-release reviewer recounted with the gap ending at the call's start: 139 of 199
+calls changed bucket. In the original table the 120–300 s row held 54 calls and 33 misses; 26 of those 33
+had been sent within 30 s of the previous answer, and for misses in the late rows the call itself was a
+median 94% of the gap. The documents read the late rows as "the cache had let go by then" — a cause the
+table could not show, since a miss is slow and a slow call lands in a late row whatever the cause.
+
+**Why:** The bucketing variable contained the outcome. A miss makes a call long; the call's length was part
+of the gap; so the outcome chose its own row. The code was correct against its definition, and an independent
+recount of that definition matched on every row — nothing but a second definition could show it.
+
+**How to apply:**
+- A bucket key must be fixed before the thing being measured happens. For a call: measure to its start, never
+  to the record written when it ends.
+- When asking a reviewer to recount, ask also for one alternative definition of each key and the number of
+  rows that move. Agreement on the author's definition says the code is right, not that the definition is.
+- Write under a distribution table what it shows and that it does not show why; move causal sentences out of
+  the README until something other than the table supports them.
+- In fixtures, give every event that should independently change a result its own timestamp. Two events at
+  the same instant cover for each other: 12 of 26 mutants survived tests whose fixtures did this, and 13 of 13
+  were killed once each start-moving record had a time of its own.
