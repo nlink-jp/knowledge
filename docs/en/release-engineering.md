@@ -691,3 +691,54 @@ asks for is the first one skipped in a hurried release.
   packaging defect from the developer.
 - A local check cannot see whether the asset was uploaded. Say "upload it with the binaries" in AGENTS.md,
   and accept that as the remaining gap.
+
+## A vulnerability scanner's "reachable" is a static call graph — measure which copy of the code runs before writing what was exposed, and make the scan a prerequisite of the package
+
+**Symptom:** A release went out with five HTTP/2 advisories in `golang.org/x/net` that `govulncheck` reports
+as "your code is affected", with traces through the tool's connection to its API. The fix release's notes
+first said the advisories "were reachable from the connection". A reviewer measured instead: a request
+through the tool's client showed every HTTP/2 frame handled by the standard library's bundled copy and none
+by `x/net`, because the tool supplies its own base transport and the auth library takes the `x/net` branch
+only when none is given. The same advisories exist in the standard library, fixed in a later Go release;
+the shipped binaries were built with a newer toolchain and were never exposed. What protected the
+connection was the toolchain version, which `go.mod`'s floor did not require. Separately: the scanner had a
+Makefile target of its own and nothing ran it — the fix commit added the target and, as first written, left
+it just as unconnected.
+
+**Why:** `govulncheck` proves a path exists in the call graph, not that it is taken; a library that chooses a
+transport at run time has both branches in the graph. The standard library vendors its own HTTP/2, so one
+advisory has two homes with two fixes: a module version and a toolchain version. And a check that is only a
+target is a step to remember, which is the kind that is skipped.
+
+**How to apply:**
+- Before stating exposure in release notes, find which implementation the product's connection actually uses
+  (a stack capture or frame count against a local server is enough), and name what was measured and what is
+  the scanner's inference.
+- For advisories that also list `stdlib`, raise `go.mod`'s `go` line to the fixed release, and check the
+  toolchain that built the published artifact — that binary, not the source tree, is what was shipped.
+- Make the scan a prerequisite of the packaging target, not of the everyday check: it needs the network and
+  its database moves under an unchanged tree, which is acceptable at a release and noise in a commit loop.
+- Update the module anyway. Removing the affected code from the build is cheaper than arguing it is unused.
+
+## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
+
+**Symptom:** While rewriting the unreleased part of a changelog by script ("replace from the Unreleased
+heading up to the first Documentation heading"), the unreleased part had no Documentation heading. The first
+one in the file belonged to the previous, already released version, so the edit deleted that version's
+heading and two of its sections. The tree was committed, tagged and pushed in that state. It surfaced one
+step later, when the script that cuts the release notes out of the changelog failed to find the previous
+version's heading — and because that script was a separate line, not chained, the next command created the
+release with an empty body.
+
+**Why:** A range between two text anchors is only as narrow as the second anchor is unique within the
+intended span; "the first occurrence after A" silently reaches into the next section. Diff statistics do not
+show it — the edit both removed and added about as many lines as expected. And a multi-line shell call keeps
+going after a failed line unless the lines are joined.
+
+**How to apply:**
+- End a range edit at the next heading of the same level, or assert that no heading lies between the two
+  anchors before writing. After a changelog edit, list its version headings and compare with the tags.
+- Generate release notes into a file, test that it is non-empty (`test -s`), and chain the release command to
+  that test.
+- A published tag keeps what it pointed at: repair forward with a commit that says what happened, and fix
+  the release body with an edit, not by re-tagging.

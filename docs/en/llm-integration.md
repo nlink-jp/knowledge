@@ -2567,3 +2567,36 @@ written down as data.
   drawn from the old range lands inside the new bounds a quarter of the time.
 - When recording an upstream failure, keep the status code and the machine-readable status token only. The
   message is free text that can quote back what was sent (see the security entry on upstream error text).
+
+## An SDK update that compiles and passes every test can still change what a call does — run the old and the new against one local endpoint
+
+**Symptom:** A model provider's Go SDK was moved six minor versions forward in an agent runtime. One line of
+`go.mod` changed, the code compiled, and the whole test suite passed unchanged. The update nevertheless
+carried two changes in what one model call does. (1) A new default, listed under Features: when a response
+ends with a continuation token the SDK sends the same request again and reports the usage of all such
+requests added together — which would have broken the runtime's per-call usage record, its record of every
+re-send, and a compaction trigger that reads the prompt count as the conversation's size. It was found by
+reading the changelog. (2) A change listed under Bug Fixes: an error the endpoint sends *as a stream event* is
+now raised; the old version decoded it as an empty chunk, so a call came back as a success holding nothing,
+or holding half an answer with no sign of the cut. Reading for new defaults missed it; a reviewer found it by
+serving the same responses from one local endpoint to a tree on each version and comparing. The same probe
+found that the new version dereferences a null candidate in a stream chunk before the caller's own guard can
+see it — a panic inside the caller's loop.
+
+**Why:** A test suite pins the caller's code against the dependency it was written with. Behaviour that lives
+only in the dependency — what it does with a response shape the tests never serve — is pinned by nothing, so
+neither its loss nor its arrival fails a test. Changelogs sort by the author's view of the change (feature,
+fix), not by whether a caller's contract moves.
+
+**How to apply:**
+- For a dependency that sits between the product and a remote service, keep a local fake of the service and,
+  on update, run every response shape the product handles against the old and the new tree: a normal answer,
+  an error as status and as an in-band event, before and after output, a cut stream, a malformed chunk, and
+  whatever the new version adds. Diff the requests sent and the results returned.
+- Decline a new default that sends requests the product does not see, explicitly, on every call site, and
+  hold it with a control test that shows the default still does what you declined — otherwise the test goes
+  quiet when the dependency changes again.
+- Pin wanted behaviour that the dependency provides with an offline test of your own, even when you wrote no
+  code for it.
+- Put a recover at the boundary where a dependency's reader runs inside your loop if a panic there would
+  take a terminal UI down; report it as the call's error.
