@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-13 (a pricing page's missing row and its footnotes)
+
+From a usage tool's price sync for a newly released model.
+
+- **llm-integration** (ja + en): one new entry. A check against a pricing
+  page records the rows the page did not print and the charges that appear
+  only in footnotes, and the independent verifier is given the text that was
+  read rather than the conclusion.
+
 ## 2026-11-13 (labels over bars, and an overlay that followed the picker)
 
 From two menu-bar usage apps' analysis windows.

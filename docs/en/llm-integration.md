@@ -2477,3 +2477,28 @@ becomes a refusal and a re-ask.
   sub-agent.
 - Budget a re-ask rate in the cost estimate and update it from measurements
   (22% in this run, six of them from the parent's wording).
+
+## When checking against a pricing page, record the rows it did not print and the charges that live only in footnotes
+
+**What happened:** While adding a new model to a usage tool's rate table, the existing models were re-checked
+against the pricing page and the verification date was bumped. A pre-release independent verification was handed
+"what was read from the page" and told to recompute the numbers, and found two gaps. (1) The output-price row of
+one preview model was **absent** from that day's standard table. The value was carried forward, yet the text still
+said every figure had been re-verified with no change (the same day's priority and batch tables matched 1.8× and
+0.5× of the carried value). (2) A footnote under the table said a long completion is charged even when the request
+ends in a timeout, effective on the very day of the work — a charge with no column in the table, mentioned in no
+document (the Vertex AI pricing page, 2026-11; no row carried the footnote's mark, so which models of the section
+it covers could not be told).
+
+**Why:** A check tends to become "do the values on the page match mine", and a value that is **not there** does
+not show up as a difference. A footnote has no column, so it falls away when the page is copied into the shape of
+a rate table. A tool that counts only calls that returned a response cannot, by construction, show a charge for a
+request that failed.
+
+**How to apply:**
+- When bumping a verification date, write separately what was confirmed from values the page printed and what was
+  carried forward because nothing was printed. If another table supports the carried value, say so.
+- Read the section's footnotes every time, and put charges that have no column (dated ones especially) in the
+  README as things the tool's figures do not include.
+- Hand an independent verifier the **text that was read**, not the conclusion, and have the numbers derived from
+  it again. A gap in the reading then shows to the verifier as a gap in the text.
