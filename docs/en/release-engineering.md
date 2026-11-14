@@ -720,6 +720,41 @@ target is a step to remember, which is the kind that is skipped.
   its database moves under an unchanged tree, which is acceptable at a release and noise in a commit loop.
 - Update the module anyway. Removing the affected code from the build is cheaper than arguing it is unused.
 
+## Whether an x/net HTTP/2 advisory is fixed by the module or by the toolchain depends on the x/net version and on who built the transport — and a sweep judges the published binaries, not the source trees
+
+**Symptom:** After one tool's HTTP/2 advisories turned out to be the toolchain's (the entry above), the same
+advisories were found in seven more tools on the same SDK, and the same conclusion did not hold (2026-11, a sweep
+of 81 repositories). It was measured with each tool's own `go.mod`: a request through the client against a local
+TLS server, with the stacks captured while the client waited. With `x/net` v0.38.0 and v0.52.0 the frames were
+handled by `golang.org/x/net/http2`; with v0.56.0 and later, built by Go 1.27, by `net/http/internal/http2`.
+Those tools pass no transport of their own, so the auth library's default calls x/net's
+`http2.ConfigureTransports`; and x/net only became a wrapper around the standard library in v0.56.0, behind a
+`go1.27` build tag. For five tools the fix was the module, and no toolchain would have fixed it. Separately,
+`go version -m` on the published darwin assets of 74 repositories showed 12 built with Go 1.26.4–1.26.5 and 19
+with 1.27.1, each holding 14 to 24 standard-library advisories. The source scan, run under the host's current
+Go, reported none of them. Three repositories built their Linux binaries in a container on a different Go minor
+from the darwin build. One deploy Dockerfile named `golang:1.24` under a `go.mod` that requires 1.26: it had
+been stopping at `go mod download`, and nobody had noticed.
+
+**Why:** Three things decide which copy of HTTP/2 runs: whether the product passes its own transport, the x/net
+version (its own implementation, or the wrapper), and the Go version of the build (the wrapper sits behind a
+build tag). A scan of the source knows none of them. The standard library it judges is that of the toolchain it
+runs under, which says nothing about a binary built months ago, or inside a container.
+
+**How to apply:**
+- Do not carry "the fix is the toolchain" from one tool to the next. Measure per set of dependencies: a program
+  of some 60 lines that copies the tool's `go.mod` and captures the stacks against a local server is enough.
+- In a sweep, fetch each repository's latest release asset, read `go version -m`, and run
+  `govulncheck -mode=binary` on it. That is the list of what shipped. Discount the result on a stripped binary
+  (`-s -w`): an advisory that names whole packages (`x/crypto/openpgp/*`) is reported from the module being
+  present. Before believing it, check with `go list -deps` whether the package is in the build.
+- Set the `go` line to the release whose standard library you rely on, and tie every build image to it. The
+  official `golang` image sets `GOTOOLCHAIN=local`, so a tag below the `go` line stops the build, and a different
+  tag ships a second standard library under the same release tag. Name the image by tag and digest, and move
+  tag, digest and `go` line together.
+- Raising `grpc` to clear a finding can bring the auth library up several minors with it (v0.9 → v0.18 here).
+  Say so in the release notes, and say what the new set was exercised against and what it was not.
+
 ## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
 **Symptom:** While rewriting the unreleased part of a changelog by script ("replace from the Unreleased

@@ -25,7 +25,7 @@ English version: [README.md](README.md)
 
 | ドキュメント | 内容 |
 |---|---|
-| [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数・ライセンス表記、多数のリポジトリを再開できる 1 本のスクリプトで続けてリリース、別アセットの配布物は make package と verify-release で必須にする、脆弱性スキャナの「到達する」は静的な呼び出しグラフ（どの実装が動くかを実測し、スキャンをパッケージの前提に）、2 つのアンカーの間のスクリプト編集が次の節に届く・空の本文でリリースを作らない |
+| [release-engineering](docs/ja/release-engineering.md) | 署名・notarization・Homebrew tap・リリースアーカイブ・版数・ライセンス表記、多数のリポジトリを再開できる 1 本のスクリプトで続けてリリース、別アセットの配布物は make package と verify-release で必須にする、脆弱性スキャナの「到達する」は静的な呼び出しグラフ（どの実装が動くかを実測し、スキャンをパッケージの前提に）、x/net の HTTP/2 の勧告を直すのがモジュールかツールチェーンか・横断の検査は公開したバイナリを見る、2 つのアンカーの間のスクリプト編集が次の節に届く・空の本文でリリースを作らない |
 | [macos-gui](docs/ja/macos-gui.md) | パネルの状態は自分で持つ（isShown は閉じてから遅れる）、SwiftUI/AppKit の罠、メニューバーアプリ、macOS 27の実現性・間隔検証、リンクした SDK が外観を決める、ビューが正しいときはレイヤーの木を吐く、Wails、書き込み時点では CFPreferences も plist も保存の成否を答えない（失敗は設計の前に本物の対象で測る）、SwiftUI の中身からウィンドウの最小サイズを出すなら並べた結果を測る、`.keyboardShortcut` は届く形ごとに結び付ける、NLLanguageRecognizer の制約に知らない ID を渡すとその言語が判定されない、languageHints は全言語を書いてはじめて見込みになる、AVSpeechSynthesisVoice に言語コードだけを渡すと地域は macOS が選ぶ、失敗の手がかりは名前を含まないコピー用の報告で渡す、Swift Charts の文字列の軸は `values:` で間引けない |
 | [web-ui](docs/ja/web-ui.md) | WebView フロントエンドと自己完結 HTML レポートの CSS/レイアウトの罠 |
 | [mcp-server-design](docs/ja/mcp-server-design.md) | MCP プロトコルの制約、OAuth discovery の限界、stdio 衛生、構造化エラー、LLM 向けツール設計、文書 id 付き offset ページング、ファイル出力先は呼び出しごとの引数、上流の否定は別経路で裏を取る、間引きは天井と同じ尺度で、制御は持ち主の層に置く（資格情報・ランタイム・ツール）、上流の hasNextPage を信用せずカーソルを問い合わせに結ぶ、保存名には縮めた名前とハッシュを |
