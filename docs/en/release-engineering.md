@@ -754,6 +754,12 @@ runs under, which says nothing about a binary built months ago, or inside a cont
   tag, digest and `go` line together.
 - Raising `grpc` to clear a finding can bring the auth library up several minors with it (v0.9 → v0.18 here).
   Say so in the release notes, and say what the new set was exercised against and what it was not.
+- A `govulncheck ./...` gate judges the build for the host's OS only. Run it once per release target as well
+  (`GOOS=windows GOARCH=amd64 govulncheck ./...`): an advisory in an OS-only package — `x/sys/windows` here —
+  is a module-level line on macOS and never stops the gate.
+- Read the level before counting. A table of "advisories per binary" built from module-level lines is not a
+  table of exposure: of 29 binaries listed with 2 to 24 standard-library advisories, 8 linked none of the
+  affected functions (tools that open no network connection). Say which kind a rebuild is in its release notes.
 
 ## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
