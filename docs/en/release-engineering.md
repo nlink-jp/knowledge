@@ -760,6 +760,12 @@ runs under, which says nothing about a binary built months ago, or inside a cont
 - Read the level before counting. A table of "advisories per binary" built from module-level lines is not a
   table of exposure: of 29 binaries listed with 2 to 24 standard-library advisories, 8 linked none of the
   affected functions (tools that open no network connection). Say which kind a rebuild is in its release notes.
+- Gate the build the release makes, not `./...`. A cgo tool that is released under a build tag, or whose
+  vendored tree carries stray Go files, needs the package list and tags of its own build
+  (`govulncheck -tags "$(TAGS)" $(PKGS)`). Bare `./...` stopped at loading in two such tools (`swig` not found;
+  a vendored binding's header missing), and without the tags the cgo bridge and what it imports are not scanned
+  at all. Loading needs the headers, not the built libraries — measured on a clone that held only the include
+  directories — so the gate can still run before the native build.
 
 ## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
