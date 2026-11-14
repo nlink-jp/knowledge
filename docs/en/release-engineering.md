@@ -774,6 +774,13 @@ runs under, which says nothing about a binary built months ago, or inside a cont
   that one finding stops everything. Scan all the builds *before* converting (247 here, all clean), so the
   day the gate widens is not the day releases stop. What this cannot reach: a cgo build for another OS made
   in a container — the host cannot load it, and with `CGO_ENABLED=0` it loads a different build or none.
+- Scan a container-built cgo target inside that container, right before its build, with the build line's own
+  environment (cross `CC` included): `make vuln-linux-native build-linux-native` in the recipe the container
+  runs. It loads there because everything the build needs is there, and it cost under a minute per container.
+  Install the scanner by version as a file target whose path holds the version, outside `GOPATH/bin` — a
+  repository-local GOPATH shared with the host already has the host's binary at that name, and make would
+  take the wrong-OS file for an up-to-date tool. The file target is also what makes the gate provable: mount
+  a stand-in at that path and no install runs.
 
 ## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
