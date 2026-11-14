@@ -766,6 +766,14 @@ runs under, which says nothing about a binary built months ago, or inside a cont
   a vendored binding's header missing), and without the tags the cgo bridge and what it imports are not scanned
   at all. Loading needs the headers, not the built libraries — measured on a clone that held only the include
   directories — so the gate can still run before the native build.
+- A per-platform gate mirrors the build line, not a list of its own: loop over the same platform variable and
+  put the same environment words before `govulncheck` as before `go build` (`CGO_ENABLED=0` where the build
+  sets it, nothing where it does not), and end the line `|| exit 1` — a failing command inside a shell loop
+  does not stop the recipe by itself. Prove both with a stand-in `govulncheck` first on `PATH` that records
+  `GOOS/GOARCH/CGO_ENABLED` and exits 3 for one platform: the record shows what was scanned, the exit shows
+  that one finding stops everything. Scan all the builds *before* converting (247 here, all clean), so the
+  day the gate widens is not the day releases stop. What this cannot reach: a cgo build for another OS made
+  in a container — the host cannot load it, and with `CGO_ENABLED=0` it loads a different build or none.
 
 ## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
