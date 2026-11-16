@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-16 (a thinking level the SDK does not name)
+
+From adding a new model generation's top thinking level to a CLI agent.
+
+- **llm-integration** (ja + en): one new bullet under thought signatures. A
+  level without an SDK constant goes on the wire as its string; models
+  without it refuse it with a 400 rather than ignoring it; the level words
+  live in one list with no per-model table, and the hand-spelled value is
+  held by a test through the real SDK client.
+
 ## 2026-11-13 (a pricing page's missing row and its footnotes)
 
 From a usage tool's price sync for a newly released model.

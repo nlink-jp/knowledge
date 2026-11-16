@@ -59,6 +59,21 @@ code used to work).
   model accepts still varies (some reject `minimal` with a 400) — that is the
   model's support, not the switch failing, so have the failing request's error
   name the level and the way back.
+- **A thinking level the SDK has no constant for can still be sent as its
+  string** (measured in a CLI agent, 2026-11, Go genai v1.77.0). Some Gemini 4
+  models have `XHIGH` above `HIGH`, and the SDK's `ThinkingLevel` had no
+  constant for it. The type is the string that goes on the wire, so defining
+  `"XHIGH"` ourselves and sending it was accepted. Models without it (two
+  others of the same generation and two of the previous one) did not ignore
+  the unknown value: the first request came back 400 `Thinking level is
+  unsupported: THINKING_LEVEL_XHIGH`. A tool call made at `XHIGH`, replayed at
+  another level and back, was accepted too. How to apply: keep the accepted
+  level words in one list, keep no table of which model takes which, and leave
+  the judgment to the API (a table is wrong again with the next model; the
+  refusal is immediate and names the level). Hold a value you spelled yourself
+  with a test that points the real SDK client at a local server and captures
+  the request body — a unit test of the mapping alone does not show that the
+  SDK passes an unknown value through.
 - The inverse does not work: resuming with signatures stripped fails, because a
   function-call Part without its signature is a 400. **Refuse to carry a session
   to a different model** rather than trying — there is no basis for it, and the
