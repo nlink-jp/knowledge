@@ -805,6 +805,37 @@ if left alone.
 - Shipped artifacts (config templates, user-facing docs) name config keys,
   never ADR numbers.
 
+### When a port drops a callback or an argument, count the duties it carried
+
+**Symptom:** A port made the design change "per-session values leave the
+system prompt", and removed, as no longer needed, the "rebuild the prompt"
+callback that the function switching the work directory took. That callback
+was also the only call that applied the instruction files `/clear` re-read.
+From then on `/clear` re-read the instruction files, reported "changed —
+not loaded", and went on with the prompt built at startup. The method that
+replaces the prompt was left with no caller, and every existing test
+passed. It was found when the user manual was checked line by line against
+the implementation (established by reading the code; confirmed after the
+fix by inspecting what a real session sent to the model).
+
+**Why:** A callback is named for when it is called and states one reason.
+In the porting source one rebuild carried two changes (the work directory
+and the instruction files). Looking only at the one that motivated the
+removal lets the other disappear silently.
+
+**How to apply:**
+- Before removing a callback or an argument, count the variables the
+  porting source rewrites just before that call. Anything beyond the one
+  that motivated the removal needs another route.
+- Read a public method left with no caller as a sign that a duty vanished
+  (linters do not report unused methods).
+- "Re-read, then discarded" defects rarely trip behavioural tests; checking
+  user-facing documentation against the code finds them. Where the wiring
+  sits in a closure no behavioural test reaches, pin the call site in the
+  source and write down that it guards one wiring mistake only (the
+  independent review showed by mutation that a control-flow change gets
+  past such a check).
+
 ### Bundle small independent UX polish into one wide-scope ADR
 
 **Symptom:** Five small improvements from live feedback (each <100 lines,

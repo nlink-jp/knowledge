@@ -1328,6 +1328,35 @@ Only a rule keyed on the content itself — a digest pin — can.
 - Edit pins under the policy file's lock against the set the file holds at
   that moment; saving a whole set from a snapshot taken outside the lock
   reverts a concurrent session's re-pin.
+- **Compare against the file as it is at that moment too — not against the
+  copy read at startup.** The copy follows the file only when this process
+  writes it. After `trust --accept` in another terminal, a running session
+  kept answering "changed" until its next start — the very operation its
+  own notice recommends did nothing (measured in two runtimes; `/clear`,
+  the reloads, the note after a `!` command and the check before an
+  approved write all read the same copy). This is the read side of the
+  stale snapshot above.
+- **But once the file is the record, "no pins" fails open.** "No pins" reads
+  as "nothing pinned yet" and loads everything. A policy file that is
+  deleted and then recreated by a session in another project parses, and
+  lacks only this project's pins. The first version of the fix above
+  introduced that hole, and the independent pre-release review demonstrated
+  it with probes. Its second round showed the same state is reachable
+  through **the session's own settings change** (every write replaced the
+  copy with the file; the versions before the fix had this one too). The
+  rule is "the file can re-trust; it cannot un-pin": when the session has
+  pins and the file has none, the session's copy is the record, and it says
+  so. Replace the copy in one function, which keeps pins the file lost. The
+  residue (an approved write in that state records only the one written
+  name, so the rest read as "added" and are left out) fails closed and was
+  accepted in writing — seeding the file from the session's memory would
+  have the session re-create a record the operator removed.
+- **Before writing "never errs toward loading", write what that invariant
+  rests on.** In both cases above the comment and the changelog stated the
+  invariant first, and a route that broke it was found afterwards. The
+  stopping rule was set before the third round ("release if no new route
+  errs toward loading") — severity falling round over round is what
+  justifies stopping.
 - Cost: an `AGENTS.md` edit in an external editor costs one `y` at the next
   start; a `-p` pipeline runs without the changed file until
   `trust --accept`. The residue that cannot be closed (a prepared directory

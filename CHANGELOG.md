@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-17 (the trust record a running session compares against)
+
+From fixing `/clear` and the content pins in two agent runtimes, and the
+three review rounds before their release.
+
+- **security** (ja + en): three new bullets under "Pin an agent's trust to
+  content". Comparisons read the policy file as it is at that moment, not
+  the startup copy; once the file is the record, "no pins" fails open, so
+  the file can re-trust but cannot un-pin; state what an invariant rests on
+  before claiming it, and set the stopping rule before the last round.
+- **development-process** (ja + en): one new entry. A port that drops a
+  callback also drops every other duty the callback carried.
+
 ## 2026-11-16 (a thinking level the SDK does not name)
 
 From adding a new model generation's top thinking level to a CLI agent.
