@@ -181,6 +181,15 @@ answer to an authorization request carrying a made-up client ID.
   the metadata fetch and the shape of the authorization request against the
   real thing. Record the URL instead of opening a browser, then fetch it and
   read the provider's answer.
+- When a user's run comes back, do not stop at "it worked". Pin the observed
+  responses in a test, and sort the design's rules one by one into "acted" and
+  "had no occasion to act". Here the released version connected in the user's
+  tenant at the first attempt. Yet the stand-in built from published documents
+  differed from the real server in three places: which authorization server
+  entry point is named, where the metadata lives, and what the scope list
+  holds. The real server already lists the scope a refresh token needs, so the
+  rule that adds it never acted. The report of success is no evidence that
+  that rule is right.
 
 ### Some requirements of the MCP authorization specification stop a real authorization server
 
