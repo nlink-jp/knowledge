@@ -2567,3 +2567,40 @@ A question was added for a changed skill at the moment it is used: trust, disabl
 **How to apply:** where an answer writes a lasting record, make the default selection the one that changes nothing, and close every path by which one keystroke or typed-ahead input reaches the record. Where the input is shared, take a word.
 
 Origin: as above.
+
+## A cap on what a walk collects is not a cap on the work it does — bound entries seen, width and depth separately, and measure each
+
+An agent runtime compared a skill's directory with its trust record by collecting up to 2,000 files, hashing them, and refusing past that. The record holds files and links; a directory is not an entry. So directories added to a trusted skill asked nothing, and three things became time spent at every use. Measured on a released version.
+
+- Every directory was entered. 100,000 empty directories took 9.6 s.
+- A directory was read whole before the cap was looked at. One directory of 200,000 files took 0.7 s.
+- A child directory was opened by its path from the root. Each open walks down from the root again, so the cost grows with the square of the depth. 800 nested empty directories took 32 s.
+
+The first fix closed the first two and wrote "the walk is bounded". An independent review found the third by measuring.
+
+- Put the budget on entries seen, of every kind, not on entries collected. Read a directory only up to "what is left of the budget, plus one", and take what was read off the budget before entering anything.
+- Open a child directory from its parent's handle. Bound the depth too (one open handle is held per level).
+- Make "past the cap" a property of the tree. If the answer depends on the order of reading, or on where an unreadable file sorts, the same tree passes one time and is refused another. Drop what cannot be counted (an unreadable file) before counting.
+- A tree past a cap is refused, not passed on a hash of the part that was read.
+- Check the rebuilt walk against the old one on random trees. Each intended difference is written down as its own test.
+
+After the fix the same three trees are refused in 0.3 s, 0.008 s and 0.005 s, and a tree at every cap is compared in 0.3 s.
+
+**How to apply:** a walk over a tree that someone else can change takes a cap on entries seen and a cap on depth, apart from the cap on what it collects. Before writing "bounded", build real trees pushed to the limit in count, in width and in depth, and time each. Measure with particular care the kinds of entry the record does not hold (directories, here): they can be added without a question.
+
+Origin: the use-time skill compare in two agent runtimes (2026-11).
+
+## A known defect class stays outside the one place it was fixed — count the open that waits on a FIFO at every entrance that opens a name the project chooses
+
+A plain `open` of a named pipe (FIFO) does not return until a writer comes. This class had already been fixed twice: where a directory is added, and in a server that reads files. Even so, a skill's body, the instruction files, the MCP configuration and the project configuration were still opened plainly. A project holding a FIFO under one of those names stopped the runtime at startup. The project configuration is read before "do you trust this project?" is asked, so it stopped before the question. A review pointed at one of them; the confirming review measured the rest, one by one.
+
+- When a class is fixed in one place, count every place that opens the same way. What to count is "places that open a file whose name the project decides", not the feature that was reported.
+- Put the open in one function and move every entrance to it. Each entrance gets a test with a real FIFO and a timeout.
+- `O_NONBLOCK` was not taken for an open that reads a file's content. Its behaviour on files whose content is fetched when needed (online-only files in cloud storage) has not been observed. The open became "check the kind → open as usual → check the kind of what was opened". Reading an ordinary file is unchanged.
+- That shape leaves a window: a name swapped for a FIFO between the check and the open still waits. The window is written in the design record as a fact, and whether to accept it is the owner's decision.
+
+Opening a directory is different. `O_NONBLOCK` together with `O_DIRECTORY` refuses what is not a directory without waiting, and can be used as it is (see "Canonicalizing a path to the kernel's name needs the right open, the right link test, and a re-check after the open").
+
+**How to apply:** once a defect is recorded as a class, list the entrances where the class holds — not the place that was fixed — and pass them all through one function. A means that changes how reading itself works, like a non-waiting open, is adopted only after observing it on what it may change (files whose content arrives on demand, for one). Until that can be observed, choose the means that leaves reading as it was, and record the window that remains.
+
+Origin: as above.
