@@ -139,13 +139,164 @@ will work.
   settles it, faster than inferring it from a failed login.
 - When the authorization server's issuer has a path, RFC 8414 inserts the
   well-known segment *before* that path (issuer `https://host/login/oauth` →
-  `https://host/.well-known/oauth-authorization-server/login/oauth`). Appending
-  it to the issuer, OIDC-style, returns 404 — try both shapes.
+  `https://host/.well-known/oauth-authorization-server/login/oauth`). With this
+  provider, appending it to the issuer, OIDC-style, returns 404. Another
+  provider serves its document only at the appended location, so try every
+  inserted and appended shape (see "Some requirements of the MCP authorization
+  specification…" below).
 - A provider without `registration_endpoint` may still accept a token an
   existing CLI already holds, or a personal access token. A route that obtains
   the token from an external command avoids registering an OAuth app entirely.
 - An implementation that reports a discovery failure as merely "not logged in"
   hides the cause. Say **which stage failed**.
+
+### A provider listed as "the same shape" gets its public side measured, account or not
+
+**Symptom:** A bridge that relays OAuth named three target providers. One had
+been connected to and verified; the other two rested on the inference that
+they "require a pre-registered client too, so they are the same shape". Months
+later a user reported that the third did not connect. It differed in four
+ways: a constraint on the redirect URI's host name, where the authorization
+server's metadata lives, how the client is registered, and where the scopes
+come from. One of the four was not even in the report, and a `curl` of the
+public metadata was all it took to see it.
+
+**Why:** "It cannot be connected to and checked" had been treated as "nothing
+can be checked". Without an account or a tenant, the public side is still
+anyone's to read: the authorization server's metadata, the provider's
+documentation on redirect URIs, the answer to an unauthenticated request, the
+answer to an authorization request carrying a made-up client ID.
+
+**How to apply:**
+- Before naming a provider as a target, measure its public side: which
+  well-known location holds the metadata, whether there is a registration
+  endpoint, what the scope list contains, whether PKCE support is advertised.
+- Write what was measured and what was not as two separate things. Do not
+  write "the same shape".
+- If the release goes out without an account, make a failure **diagnosable
+  from the output a user pastes**: print what discovery decided (the
+  authorization server, the scopes) with where each came from, and say in the
+  guide what to send back.
+- A local stand-in server that names the real authorization server verifies
+  the metadata fetch and the shape of the authorization request against the
+  real thing. Record the URL instead of opening a browser, then fetch it and
+  read the provider's answer.
+
+### Some requirements of the MCP authorization specification stop a real authorization server
+
+**Symptom:** Writing a client to the MCP authorization specification
+(2025-11-25) would have stopped it from connecting to a major authorization
+server (Microsoft Entra ID), on three requirements.
+
+- **Always send the `resource` parameter (RFC 8707).** That provider's v2
+  endpoints are reported to refuse it together with `scope`.
+- **Refuse to proceed when the authorization server lacks
+  `code_challenge_methods_supported`.** That provider's public metadata has no
+  such field. It accepts PKCE all the same.
+- **Check the metadata's `issuer`.** The common endpoint's metadata returns an
+  `issuer` holding the unsubstituted text `{tenantid}`.
+
+The other way round, one point connects only when the specification is
+followed. For an issuer with a path, the authorization server's metadata is
+tried at three locations in order (`oauth-authorization-server` inserted
+before the path, `openid-configuration` inserted before it,
+`openid-configuration` appended after it). That provider serves its document
+only at the third and answers 404 at the first two. Another major provider
+serves only the first.
+
+**Why:** The specification is new and the authorization servers are older.
+Each server behaves as its own documentation says; neither side is "wrong".
+
+**How to apply:**
+- Before implementing a MUST, check against the target authorization server's
+  public metadata that the MUST can hold there.
+- List the requirements you decide not to meet, with the reason, in the
+  decision record. "Fixing it toward the specification" later stops a server
+  that was working. Shape the test fixture after the measured metadata,
+  including the fields that are **absent**.
+- Choose scopes in the specification's order (the `scope` in the 401 response,
+  then `scopes_supported` in the server's own metadata). For an OpenID
+  provider the authorization server's list is `openid profile email
+  offline_access` and holds no API scopes. Where a refresh token needs
+  `offline_access`, add it when the authorization server lists it.
+- Do not display the metadata's `issuer` field. Display the URL the server
+  named.
+
+### A `localhost` redirect URI is listened for on both loopback addresses — with one held by another process the browser shows no connection error
+
+**Symptom:** A CLI receiving its OAuth callback at
+`http://localhost:<port>/callback` listened on `127.0.0.1` only. With another
+process holding the same port on `::1`, the browser (measured with a
+Chromium-based one) resolved `localhost` to `::1` and **connected to that
+process**. There was no connection error, and the CLI went on waiting with
+nothing received. Replacing `localhost` with `127.0.0.1` in the address bar
+reached it.
+
+**Why:** Which address `localhost` means is the browser's decision, not the
+CLI's. Listening on one leaves the other free, or someone else's. An
+authorization code that reaches another process cannot be exchanged without
+the PKCE verifier, so what happens is not a leak but a wait with no
+explanation.
+
+**How to apply:**
+- For a `localhost` redirect URI, listen on both `127.0.0.1` and `::1`. For an
+  IP literal, listen on that one address.
+- When `::1` cannot be listened on, tell the causes apart. If `[::1]:0` fails
+  too, the machine has no IPv6 loopback (and `localhost` does not resolve to
+  it either): say nothing. If `[::1]:0` works, the port is in use elsewhere:
+  only then print one line with what to do.
+- Do not word that line "if you see a connection error". What appears is
+  another page, or nothing. Write "if the completion page does not appear",
+  and measure the premise with a real browser.
+- Some providers' admin consoles refuse `http://127.0.0.1` and allow only
+  `http://localhost`. Make the host name of the redirect URI a setting, like
+  the port and the scheme.
+
+### After adding a check to discovery, apply it where a value stored by an earlier version is read
+
+**Symptom:** A URL obtained through OAuth discovery was to be used "only if it
+is `https`", and the check went into the discovery path. The independent
+review before the release found one path that never met it: the discovery
+result an earlier version had stored. That version stored without checking,
+so with an `http` token endpoint on file for an `https` server, a session
+sent the refresh token and the client secret there.
+
+**Why:** The check was placed where the value comes in. A stored value has
+passed only the checks of the version that stored it. To the new version an
+old stored result is input that has not been checked.
+
+**How to apply:**
+- After adding a check at the entrance, find every place the same value is
+  **read from storage**, and apply the same check.
+- Do not quietly use a stored result that fails; stop, naming the operation
+  that rebuilds it (log in again).
+- Test by writing the earlier version's stored form by hand, and asserting
+  that it is not used and that no request goes out.
+- Record in the stored result what it is for (the server URL it was discovered
+  for). Looked up by name alone, an old result is reused after the configured
+  URL changes.
+
+### When the first request gets no answer, stop there and say "unreachable"
+
+**Symptom:** When its first request to the server failed, discovery tried the
+other locations on the same host in turn, and ended with "could not find the
+authorization server; if the server publishes no metadata, write the URLs in
+the configuration", followed by the places tried. Reading the actual output
+for a server that was merely unreachable, it showed the same connection error
+five times and advised rewriting the configuration. The configuration was
+correct.
+
+**Why:** "The answer was not the expected one" and "there was no answer" were
+the same failure, both moving on to the next candidate. In the second case the
+remaining candidates are on the same host and only repeat the failure. The
+heading was written for the first.
+
+**How to apply:**
+- At the entrance to discovery, separate whether there was an answer. If not,
+  end there and say "unreachable", once.
+- A redirect that was not followed counts as an answer. The server did reply.
+- Tests do not find this kind of misdirection (the branch is taken, the
+  substring matches). Cause the failure and read the terminal.
 
 ### A synchronous write to a child's stdin is unbounded — outside the deadline, one wedged peer stalls everything
 
