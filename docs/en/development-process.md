@@ -1995,3 +1995,22 @@ located is worse than shipping without knowing.
   accepted as a design residual is written into the design with its reason and an upper bound on its size, and
   put to the owner. Do not decide "accepted" yourself.
 - The discipline of not widening scope is about **features and design**. It does not apply to fixing defects.
+
+## Lay out every line the feature prints before a release, and read each in every state that prints it — check the manual's statements against the code
+
+Just before releasing a new question dialog — after a design verification and several implementation reviews — a reader was asked to read only the operator-facing text. Eight findings: a word the manual does not use, a notice untrue in some of its states (the "directory is gone" notice was also printed when the directory had been replaced, and when only the body file had been removed), a notice that does not say what to do next, and text that existed in one language only. A second reader then checked the manual's statements against the code and found more.
+
+- The manual said "in the line-by-line conversation you answer by a word". Another chapter defines that name as "input connected to a pipe", and in that mode the question is never asked. The word is taken when only the output is piped.
+- The manual said "when a skill is not loaded, the model is told not to read it by other means". Two outcomes went through the error path and did not carry that sentence. One of them is the case where content nobody compared sits at the skill's path. The test already held an exception that let exactly that case through.
+- The Japanese label was three columns off when padded with `%-8s`. `%-Ns` counts characters, not display width.
+
+**Why:** a code review asks whether the behaviour is right. Whether a sentence is true in every state that prints it shows only when the sentence is the subject of the reading. A manual records its author's understanding, so the author's misunderstanding goes in with it.
+
+**How to apply:**
+
+- Before a release, list the text the feature prints. For each line, have someone who did not implement it name every state that prints it and check: is it true in each, does it say what to do next, is it the manual's word, is it there in every language.
+- For each sentence of the manual that describes behaviour, have the reader point at the code. Check terms against the manual's own definitions.
+- Put every sentence returned to the model — refusals and errors alike — in one test, and require the common clauses of all of them. A test's "except in this case" is a record of a defect.
+- Pad by display width.
+
+Origin: the release of the use-time skill compare in two agent runtimes (2026-11).

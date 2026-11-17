@@ -2536,3 +2536,34 @@ Whether an agent runtime could move from macOS to Linux was measured. On macOS i
 **How to apply:** before carrying a guarantee that rests on Seatbelt's denial by name to Linux, check whether it is enough for it to hold for what already exists. If names that do not exist yet must be covered, the same guarantee cannot be built: decide between shipping a weaker one and not shipping, and record why. The mechanisms on hand differ by machine (a kernel without Landlock, a distribution that restricts user namespaces), so measure on that machine at startup.
 
 Origin: a feasibility study for a Linux port of an agent runtime (2026-11). The port was declined.
+
+## Content compared when a list is built is not the content read when it is used — compare at every read, and hold the returned bytes to the compared manifest
+
+An agent runtime compared a project's skills (directories of procedures) with a hash of the content the operator had trusted. It compared when the list of skills was built — at startup and when the conversation was cleared — and nowhere else. The body and the supporting files are read from disk each time a skill is used, so a skill rewritten after startup reached the model uncompared, as the operator's own instructions. Measured on a released version.
+
+The fix taught the following, from review and from measurement.
+
+- Comparing just before the read is not enough. Content swapped in between the compare and the read, or swapped in and back again, is returned under the hash of something else. Build a manifest — which name holds which bytes — while taking the hash, and return the bytes read only when they are the manifest's bytes for that name.
+- Nothing the hash does not cover is served. The bytes past a per-file cap, and the files after a file-count cap, can change without the record noticing. A body over the cap is not treated as a skill, and a skill over the count is not loaded. A directory listing shows only the covered entries (an empty directory can be given any name, and a name is text the model reads).
+- Looking the manifest up by the name's string refuses another spelling of the same file as "still changing": a case-insensitive file system, composed and decomposed Unicode, and a path through a linked directory all did. A property test that builds random trees on the real file system ("what the volume returns is what the manifest holds") found it, and the same test showed the fix.
+- When a directory is moved aside and another is put at its path, a handle held open keeps reading the old tree. Compare whether the handle and the path are the same object, and refuse as "gone" when they are not.
+
+The compare cost, measured: 0.1 to 2.7 ms on installed skills, 135 ms on a tree of 248 files. Small enough to take again at every use.
+
+**How to apply:** when you build a mechanism that compares "the content that was trusted", count every place that content is read and check that the compare and the read happen at the same time. Where they do not, compare at each read and hold the returned bytes to the compared manifest. With a capped hash, serve nothing outside the cap.
+
+Origin: the use-time skill compare in two agent runtimes (2026-11).
+
+## An answer that records lasting trust must not be selectable by keys typed ahead
+
+A question was added for a changed skill at the moment it is used: trust, disable for this session, or not now. "Trust" writes a record that holds for later sessions too. The first implementation reused the existing question dialog as it was, which took digit keys and Tab plus Enter. Characters the operator was typing while the model worked could become the answer the moment the dialog opened. In the line-by-line conversation the reader is shared with the prompt, so a line typed ahead is read as soon as the question is printed. Both were found in review and reproduced in tests.
+
+- The dialog opens on "not now". An Enter pressed too soon changes nothing.
+- Only the arrows and Enter select. The digit keys do nothing, and the selection stops at the ends (if it wraps, one arrow press reaches "trust").
+- The line-by-line conversation is answered by a word, not a number. A stray `1` or `y` must not record lasting trust, and a word is not typed by accident.
+- Every way of not answering — Esc, an interrupt, a closed input — is the same outcome and records nothing. It is remembered for the turn, so a model that calls again does not bring the dialog back.
+- The question does not go through the approval gate. "Allow for this session" and auto-approve must not answer a question about trusting content.
+
+**How to apply:** where an answer writes a lasting record, make the default selection the one that changes nothing, and close every path by which one keystroke or typed-ahead input reaches the record. Where the input is shared, take a word.
+
+Origin: as above.
