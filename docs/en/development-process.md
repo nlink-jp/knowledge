@@ -2014,3 +2014,19 @@ Just before releasing a new question dialog — after a design verification and 
 - Pad by display width.
 
 Origin: the release of the use-time skill compare in two agent runtimes (2026-11).
+
+
+## Accepting an id's prefix: a full id that finds nothing must not fall through to the prefix search
+
+A cleanup command that took only full session ids was changed to accept a unique prefix, as the tool's resume flag already did. The new lookup ran in three steps: the exact id in the listing, the id as a directory name, then a prefix search. The independent review before the release found the gap between the second and the third. Older ids are timestamps, and two sessions started in the same second are told apart by a suffix (`20250101-120000` and `20250101-120000-2`). When the first one's directory was already gone, its full id missed both exact steps, matched the second as a prefix, and `--yes` deleted the wrong directory.
+
+**Why:** a prefix search treats every input as the start of something longer. A full id is also the start of any id that extends it, so wherever ids can extend each other (a suffix, a version, a counter) a miss on the full id becomes a hit on a neighbour. The resume flag already guarded this — a well-formed id is looked up as that id only — but the new code copied the order of the steps and not the guard.
+
+**How to apply:**
+
+- When adding prefix matching to anything that names a thing to change or delete, check first whether the input is a well-formed full id. If it is, look it up as that id and stop: a miss is "not found", never a prefix.
+- Port the guard together with the order when the behaviour is meant to match an existing lookup, and test the case where the full id is missing and a longer id it prefixes exists.
+- Refuse a prefix when the listing it searched was truncated: the one match found may not be the only one.
+- De-duplicate what was named: a prefix and its full id given together are one target, not two in the confirmation's count.
+
+Origin: the work-directory cleanup command of two agent runtimes (2026-11).

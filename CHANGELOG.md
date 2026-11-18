@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-18 (accepting an id's prefix)
+
+From the release review of a cleanup command that began taking a session
+id's prefix.
+
+- **development-process** (ja + en): one new entry. A full id that finds
+  nothing must not fall through to the prefix search, where ids can
+  extend each other; refuse a prefix on a truncated listing; count a
+  target named twice once.
+
 ## 2026-11-18 (judge a finding by where it starts, and take out what was built without that)
 
 From reviewing, with the operator, what two agent runtimes had built
