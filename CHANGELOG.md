@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-18 (restructuring a large function behind a characterization)
+
+From restructuring the 1,900-line function that assembled an agent
+runtime's session, and the review before its release.
+
+- **testing** (ja + en): three new entries. Record what a large function
+  does as a characterization before restructuring it — the test binary
+  re-run as a child, the outside service scripted, the reference taken
+  on the unchanged commit; feed a child REPL one prompt at a time, or the
+  lines arrive as one paste; a source-reading wiring test passes on
+  nothing once the code moves to another file.
+- **development-process** (ja + en): one new entry. Rewrite locals into
+  struct fields from the type checker's resolution of each reference,
+  not by text substitution.
+
 ## 2026-11-18 (accepting an id's prefix)
 
 From the release review of a cleanup command that began taking a session

@@ -2315,3 +2315,49 @@ recount of that definition matched on every row — nothing but a second definit
 - In fixtures, give every event that should independently change a result its own timestamp. Two events at
   the same instant cover for each other: 12 of 26 mutants survived tests whose fixtures did this, and 13 of 13
   were killed once each start-moving record had a time of its own.
+
+## Before restructuring a large function, record what the whole thing does as a characterization — re-run the test binary as a child process and script the outside service
+
+**Symptom:** in a Go agent runtime, the one function that assembled a session had grown to about 1,900 lines and 255 branches. Tests could not call it, so they copied its flow or read its source and matched strings. Nothing could judge "nothing changed" before restructuring it — a restructure that, with the type checker's help, rewrote 758 references to locals.
+
+**Why:** a function that cannot be called forces copies and source matching on its tests, and a copy keeps agreeing with itself while the original changes. Reading and believing it right does not find the one of 758 rewrites whose meaning shifted. The judge has to be built before the restructure, from everything the function does that can be seen from outside.
+
+**How to apply:**
+- Make the characterization the first step: write it against the unchanged code and commit its output as the reference. Never rewrite the reference during the restructure; rewrite it only in a change meant to alter behaviour.
+- To run the start for real, re-run the test binary itself as a child: `TestMain` checks an environment variable and, in the child, executes the real command (`os.Executable()` with `-test.run=^$`). The start touches the environment, whether stdin is a terminal and package variables, so one run is one process. Rebuild the child's environment: drop variables with your own prefix, `HOME` and `LANG`, and point `HOME` at a temporary directory.
+- Add exactly one seam. Make the constructor of the outside service's client (here, the model) a package variable, and in the child only, replace it with a fake that answers from a script. The fake records what it was given: system prompt, tool declarations, messages. The order of the tool declarations is the request itself, so a restructure that moves a registration is caught here.
+- Compare stdout, stderr, the exit status, the transcripts, what the outside service received and the teardown order. Normalize only what changes between runs: temporary paths and their flattened forms, ids, times, random tags. A random tag after `_`, as in `tool_output_<hex>`, is not matched by `\b`. Leave machine-dependent lines out of the comparison. A startup note about a sandbox check that did not pass reported exit status 1 or 2 depending on the circumstances (measured); kept in, it fails every reference on another machine (found by the pre-release review).
+- Record the reference for a scenario added mid-restructure on the commit before the restructure too. Inside a submodule, do not use a worktree: export the tree with `git archive <commit> | tar -x` and run the test there.
+- For a TUI, run the same child as a TUI under a private tmux server, before and after, and compare the transcripts and screens of the same keystrokes.
+- Run it many times in a row before taking it as the reference (15 here).
+
+Result: in six steps the function became 67 lines, and every step matched the reference. A display-order defect found later was written with the same machinery as a test that fails on the unfixed code.
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
+
+## Feed lines to a child process's REPL one prompt at a time — written all at once, they arrive as one pasted input
+
+**Symptom:** a characterization wrote eight lines to the child's stdin at once. The plain REPL joined every buffered line into one message and ran none of the commands — what it is meant to do with a multi-line paste.
+
+**Why:** the line reader, having read one line, keeps reading while the buffer holds more, and joins them. A pipe hands over everything written at once.
+
+**How to apply:**
+- Watch the child's stderr and write the next line each time a prompt (`\n> `) appears. After the last line, wait for one more prompt, then close stdin.
+- Never let the watcher stall the child's writes. Send each signal to the bounded channel without blocking, dropping it if full. The child keeps writing after the feeder has finished, and a blocking send jams its stderr and the test never ends (found by the pre-release review).
+- Count prompts only in what was just written, plus the two bytes before it for a prompt split across writes. Recounting the whole output each time is quadratic in its size.
+
+Origin: the characterization tests of an agent runtime (2026-11).
+
+## A test that checks wiring by reading source passes without checking anything once the code moves to another file
+
+**Symptom:** in the restructure above, eight tests read the entry file's (`root.go`) source. Moving the code failed most of them. One — "never wrap `os.Stdin` in a second `bufio.Reader`" — kept passing just because the string was no longer in that file: once the thing it checked had moved, it checked nothing. Another test that kept a list of files to read had not been told about a file created later (found by the pre-release review).
+
+**Why:** a test that checks for an absence stays green when what it looks for leaves the range it reads.
+
+**How to apply:**
+- The AST test of "The single production call site is the weak point of injected features — pin the wiring with an AST test" reads every non-test file of the package, not a named file. A test that checks for a presence checks there is exactly one (and fails on zero).
+- If the files to read are a list, add a test that fails when the list misses one — for example, that every file handling the core type is on it.
+- Once the function can be called, replace the copies and the source matching with real calls. Here the test that copied the resume flow now calls the startup phase itself.
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
+

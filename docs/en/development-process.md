@@ -2030,3 +2030,19 @@ A cleanup command that took only full session ids was changed to accept a unique
 - De-duplicate what was named: a prefix and its full id given together are one target, not two in the confirmation's count.
 
 Origin: the work-directory cleanup command of two agent runtimes (2026-11).
+
+## Rewrite locals into struct fields from the type checker's resolution of each reference — not by text substitution
+
+**Symptom:** to split a function of about 1,900 lines, the locals rewritten after startup and the locals its closures read — some forty — moved onto the fields of one struct. They had 758 references. The first receiver name chosen, `s`, was used about a hundred times in the same function for something else (`func(s string)` and the like).
+
+**Why:** text substitution cannot tell a variable from another of the same name: a closure parameter, a declaration in an inner block, a key in a struct literal, a field of another value. The type checker has resolved which variable every identifier denotes.
+
+**How to apply:**
+- In Go, load the package with types (`golang.org/x/tools/go/packages`), and from `types.Info.Defs` and `Uses` select only the variable of that name declared directly in the function (`Parent()` is the function's scope). Rewrite its uses from the end of the file backwards.
+- Handle declarations by form: delete `var x T` without a value; turn `x := v` into `recv.x = v`; and for a `:=` whose left side also declares a new local, have the tool report it and fix it by hand (4 of 758 here).
+- Pick a receiver name that the function never uses.
+- When a closure becomes a method, fields are read when it is called, which keeps the closure's read-at-call meaning. A method value (`recv.f`) binds its receiver when it is taken; with a pointer receiver it follows later rewrites.
+- Around every step, check that it type-checks and that the behaviour characterization still matches (testing.md, "Before restructuring a large function, record what the whole thing does as a characterization").
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
+
