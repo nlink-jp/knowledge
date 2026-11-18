@@ -1343,3 +1343,11 @@ check and the UTF-8 validity check, so the guess that keys on 8-bit bytes is nev
 **How to apply:**
 - Separate by type "the path itself is invalid" from "this session's circumstances" (missing, not openable, holds the project, already covered).
 - From the config, skip the second kind with a note; from a flag, stop. A path invalid wherever you start, such as `/` or the home, stops either way.
+
+## On APFS, a loop renaming a directory slows every open of a file on the volume — a slow walk may not be the walk's fault
+
+Measured on macOS 27 (APFS, 2026-11): while one process renames a directory back and forth as fast as it can (about 8,000 renames a second), every open of a regular file on the same volume — by any program — waits for a gap in the renames, about 155 ms each time. A walk of 201 files took 30 s against 8 ms, and `cat` of one file took 0.15 s. The directory renamed can be anywhere on the volume. Not slowed: listing a directory, `fstatat`, opening a directory, reading from a file already open. A loop renaming a *file* has no such effect. Read-only, write-only and event-only opens wait alike. The opens that wait pass together at the same gap: the same files opened 32 at a time took 1.1 s. At one rename every 100 ms there is no measurable effect. The kernel cause was not determined.
+
+**How to apply:** before bounding or parallelising a slow file walk, check whether something on the machine is renaming directories; the slowness is the system's, and making one walk faster leaves every other reader as slow. Any timeout derived from "an open takes microseconds" has to survive this: a sandboxed process that may rename a directory can slow everything that opens files, including the checks that are supposed to confine it. Record it as an accepted limit with its reason, rather than building on how the system happens to release the waiting opens, which no document states.
+
+Origin: found while testing a skill-digest walk in two agent runtimes (2026-11).

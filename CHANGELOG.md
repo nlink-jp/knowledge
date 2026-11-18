@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-18 (a sandbox check that acted by path where the sandboxed can write)
+
+From fixing the startup sandbox checks of two agent runtimes, and the two
+independent reviews before their release.
+
+- **security** (ja + en): one new entry. Probes placed where a sandboxed
+  lane writes can be replaced between their making and their use: hold the
+  directory and act through it by one name; make the control the checker's
+  own; compare a file's identity "now" with "now" (FAT and exFAT renumber a
+  file at its first write); count only a command that ran to its own end
+  as a refusal; clean up only what was made.
+- **config-and-io** (ja + en): one new entry. On APFS a loop renaming a
+  directory makes every open of a file on the volume wait, for every
+  program.
+
 ## 2026-11-17 (the trust record a running session compares against)
 
 From fixing `/clear` and the content pins in two agent runtimes, and the
