@@ -1336,21 +1336,18 @@ Only a rule keyed on the content itself — a digest pin — can.
   the reloads, the note after a `!` command and the check before an
   approved write all read the same copy). This is the read side of the
   stale snapshot above.
-- **But once the file is the record, "no pins" fails open.** "No pins" reads
-  as "nothing pinned yet" and loads everything. A policy file that is
-  deleted and then recreated by a session in another project parses, and
-  lacks only this project's pins. The first version of the fix above
-  introduced that hole, and the independent pre-release review demonstrated
-  it with probes. Its second round showed the same state is reachable
-  through **the session's own settings change** (every write replaced the
-  copy with the file; the versions before the fix had this one too). The
-  rule is "the file can re-trust; it cannot un-pin": when the session has
-  pins and the file has none, the session's copy is the record, and it says
-  so. Replace the copy in one function, which keeps pins the file lost. The
-  residue (an approved write in that state records only the one written
-  name, so the rest read as "added" and are left out) fails closed and was
-  accepted in writing — seeding the file from the session's memory would
-  have the session re-create a record the operator removed.
+- **A file that was read is the record, pins or none.** "No pins" reads as
+  "nothing pinned yet" and loads everything, so a policy file deleted and
+  then recreated, emptied, or restored from an older copy loads the
+  project's files as unpinned. The first fix kept the session's pins
+  against such a file, and then routed every write of the session's copy
+  through one function to keep them there too. Both were later taken out:
+  the policy file is out of every sandboxed lane's reach, so pins it lost
+  were removed by the operator or by a process outside the lanes, and the
+  session has no business keeping a record its owner removed (see "Judge
+  a finding by where it starts before building against it"). A file that
+  is gone or does not parse still leaves the session's copy as the
+  record: a read that failed is not a record.
 - **Before writing "never errs toward loading", write what that invariant
   rests on.** In both cases above the comment and the changelog stated the
   invariant first, and a route that broke it was found afterwards. The
@@ -2537,23 +2534,6 @@ Whether an agent runtime could move from macOS to Linux was measured. On macOS i
 
 Origin: a feasibility study for a Linux port of an agent runtime (2026-11). The port was declined.
 
-## Content compared when a list is built is not the content read when it is used — compare at every read, and hold the returned bytes to the compared manifest
-
-An agent runtime compared a project's skills (directories of procedures) with a hash of the content the operator had trusted. It compared when the list of skills was built — at startup and when the conversation was cleared — and nowhere else. The body and the supporting files are read from disk each time a skill is used, so a skill rewritten after startup reached the model uncompared, as the operator's own instructions. Measured on a released version.
-
-The fix taught the following, from review and from measurement.
-
-- Comparing just before the read is not enough. Content swapped in between the compare and the read, or swapped in and back again, is returned under the hash of something else. Build a manifest — which name holds which bytes — while taking the hash, and return the bytes read only when they are the manifest's bytes for that name.
-- Nothing the hash does not cover is served. The bytes past a per-file cap, and the files after a file-count cap, can change without the record noticing. A body over the cap is not treated as a skill, and a skill over the count is not loaded. A directory listing shows only the covered entries (an empty directory can be given any name, and a name is text the model reads).
-- Looking the manifest up by the name's string refuses another spelling of the same file as "still changing": a case-insensitive file system, composed and decomposed Unicode, and a path through a linked directory all did. A property test that builds random trees on the real file system ("what the volume returns is what the manifest holds") found it, and the same test showed the fix.
-- When a directory is moved aside and another is put at its path, a handle held open keeps reading the old tree. Compare whether the handle and the path are the same object, and refuse as "gone" when they are not.
-
-The compare cost, measured: 0.1 to 2.7 ms on installed skills, 135 ms on a tree of 248 files. Small enough to take again at every use.
-
-**How to apply:** when you build a mechanism that compares "the content that was trusted", count every place that content is read and check that the compare and the read happen at the same time. Where they do not, compare at each read and hold the returned bytes to the compared manifest. With a capped hash, serve nothing outside the cap.
-
-Origin: the use-time skill compare in two agent runtimes (2026-11).
-
 ## An answer that records lasting trust must not be selectable by keys typed ahead
 
 A question was added for a changed skill at the moment it is used: trust, disable for this session, or not now. "Trust" writes a record that holds for later sessions too. The first implementation reused the existing question dialog as it was, which took digit keys and Tab plus Enter. Characters the operator was typing while the model worked could become the answer the moment the dialog opened. In the line-by-line conversation the reader is shared with the prompt, so a line typed ahead is read as soon as the question is printed. Both were found in review and reproduced in tests.
@@ -2566,7 +2546,9 @@ A question was added for a changed skill at the moment it is used: trust, disabl
 
 **How to apply:** where an answer writes a lasting record, make the default selection the one that changes nothing, and close every path by which one keystroke or typed-ahead input reaches the record. Where the input is shared, take a word.
 
-Origin: as above.
+Origin: the use-time skill compare in two agent runtimes (2026-11).
+
+**Later:** both runtimes took the question out, with the compare at use it served (see "Judge a finding by where it starts before building against it"). What is above holds wherever such an answer is built.
 
 ## A cap on what a walk collects is not a cap on the work it does — bound entries seen, width and depth separately, and measure each
 
@@ -2590,33 +2572,19 @@ After the fix the same three trees are refused in 0.3 s, 0.008 s and 0.005 s, an
 
 Origin: the use-time skill compare in two agent runtimes (2026-11).
 
-## A known defect class stays outside the one place it was fixed — count the open that waits on a FIFO at every entrance that opens a name the project chooses
+**Later:** both runtimes took these bounds out with the compare at use; the skill digest is again bounded by its file cap alone (see "Judge a finding by where it starts before building against it"). Measure a walk before bounding it, and judge first whether the tree that makes it slow is in the line.
 
-A plain `open` of a named pipe (FIFO) does not return until a writer comes. This class had already been fixed twice: where a directory is added, and in a server that reads files. Even so, a skill's body, the instruction files, the MCP configuration and the project configuration were still opened plainly. A project holding a FIFO under one of those names stopped the runtime at startup. The project configuration is read before "do you trust this project?" is asked, so it stopped before the question. A review pointed at one of them; the confirming review measured the rest, one by one.
+## Judge a finding by where it starts before building against it — and judge again what was built on findings judged no other way
 
-- When a class is fixed in one place, count every place that opens the same way. What to count is "places that open a file whose name the project decides", not the feature that was reported.
-- Put the open in one function and move every entrance to it. Each entrance gets a test with a real FIFO and a timeout.
-- `O_NONBLOCK` was not taken for an open that reads a file's content. Its behaviour on files whose content is fetched when needed (online-only files in cloud storage) has not been observed. The open became "check the kind → open as usual → check the kind of what was opened". Reading an ordinary file is unchanged.
-- That shape leaves a window: a name swapped for a FIFO between the check and the open still waits. The window is written in the design record as a fact, and whether to accept it is the owner's decision.
+Two agent runtimes went through three releases in two days, each closing what an independent reviewer had reproduced under the real sandbox profile: a project skill's content compared at every read and held to the compared bytes, every open made unable to wait on a FIFO, and the startup sandbox checks defended against a process that replaces their probes while they run. None of it had happened in use. Each closure was asked for by the operator in answer to a proposal that said how to fix the finding, and not who could make it happen, how often, or what they would gain. Read again with those questions first, most of it was taken out: in one runtime about 2,000 lines of code and 4,800 of tests since the release before.
 
-Opening a directory is different. `O_NONBLOCK` together with `O_DIRECTORY` refuses what is not a directory without waiting, and can be used as it is (see "Canonicalizing a path to the kernel's name needs the right open, the right link test, and a re-check after the open").
+- Answer four questions before proposing a fix: under what conditions, and how often, it happens; who makes it happen; what they already have; what it newly gives them. When the last is not more than the third, record an accepted residual and build nothing.
+- Origins found outside the line: a program written to race the runtime (whoever can run one in the write lane can rewrite the project's code, which the operator runs outside any sandbox); a FIFO at a name the runtime opens (git cannot carry one, so it takes an approved command or a process outside the sandbox, and what it costs is a wait the operator interrupts); trusted content changed mid-session by a `git pull` (its author already writes the project's code, and the next start compares it).
+- What stayed had the model, led by text it read, as its origin and reached something the sandbox says it never allows: the write lane anchored on a link's target after the lanes were rebuilt, a build cache the unattended lane could seed, an approval dialog that hid the end of a command.
+- A request made in answer to a proposal without the four answers is judged again on them. That the operator asked for it is not a reason to keep it.
+- Give every reviewer the line. Asked to "attack from inside a lane" with no line around the attacker, a reviewer's findings do not run out, and "reproduced" turns into "must close".
+- Taking code out: return each file to the release before the change instead of unpicking commit by commit, re-apply only the commits that stay, and compare what persistent records the old and the new code produce (here, trust digests) on a set of real trees. The review of the removal still found a fix that had gone out with it: a file cap again met at the next entry of any kind.
 
-**How to apply:** once a defect is recorded as a class, list the entrances where the class holds — not the place that was fixed — and pass them all through one function. A means that changes how reading itself works, like a non-waiting open, is adopted only after observing it on what it may change (files whose content arrives on demand, for one). Until that can be observed, choose the means that leaves reading as it was, and record the window that remains.
+**How to apply:** write the four answers into a security proposal, with "do not fix" among its options, before the fix itself. Draw the line for every verifier and ask for findings outside it as one line each. When the answers say the gain is smaller than what the actor already holds, write the residual down and stop.
 
-Origin: as above.
-
-## A check that probes a sandbox where the sandboxed can write must hold its probes — act by path there, and you act on whatever was put under the path
-
-Two agent runtimes check their sandbox at every start: they make probe files where a sandboxed lane is supposed to be refused a write, run a command in the lane that must fail, and count the failure as the lane's only if the same thing succeeds outside the sandbox (the control). The probes have to be where the lanes write, so a process already running in the write lane can replace one between its making and its use. Measured under the real profile with a shell loop doing exactly that (2026-11, macOS 27): a probe file replaced by a link had the control — a shell outside the sandbox running `echo x >` on the path — write through it into a file no lane may write (3 runs of 3); a probe directory replaced by a link had the clean-up remove files beside the project that carried the probes' names (7 of 7); a probe replaced by a FIFO held the control, and the start, with no bound in time (1 of 1 with a FIFO kept ready to move in). An earlier review had closed a probe under a *fixed* name; a random name does not help against a process that can list the directory.
-
-- **Hold the directory, and do everything through it by one name.** Open the directory as a directory once; make (`O_CREAT|O_EXCL`), open (`O_NONBLOCK|O_NOFOLLOW`, then look at what was opened), and remove (`unlinkat`) from that descriptor. Go's `os.Root` is not enough for this (measured, Go 1.27): it refuses a link that leads out, but follows a link to another name inside it — with `O_NOFOLLOW` passed or not — opens a hard link, and `Root.OpenRoot` on a FIFO waits.
-- **The control is the checker's own act on the file it made — never a child outside the sandbox on a path.** Write only when what was opened is the file that was made.
-- **Compare "now" with "now".** A device-and-inode number remembered from the making is not the file's for good on every volume: on FAT and exFAT an empty file has a placeholder number that changes at its first write (measured on two disk images). The first form remembered the number, took every probe on such a volume for a replaced one, and left the probes behind. Keep the descriptor from the making open and compare what the name leads to now with what that descriptor holds now.
-- **A refusal is a command that ran to its own end and failed, between two controls that succeeded.** Not one that was ended by a signal (a sandboxed process may be able to signal the checker's children; measured: it ended 93 of 100 probe commands of a lane that refused nothing), not a shell status above 128 (the shell's child was ended, the shell lived), not one that could not be started, not one that ran out of time. Make the control again after the refusal: a probe closed to everybody (`chmod 000`, a flag) or a name taken by something else also makes the lane's command fail without the lane refusing anything.
-- **Bound every probe command in time, and end its process group.** A shell ended alone leaves the program it was waiting for (bash forks `cat` when there is a redirection).
-- **Clean up only what was made, and never tell the operator to delete what replaced it.** `rename(2)` puts a directory that holds files over an empty one in one step, so a probe directory is used only as empty as it was made; what sits under a probe's name later is left, and is not named as a leftover.
-- **The same pattern lives outside the checks.** A temporary file made in the temporary directory — which the write lane writes — and handed by path to a child that runs outside the sandbox was written through the same way. Make such a file where no lane writes.
-
-**How to apply:** when a check has to touch a place the checked party controls, list every act it performs there by path — make, write, read, remove, hand to a child — and move each to a held descriptor or out of that place. Tests: a loop under the real sandbox profile replacing every probe it sees, held to "nothing outside changed, and the outside directory's modification time did not move" and to having met a replaced probe at least once; a hook that replaces a probe at the exact moments, so the result does not rest on winning a race; a run of the whole check on a volume that is not a local disk; and a test that enumerates by-path file calls and spawn sites in the checker's package, so the next probe cannot bring one back. An independent reviewer who runs the change on a volume the author did not think of is what found the FAT regression: the author's tests all ran on one filesystem.
-
-Origin: two agent runtimes' startup sandbox checks, fixed and released together (2026-11).
+Origin: gem-agent ADR-0122/ADR-0123 and lagent ADR-0052/ADR-0053 (2026-11).

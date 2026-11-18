@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-18 (judge a finding by where it starts, and take out what was built without that)
+
+From reviewing, with the operator, what two agent runtimes had built
+against findings since their last few releases, and taking most of it out.
+
+- **security** (ja + en): one new entry, "Judge a finding by where it
+  starts before building against it". Three entries it replaces are
+  removed — compare trusted content at every read and hold the returned
+  bytes, count the open that waits on a FIFO at every entrance, and a
+  sandbox check must hold its probes — because both runtimes took those
+  mechanisms out. The bullet "the file can re-trust; it cannot un-pin" in
+  "Pin an agent's trust to content" now says a file that was read is the
+  record. The entries on keys typed ahead and on bounding a walk stay,
+  with a note that the runtimes later took those mechanisms out.
+
 ## 2026-11-18 (a sandbox check that acted by path where the sandboxed can write)
 
 From fixing the startup sandbox checks of two agent runtimes, and the two
