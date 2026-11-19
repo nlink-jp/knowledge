@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-19 (output an inline TUI loses)
+
+From fixing, in two agent runtimes, notices that never reached the
+screen under the TUI.
+
+- **config-and-io** (ja + en): one new entry. Besides freezing, an inline
+  Bubble Tea TUI loses a line three ways — a write to the terminal while
+  it runs, a `Send` after `Run` returns, and a library's own error handler
+  writing to stderr from its goroutine; list all three before fixing one,
+  and assert after a later redraw.
+
 ## 2026-11-18 (restructuring a large function behind a characterization)
 
 From restructuring the 1,900-line function that assembled an agent

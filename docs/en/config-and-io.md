@@ -971,6 +971,51 @@ fine.
   green while the UI dies, so without this shape the next one is found on real
   hardware.
 
+### An inline TUI loses a line three ways besides a freeze — a terminal write while it runs, a `Send` after `Run`, and a library's own stderr
+
+**Symptom:** In two agent runtimes on Bubble Tea v1 (2026-11), three notices
+never reached the operator, each found only by driving the TUI in tmux:
+`/clear`'s note naming the persistent files the session changed (the plain
+REPL printed it, the transcript recorded it, the screen never showed it); a
+`session_end` hook's failure at exit (nothing on screen or in the
+scrollback); and an audit-log exporter's "export failing" warning, which
+landed on the input row and, after the next redraw, left the input row and
+the status line run together.
+
+**Why:** Three different routes, one class — operator-facing output that is
+not routed through the program while it owns the screen:
+1. **A write to the terminal stream while the TUI runs.** A reporter given
+   stderr at startup and called again from a slash command writes under the
+   renderer; the next repaint covers the line. Startup warnings have the same
+   problem (the TUI's first clear wipes them), which is why they get teed into
+   the banner — a reporter called later has no such tee.
+2. **A `Send` after `Run` has returned.** `Program.Send` selects on the
+   program's context, which `Run` cancels on its way out: the message is
+   dropped without an error. Anything the exit path says through a holder that
+   still has the program — hooks run in the teardown — is lost.
+3. **A library's global error handler writing to `os.Stderr` from its own
+   goroutine** (OpenTelemetry's `otel.SetErrorHandler`). It runs on the
+   exporter's goroutine *and* synchronously inside a flush the program
+   started — inside `Update` when the flush is part of a slash command.
+
+**How to apply:**
+- Before fixing one, **list every write that can reach the terminal while the
+  TUI holds the screen, and every send that can happen after `Run`**:
+  writers captured at startup (`grep` for the startup stream's name), direct
+  `os.Stderr` in libraries, and the teardown's output. Fixing only the
+  reported one leaves the other two of the class.
+- A reporter called both mid-session and at exit **takes its writer per
+  call** instead of keeping the startup one; the slash command passes its own
+  output, the exit passes the terminal.
+- **Clear the program from the output holder when `Run` returns** (an atomic
+  pointer: goroutines may still report), so the exit writes to the stream.
+- Give a library's error handler a callback that **never blocks**: under the
+  TUI `go prog.Send(...)`, without it a write to the terminal.
+- Test in a real terminal: run the binary under a private tmux server, type,
+  and read `capture-pane` — and assert **after a later redraw**, since a line
+  written under the renderer is visible for a moment and a test that polls
+  right away passes on the broken code.
+
 ### An inline TUI's resize erases the frame's rows, never the screen — end rows at their text, and draw narrow while the width moves
 
 **Symptom:** a Bubble Tea v1 inline TUI (gem-agent and lagent, 2026-09) cleared the screen when the
