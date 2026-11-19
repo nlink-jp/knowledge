@@ -855,8 +855,10 @@ notarizing).
 - Pick a receiver name that the function never uses.
 - When a closure becomes a method, fields are read when it is called, which keeps the closure's read-at-call meaning. A method value (`recv.f`) binds its receiver when it is taken; with a pointer receiver it follows later rewrites.
 - Around every step, check that it type-checks and that the behaviour characterization still matches (testing.md, "Before restructuring a large function, record what the whole thing does as a characterization").
+- **If text substitution touched the rewrite even once — cleaning up old names left in method declarations and comments — compare the string literals before and after.** Such a regex reached two refusal messages ("cannot draw inline images" became "inline fe.images", "no screen" became "no ld.screen"). No scenario called them, the characterization still matched, and the change shipped in one release. Extracting every string literal of both versions with a parser, sorting them and diffing shows every changed message. Add a test that refuses a literal naming a local.
+- A characterization judges only the paths its scenarios take. Record which paths it does not cover — a sandbox, an outside server, a resume — and keep what was checked by reading apart from what was compared.
 
-Origin: restructuring the session assembly of an agent runtime (2026-11).
+Origin: restructuring the session assembly of an agent runtime, and its pre-release review (2026-11).
 
 ## External contributions
 

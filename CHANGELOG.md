@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-19 (a rewrite that reached string literals)
+
+From the pre-release review of two restructured agent runtimes.
+
+- **development-process** (ja + en): two points added to "Rewrite locals
+  into struct fields from the type checker's resolution": a text
+  substitution used to tidy up after the rewrite reached two messages,
+  so compare every string literal before and after with a parser; and a
+  characterization judges only the paths its scenarios take.
+
 ## 2026-11-19 (every file now has sections)
 
 The eight files that had no sections, and wrote every entry as `##`, now
