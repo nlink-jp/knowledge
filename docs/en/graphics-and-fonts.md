@@ -6,7 +6,9 @@ containers is in [containers-and-infra](containers-and-infra.md).
 
 ---
 
-## Go's `font.Drawer` draws missing characters as tofu and drops drawing failures silently — decide glyph presence yourself
+## Fonts
+
+### Go's `font.Drawer` draws missing characters as tofu and drops drawing failures silently — decide glyph presence yourself
 
 **Symptom:** while designing an engine that renders mermaid diagrams to images (2026-09), an
 independent verification pass measured `golang.org/x/image` v0.46.0:
@@ -38,7 +40,7 @@ glyph can be drawn.
 - Checking at load time is not enough. Route drawing-time failures into the same "missing
   character" path.
 
-## A `.ttc` can have readable and unreadable faces — decide readability per face, not per file
+### A `.ttc` can have readable and unreadable faces — decide readability per face, not per file
 
 **Symptom:** in the same design, the 535 font files on a macOS machine were read with `x/image`
 v0.46.0. `ParseCollection` succeeded for **every** file with a font extension (the contents are
@@ -54,7 +56,7 @@ is taken out. Faces in the same file are built differently.
 - If users choose a font, take the chosen face out at startup, check it, and return the reason
   (which table) when it cannot be read. Drawing-time failures go through the entry above.
 
-## `sfnt.Name` cannot choose a language — to select faces by name, walk the name table yourself
+### `sfnt.Name` cannot choose a language — to select faces by name, walk the name table yourself
 
 **Symptom:** the same design specified selecting a face inside a `.ttc` "by the name Font Book
 shows". The verification pass measured that `x/image` v0.46.0's `sfnt.Name` returns the **first**
@@ -74,7 +76,9 @@ a convenience returning one of them, with no promise that it matches what the us
 - Before writing "the same name the screen shows", check the screen in the user's language
   environment.
 
-## Core Text's line breaking slows with the length of the string it is given — set long paragraphs a window at a time
+## Typesetting
+
+### Core Text's line breaking slows with the length of the string it is given — set long paragraphs a window at a time
 
 **Symptom:** report-studio-mcp broke a paragraph into lines by repeating
 `CTTypesetterCreateWithAttributedString` → `CTTypesetterSuggestLineBreak`. An independent review
@@ -96,7 +100,7 @@ every line makes the total quadratic.
   also checked against the width of the line actually drawn.
 - Do not count from the start per line in your own offset or decoration work either; ask once per line.
 
-## Core Text breaks a number in a table cell inside its characters when the unit it cannot separate is wider than the column — full-width digits break whatever the width
+### Core Text breaks a number in a table cell inside its characters when the unit it cannot separate is wider than the column — full-width digits break whatever the width
 
 **Symptom:** In a typesetting MCP server (2026-11), numbers in a wide table broke as `1,234,5`/`67` and
 `12.34`/`%`. Ten numbers were set in 13 contexts, 14 line positions and 3 column widths (macOS 27.2).
@@ -123,7 +127,7 @@ anywhere (measured behaviour; Core Text's internals are not documented).
   (`100mg`) are a unit and stay part of the number.
 - When it still cannot fit, warn and name the columns (never leave it broken silently).
 
-## Keep-with-next must measure with the same computation that places — and a reuse key must include the style
+### Keep-with-next must measure with the same computation that places — and a reuse key must include the style
 
 **Symptom:** In the same server, a rule kept a heading on the same page as the start of the next block.
 Counting the start separately disagreed with the placement (it counted "two lines" of a paragraph that the
@@ -144,4 +148,3 @@ Reuse is correct only when every input of the computation (width, style) is in t
 - Measure a start inside a container (quote, list) in the style and width the container gives its children.
 - When two mechanisms guard the same result (the key and the style used to measure), break each alone in a
   test.
-

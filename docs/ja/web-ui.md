@@ -5,7 +5,9 @@ WebView フロントエンド（Wails 等）と自己完結 HTML レポート生
 
 ---
 
-## 細い視覚要素にホバー反応を持たせるには hit area を拡張する
+## CSS・レイアウト
+
+### 細い視覚要素にホバー反応を持たせるには hit area を拡張する
 
 **事象:** 高さ 2 px のバーに `pointer-events: none` を付けた状態で hover tooltip を
 実装したが、tooltip が一切出なかった。
@@ -21,7 +23,7 @@ WebView フロントエンド（Wails 等）と自己完結 HTML レポート生
 4. `cursor: help` で affordance を明示。
 5. tooltip 用 `::after` には十分な `z-index` を付け、リスト下端の行でも上に重なるようにする。
 
-## 行 transform を使う仮想テーブルでは、セルの z-index は行内でしか効かない
+### 行 transform を使う仮想テーブルでは、セルの z-index は行内でしか効かない
 
 **事象:** 仮想スクロールテーブル（各行を `transform: translateY()` で配置）で、
 auto-grow するセルエディタにいくら `z-index` を付けても、下の行のテキストが
@@ -39,7 +41,7 @@ auto-grow するセルエディタにいくら `z-index` を付けても、下�
 - デバッグの教訓: 「下の要素が透けて見える」を背景透明と即断しない。opaque でも後の兄弟
   stacking context が上に paint されれば同じ見え方になる。
 
-## undefined CSS variable は silent fallback で UI が壊れる
+### undefined CSS variable は silent fallback で UI が壊れる
 
 **事象:** 新規スタイルが参照した `var(--accent-primary)` がどのテーマにも未定義で、
 dark テーマではたまたま見えていたが、light テーマで「クリック後にボタンが見えなくなる」。
@@ -53,7 +55,7 @@ black 等）に fallback し、**エラーは出ない**。
 - 複数テーマがあるなら**全テーマで**動作確認する（dark で見えているだけかもしれない）。
 - 新しい変数を作る前に、既存の theme token から選ぶことを原則にする。
 
-## 自己完結 HTML レポート生成の CSS 注意点
+### 自己完結 HTML レポート生成の CSS 注意点
 
 **事象:** CDN 依存なしの単一 HTML レポート生成で、レイアウトバグの修正に 7 回の
 イテレーションが必要になった。繰り返し踏んだ点:

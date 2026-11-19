@@ -5,7 +5,9 @@ follows **symptom → why → how to apply**.
 
 ---
 
-## macOS + Podman Machine differs substantially from native Linux containers
+## Podman & containers
+
+### macOS + Podman Machine differs substantially from native Linux containers
 
 **Symptom:** Live testing of a containerized tool hit multiple problems, all
 rooted in the VM layer (Apple Hypervisor + virtiofs + gvproxy).
@@ -24,7 +26,7 @@ rooted in the VM layer (Apple Hypervisor + virtiofs + gvproxy).
 - macOS `sed -i` differs from Linux — use the `sed + mv` pattern.
 - macOS `date -j -f` ignores timezone info — take epoch values directly.
 
-## Don't pre-touch DuckDB files; bind-mount the parent directory
+### Don't pre-touch DuckDB files; bind-mount the parent directory
 
 **Symptom:** Touching an empty file on the host before bind-mounting makes DuckDB
 fail with `IOException: not a valid DuckDB database file`.
@@ -36,7 +38,7 @@ from "corrupt".
 parent** (`-v <host>/work:/work`). Let DuckDB create the file on first
 connection. Write no pre-touch code.
 
-## matplotlib (Agg) draws everything with the first valid font in font.sans-serif
+### matplotlib (Agg) draws everything with the first valid font in font.sans-serif
 
 **Symptom:** With `font.sans-serif: DejaVu Sans, Noto Sans CJK JP, ...`, Japanese
 labels became tofu with `Glyph ... missing from font(s) DejaVu Sans` warnings.
@@ -49,309 +51,8 @@ per-glyph fallback.
 Noto Sans CJK JP covers Latin/digits/symbols too, so leading with it has no side
 effects on English labels. Verify with `python -W error::UserWarning` rendering a
 Japanese title without warnings.
-## rsyslog's logrotate config is a separate package — without it, only some logs grow unbounded
 
-**Symptom:** On a server up for 2.7 years, `/var/log/messages` had reached 62 MB
-and 606,000 lines and had never been rotated. `logrotate` itself completed
-successfully every day, and logs such as `dnf`, `btmp` and `wtmp` were rotating
-correctly.
-
-**Why:** Recent rsyslog ships its logrotate configuration in a separate
-**`rsyslog-logrotate` subpackage**. Without it there is no
-`/etc/logrotate.d/rsyslog`, and only the five files rsyslog writes — `messages`,
-`cron`, `secure`, `maillog`, `spooler` — fall outside rotation. Everything else
-keeps rotating, so nothing looks broken.
-
-**How to apply:**
-- Check with `ls /etc/logrotate.d/rsyslog`; install `rsyslog-logrotate` if absent.
-- To spot the symptom, run `ls -la /var/log/` and look for **a large log with no
-  rotated siblings** (`.1` or `-YYYYMMDD`).
-- An oversized log contaminates daily log-summary reports (see "Establish a log's
-  timestamp semantics before drawing any conclusion about time" in testing).
-- Installing it does not rotate immediately: with a `weekly` schedule the first
-  rotation can be up to a week away. Force it if the switchover is needed now. If
-  the long history is archived before the switch, keep the archive **outside**
-  the summary tool's scan path (outside `/var/log`).
-
-## Passing an individual config file to `logrotate -f` discards the global settings
-
-**Symptom:** A forced rotation via `logrotate -f /etc/logrotate.d/rsyslog` ignored
-`rotate 4` — the rotated file was deleted instead of kept.
-
-**Why:** logrotate reads **only the file it is given**. Unless
-`/etc/logrotate.conf` is passed, the globals declared there (`weekly`,
-`rotate 4`, `create`, `dateext`) never apply, and the built-in defaults take over
-(`rotate 0`, i.e. keep nothing).
-
-**How to apply:** Pass `/etc/logrotate.conf` even for manual runs:
-
-```
-logrotate -d -f /etc/logrotate.conf     # dry run; -d changes nothing
-logrotate -f /etc/logrotate.conf
-```
-
-Confirm `rotating pattern: ... (N rotations)` in the dry-run output before the
-real run. `(no old logs will be kept)` means `rotate` is not in effect. The
-systemd daily run uses `ExecStart=/usr/sbin/logrotate /etc/logrotate.conf`, so the
-automated path is correct and only manual invocations hit this.
-
-## An SSH liveness check locks out the checker itself on OpenSSH 9.8+
-
-**Symptom:** While investigating a server whose SSH went unreachable every few
-minutes — `ping` and DNS answering 100% of the time, SSH alone dead — storage I/O
-hang was the working theory. The cause was **the reachability probe and retry
-loop being used to investigate**.
-
-**Why:** `PerSourcePenalties`, added in OpenSSH 9.8 and enabled by default in 9.9,
-accumulates penalties per source address. The defaults:
-
-```
-crash:90 authfail:5 noauth:1 grace-exceeded:10
-refuseconnection:10 max:600 min:15
-```
-
-A port check with `nc -z` disconnects without authenticating — `noauth`. A timed
-out `ssh` is `grace-exceeded`; a killed one is `crash`. Repeated retries pin the
-total at `max`, **blocking the source for up to ten minutes**.
-
-**How to apply:**
-- **It looks exactly like a storage I/O hang.** Tell them apart from sshd's logs:
-  while a penalty is active no connection is recorded at all (packets never reach
-  sshd). A disk-induced stall leaves entries such as
-  `Timeout before authentication`.
-- If SSH is a monitored service, add the monitoring source to
-  `PerSourcePenaltyExemptList`.
-- Running a retry loop during an investigation makes **the investigation itself
-  produce the symptom**. Back off when connections start failing; penalties
-  accumulate, so retrying without a pause only deepens the hole.
-
-## Never format a macOS volume as case-sensitive — Apple's own apps break silently
-
-**What happened:** A Photos library lived on an external NVMe formatted as case-sensitive
-APFS. `photolibraryd` pinned a CPU core for hours at a time, sometimes for tens of hours.
-For a library of 19k photos the database had bloated to 6 GB, and of its 210k detected-face
-records **98% were orphans whose referenced asset did not exist**. Repairing the library,
-rebuilding the people data, and finally recreating the library from scratch all failed to
-help. **Root cause took two days to find.** Every other device syncing the same data was
-working normally.
-
-**Why:** Apple explicitly states that a Photos library must not live on a case-sensitive
-volume — files may not be found, which can cause data loss. APFS is case-insensitive by
-default, but **case-sensitive is offered as a choice at format time**, which is the trap.
-
-macOS has assumed case-insensitivity since the beginning, and software that does not
-support it is common. Adobe Creative Cloud refuses to install on a case-sensitive volume
-and Steam refuses to start. **An app that refuses outright is the lucky case** — Apple's
-own apps do not refuse, they break quietly. The chain observed here:
-
-```
-case-sensitive volume
-  → asset reference resolution fails ("unexpectedly has no asset", hundreds per minute)
-  → records whose target cannot be resolved accumulate as orphans
-  → derived records keep being generated from them, growing into the hundreds of thousands
-  → the OS tries to deduplicate; cascading deletes plus extra fetches on save go O(n²)
-  → the daemon pins the CPU while committing nothing to disk
-```
-
-**How to apply:**
-- **Check before putting any Apple app library (Photos, Music, and friends) on external
-  storage.**
-
-  ```sh
-  diskutil info /Volumes/<name> | grep 'File System Personality'
-  # "APFS" = fine / "Case-sensitive APFS" = not supported
-  ```
-
-  Or verify empirically, by checking whether names differing only in case collide:
-
-  ```sh
-  touch /Volumes/<name>/.ctest_a
-  [ -f /Volumes/<name>/.ctest_A ] && echo OK || echo "NG (case-sensitive)"
-  rm -f /Volumes/<name>/.ctest_a
-  ```
-
-- **Do not choose case-sensitive when formatting** unless there is a concrete reason.
-  It is needed for things like hosting Linux source trees verbatim; media storage does not
-  need it.
-- **Other devices behaving normally proves nothing.** Corrupted data can propagate to other
-  devices through cloud sync, yet a device that has finished ingesting it keeps running
-  without symptoms. Nothing surfaces in the UI either — counting rows in the database is the
-  only way to see it.
-- **Do not settle for a partial fix.** Moving one library off the volume leaves every other
-  Apple library on it still violating the same rule. Revisit the whole volume layout.
-- **Check for case collisions before migrating.** Moving to a case-insensitive volume makes
-  names that differ only in case collide, and one of them is lost. Lowercase the paths, count
-  duplicates, and confirm zero before moving.
-- **As a general triage rule:** when several machines share the same data and only one
-  misbehaves, the cause is that machine's unique conditions, not the data. **Always include
-  the filesystem format in the checklist.** Asking "does this happen in any other
-  environment?" before digging into symptoms narrows the search dramatically.
-
-## launchd periodic jobs can be delayed or dropped, and there is no way to observe it
-
-**Symptom:** A 30-minute launchd job (launching an AI-agent batch analysis)
-had one firing skipped and ran an hour late. The unprocessed backlog grew,
-stretching turn time and token consumption in a positive-feedback loop. A
-post-hoc AI investigation could not determine the cause.
-
-**Why:** Since OS X 10.9, launchd timers are coalesced for power efficiency
-(firings can be delayed). Additionally, while a job with the same label is
-still running, the next firing is **dropped** (not queued). There is no way to
-tell after the fact which happened: launchd cannot be queried for the next
-fire time and keeps no record of a skip. Once the unified log retention
-(days) has passed, the trail is gone entirely.
-
-**How to apply:**
-- `LegacyTimers: true` in the plist disables coalescing (precise firing at
-  the cost of power efficiency).
-- If a job's run time can exceed its period, do not use launchd periodic
-  execution — a firing that lands mid-run is silently dropped.
-- For periodic tasks where "it did not run" must be observable, use
-  [task-clock](https://github.com/nlink-jp/task-clock): it evaluates cron
-  itself and records every fire as scheduled-vs-actual
-  (`on_time` / `queued` / `missed` with reasons), keeping launchd only for
-  KeepAlive residency.
-- Give resident daemons `ProcessType: Interactive` to avoid background
-  throttling, and structure the timing loop as a short-interval ticker poll
-  instead of one long sleep-until-next-fire timer — under App Nap /
-  coalescing the worst-case delay stays bounded by the tick interval.
-
-## Never park a launchd daemon's binary inside someone else's lifecycle
-
-**Incident:** a daemon installed from a GUI-bundled CLI wrote
-`os.Executable()` — an .app-interior path — into its plist. Merely
-quitting the app took the daemon down with it, and a running task was
-killed mid-flight; the work was lost.
-
-**Why:** launchd cannot spawn a program whose path has vanished, and even a
-running daemon is destroyed by whatever owns that path: the parent app
-quitting, a cask upgrade replacing the .app, `brew upgrade` deleting the
-Cellar, a rebuild re-signing dist/. The lifetime of the path in the plist
-becomes the lifetime of the daemon.
-
-**How to apply:**
-- Have install self-copy the binary into a **daemon-owned home** (e.g.
-  `data_dir/bin/<name>`) and point the plist only there. Order:
-  bootout → copy → write plist → bootstrap (replacing a running binary
-  gets it SIGKILLed on signature change; a failed copy must not leave a
-  plist pointing at nothing).
-- A durable stop is `launchctl disable` + `bootout`. A bootout without the
-  disable is silently undone by RunAtLoad at the next login; and since
-  launchd refuses to bootstrap a disabled service, the start path must
-  `enable` first.
-- To keep a daemon stop from destroying child work, record pid + process
-  start time (`ps -o lstart=`) in a registry **at spawn time**, and have
-  the next daemon adopt processes that are alive with a matching start
-  time. Stop-time bookkeeping cannot cover a crash; command-line matching
-  yields false negatives after an in-run exec and false positives after
-  pid reuse — the start time survives exec and always changes with reuse.
-  Reference implementation:
-  [task-clock](https://github.com/nlink-jp/task-clock)'s live-run registry.
-
-## A real Linux guest with its own SPICE server runs under Podman on Apple silicon without nested virtualization
-
-**What happened:** A macOS SPICE client had only a fake peer to test against. The
-backend's own live harness needs a nested KVM guest inside Apple/container, which
-needs an M3 or newer; the host was an M2 Max and the Podman machine exposes no
-`/dev/kvm`. A native QEMU is no way out either: the Homebrew `qemu` formula has no
-spice-server backend.
-
-**What worked (spice-client ADR-0002, 2026-09-18):** Ubuntu 24.04's
-`qemu-system-arm` + `qemu-system-modules-spice` inside the Podman machine, with
-`-accel tcg`, boots a minimal arm64 guest fast enough to gate on: an Alpine 3.22
-`linux-virt` kernel (9.6 MB) plus an 8.4 MB initramfs made from the `alpine:3.22`
-image's own userland and a pruned module tree reached its init markers 4 s after
-`podman run` (2 of 2 boots), and a real spice-server 0.15.1 delivered display
-frames in the tens per second, cursor, and input acknowledgements to the client.
-Both base images are pinned by digest; apt/apk package versions are recorded from
-the built image rather than pinned, because stable repositories keep only the
-current version.
-
-**How to apply:**
-- The Alpine virt kernel ships `virtio_gpu`, `virtio_input`, `drm` **and `evdev`**
-  as modules; without `evdev` the guest has `/dev/dri/card0` but no
-  `/dev/input/event*`, so injected keys vanish silently. `modprobe` them in init
-  and wait for the guest to report that it is reading each event device before
-  injecting: evdev does not buffer for readers that are not there yet.
-- Build the guest inside the pinned container, not on the host: `apk add linux-virt`
-  gives kernel and modules, busybox `depmod -b` re-indexes the pruned tree, and
-  `cpio -H newc | gzip -n` makes the initramfs reproducible.
-- Podman machine specifics carry over: QEMU binds `0.0.0.0` inside, the host
-  publish is `127.0.0.1:` and an ephemeral port read back with `podman port`
-  (gvproxy can retain a fixed port from an earlier run), and a `--rm` container
-  under `timeout --signal=KILL` plus removal of a stale name at the next start is
-  what actually bounds an interrupted run — a trap does not fire on SIGKILL.
-- A per-run ticket goes to QEMU as `-object secret,…,file=` from a `0600` file
-  under `~/.cache`, never as `data=` in argv where `podman inspect` shows it.
-
-## Give a virtual machine the devices the product actually uses — a spare display head crashed the hypervisor
-
-**What happened:** A test guest was given `-device virtio-gpu-pci,max_outputs=2`,
-copied from an upstream harness that exercises a two-head layout. With a SPICE
-agent running in the guest and a client connecting and disconnecting repeatedly,
-QEMU dumped core (exit 139). It reproduced on `qemu-system-arm` 8.2.2 (Ubuntu
-24.04) and 10.0.13 (Debian 13), so upgrading was not the answer. The application
-under test presents a single display stream and never asked for the second head.
-With `max_outputs=1`, eleven consecutive runs kept the peer alive
-(spice-client, 2026-09-18).
-
-**How to apply:** Copy a fixture's device list only as far as the product's own
-usage goes; every extra device is surface the product never exercises but the
-test can still die on. When a hypervisor crashes rather than erring, check the
-exit status before the guest logs: a container started with `--rm` throws that
-status away, so a fixture container should live until its owner removes it.
-
-**When the product does need the unstable device, isolate it instead of dropping
-it.** The same fixture later gained an audio device, because playback is a real
-feature, and the crash came back: 3 crashes in 12 runs with the device against
-0 in 18 without, and 2 in 5 on the newer hypervisor, so upgrading was not the
-answer. What the crash needed was churn — many client connect/disconnect cycles
-with the playback channel open. Splitting the run into two phases, the
-churn-heavy suites against a device-free fixture and the audio check on its own
-fixture with a single connection, was clean in 5 of 5 and then 4 of 4 whole
-runs. Measure the rate before and after rather than declaring it fixed: both of
-these were intermittent, and a single clean run proves nothing.
-
-One more detail for audio specifically: a silent stream exercises the whole
-path. The transport carries whatever PCM it is handed, so the guest can play
-zeros and the client's packet counters still move, which keeps the machine
-running the gate quiet. Verifying audio should not mean a laptop suddenly
-emitting a test tone.
-
-## Allocating an ephemeral port and binding it later is inherently racy — the fix is a bounded retry
-
-**Symptom:** An integration gate that publishes a container on an ephemeral loopback
-port failed once in three consecutive runs:
-
-```
-Error: something went wrong with the request: "listen tcp 127.0.0.1:41343: bind: address already in use"
-```
-
-It happened starting the phase-2 peer right after the phase-1 peer was stopped. The same
-sequence passed many times before and after, so it was not a configuration error.
-
-**Why:** Publishing an ephemeral port always leaves a gap between asking the kernel for a
-free one and actually binding it, and nothing reserves it in that gap. A socket that just
-left TIME_WAIT, or an unrelated outbound connection, can take the same number first. No
-container runtime offers an option that closes the gap (pinning the port number closes
-it but reintroduces collisions with the previous run's leftovers, which is a different
-problem). This is a race that follows from the shape of the API, not a defect in an
-implementation. Because it is rare, the usual outcome is a team learning to treat the
-gate as flaky.
-
-**How to apply:** Retry the start itself, a bounded number of times, taking a fresh
-allocation on each attempt. Waiting for the same port is pointless.
-
-- Gate the retry on the error text for **"address already in use" only**. Every other
-  failure — missing image, bad argument — must surface immediately with its own status
-  and message. Retrying all failures turns a real fault into "tried five times, gave up"
-  and deletes the cause.
-- Print one line to stderr when you retry. A silent fix hides the frequency going up.
-- Remove the named container before retrying: a failed start can leave the name taken.
-- The limit can be small; five was enough. On reaching it, fail with the last error text
-  included verbatim.
-
-## `podman ps --filter name=` is an unanchored regular expression
+### `podman ps --filter name=` is an unanchored regular expression
 
 **Symptom:** a server looked a container up with `--filter name=tool-<id>`. Podman matched
 `tool-gamma` against `tool-gamma2-…` and against the same id created under another work
@@ -364,7 +65,7 @@ answers every `ps` with one canned id cannot see a wrong name at all — give it
 containers and match the way podman does (unanchored regex), so that a missing anchor fails
 the unit test, and keep one opt-in test that asks the real podman the same question.
 
-## An image rebuilt from the same Dockerfile takes no security updates — through the layer cache and through the base
+### An image rebuilt from the same Dockerfile takes no security updates — through the layer cache and through the base
 
 **Symptom:** a tool ships its Dockerfile inside the binary and has the user run `podman build`
 locally. After a Debian security update, a forced rebuild left the vulnerable package in place
@@ -436,8 +137,334 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
     (ignored, with a warning naming the source to remove) and kept versions only in the
     Dockerfile; ask the user before changing such a key, it is a breaking change.
 
+### When a published image is gone, rebuild the pinned release from official source — podman-compose stops silently on an unpullable image
 
-## A default written into the config file at install time never receives later default bumps
+**Symptom:** Bringing up an OpenCTI 6.7.4 development stack on Podman, nothing happened for 23 minutes (2026-11, a lookup tool for OpenCTI).
+The MinIO image the stack pinned could no longer be pulled from Docker Hub or quay.io: the upstream repository was
+archived on 2026-04-24 and its images removed. OpenCTI's current compose had moved to a community fork's `latest`.
+
+**Why:** podman-compose did not surface the failed pull; it kept waiting for the dependent services. With no error and
+no exit, it looks like a slow start.
+
+**How to apply:**
+- Watch start-up for container state changes and health, with a deadline. When it stalls, first check that the images
+  were pulled (`podman images`, `podman manifest inspect`, the registry API).
+- Do not substitute a community fork or `latest`. Build the pinned release from official source yourself: pin the base
+  images by digest, and check that the fetched source is the commit the tag points at before building.
+- For an annotated tag, GitHub's refs API (`git/ref/tags/<tag>`) returns the tag object's id. Verify against the sha
+  from `commits/<tag>` — mixing them up fails the check on the right source.
+- A healthcheck that relies on a client bundled in the upstream image (MinIO's `mc`) does not survive the rebuild.
+  Replace it with the service's own liveness URL.
+
+## Virtual machines
+
+### A real Linux guest with its own SPICE server runs under Podman on Apple silicon without nested virtualization
+
+**What happened:** A macOS SPICE client had only a fake peer to test against. The
+backend's own live harness needs a nested KVM guest inside Apple/container, which
+needs an M3 or newer; the host was an M2 Max and the Podman machine exposes no
+`/dev/kvm`. A native QEMU is no way out either: the Homebrew `qemu` formula has no
+spice-server backend.
+
+**What worked (spice-client ADR-0002, 2026-09-18):** Ubuntu 24.04's
+`qemu-system-arm` + `qemu-system-modules-spice` inside the Podman machine, with
+`-accel tcg`, boots a minimal arm64 guest fast enough to gate on: an Alpine 3.22
+`linux-virt` kernel (9.6 MB) plus an 8.4 MB initramfs made from the `alpine:3.22`
+image's own userland and a pruned module tree reached its init markers 4 s after
+`podman run` (2 of 2 boots), and a real spice-server 0.15.1 delivered display
+frames in the tens per second, cursor, and input acknowledgements to the client.
+Both base images are pinned by digest; apt/apk package versions are recorded from
+the built image rather than pinned, because stable repositories keep only the
+current version.
+
+**How to apply:**
+- The Alpine virt kernel ships `virtio_gpu`, `virtio_input`, `drm` **and `evdev`**
+  as modules; without `evdev` the guest has `/dev/dri/card0` but no
+  `/dev/input/event*`, so injected keys vanish silently. `modprobe` them in init
+  and wait for the guest to report that it is reading each event device before
+  injecting: evdev does not buffer for readers that are not there yet.
+- Build the guest inside the pinned container, not on the host: `apk add linux-virt`
+  gives kernel and modules, busybox `depmod -b` re-indexes the pruned tree, and
+  `cpio -H newc | gzip -n` makes the initramfs reproducible.
+- Podman machine specifics carry over: QEMU binds `0.0.0.0` inside, the host
+  publish is `127.0.0.1:` and an ephemeral port read back with `podman port`
+  (gvproxy can retain a fixed port from an earlier run), and a `--rm` container
+  under `timeout --signal=KILL` plus removal of a stale name at the next start is
+  what actually bounds an interrupted run — a trap does not fire on SIGKILL.
+- A per-run ticket goes to QEMU as `-object secret,…,file=` from a `0600` file
+  under `~/.cache`, never as `data=` in argv where `podman inspect` shows it.
+
+### Give a virtual machine the devices the product actually uses — a spare display head crashed the hypervisor
+
+**What happened:** A test guest was given `-device virtio-gpu-pci,max_outputs=2`,
+copied from an upstream harness that exercises a two-head layout. With a SPICE
+agent running in the guest and a client connecting and disconnecting repeatedly,
+QEMU dumped core (exit 139). It reproduced on `qemu-system-arm` 8.2.2 (Ubuntu
+24.04) and 10.0.13 (Debian 13), so upgrading was not the answer. The application
+under test presents a single display stream and never asked for the second head.
+With `max_outputs=1`, eleven consecutive runs kept the peer alive
+(spice-client, 2026-09-18).
+
+**How to apply:** Copy a fixture's device list only as far as the product's own
+usage goes; every extra device is surface the product never exercises but the
+test can still die on. When a hypervisor crashes rather than erring, check the
+exit status before the guest logs: a container started with `--rm` throws that
+status away, so a fixture container should live until its owner removes it.
+
+**When the product does need the unstable device, isolate it instead of dropping
+it.** The same fixture later gained an audio device, because playback is a real
+feature, and the crash came back: 3 crashes in 12 runs with the device against
+0 in 18 without, and 2 in 5 on the newer hypervisor, so upgrading was not the
+answer. What the crash needed was churn — many client connect/disconnect cycles
+with the playback channel open. Splitting the run into two phases, the
+churn-heavy suites against a device-free fixture and the audio check on its own
+fixture with a single connection, was clean in 5 of 5 and then 4 of 4 whole
+runs. Measure the rate before and after rather than declaring it fixed: both of
+these were intermittent, and a single clean run proves nothing.
+
+One more detail for audio specifically: a silent stream exercises the whole
+path. The transport carries whatever PCM it is handed, so the guest can play
+zeros and the client's packet counters still move, which keeps the machine
+running the gate quiet. Verifying audio should not mean a laptop suddenly
+emitting a test tone.
+
+## macOS system (launchd, volumes)
+
+### Never format a macOS volume as case-sensitive — Apple's own apps break silently
+
+**What happened:** A Photos library lived on an external NVMe formatted as case-sensitive
+APFS. `photolibraryd` pinned a CPU core for hours at a time, sometimes for tens of hours.
+For a library of 19k photos the database had bloated to 6 GB, and of its 210k detected-face
+records **98% were orphans whose referenced asset did not exist**. Repairing the library,
+rebuilding the people data, and finally recreating the library from scratch all failed to
+help. **Root cause took two days to find.** Every other device syncing the same data was
+working normally.
+
+**Why:** Apple explicitly states that a Photos library must not live on a case-sensitive
+volume — files may not be found, which can cause data loss. APFS is case-insensitive by
+default, but **case-sensitive is offered as a choice at format time**, which is the trap.
+
+macOS has assumed case-insensitivity since the beginning, and software that does not
+support it is common. Adobe Creative Cloud refuses to install on a case-sensitive volume
+and Steam refuses to start. **An app that refuses outright is the lucky case** — Apple's
+own apps do not refuse, they break quietly. The chain observed here:
+
+```
+case-sensitive volume
+  → asset reference resolution fails ("unexpectedly has no asset", hundreds per minute)
+  → records whose target cannot be resolved accumulate as orphans
+  → derived records keep being generated from them, growing into the hundreds of thousands
+  → the OS tries to deduplicate; cascading deletes plus extra fetches on save go O(n²)
+  → the daemon pins the CPU while committing nothing to disk
+```
+
+**How to apply:**
+- **Check before putting any Apple app library (Photos, Music, and friends) on external
+  storage.**
+
+  ```sh
+  diskutil info /Volumes/<name> | grep 'File System Personality'
+  # "APFS" = fine / "Case-sensitive APFS" = not supported
+  ```
+
+  Or verify empirically, by checking whether names differing only in case collide:
+
+  ```sh
+  touch /Volumes/<name>/.ctest_a
+  [ -f /Volumes/<name>/.ctest_A ] && echo OK || echo "NG (case-sensitive)"
+  rm -f /Volumes/<name>/.ctest_a
+  ```
+
+- **Do not choose case-sensitive when formatting** unless there is a concrete reason.
+  It is needed for things like hosting Linux source trees verbatim; media storage does not
+  need it.
+- **Other devices behaving normally proves nothing.** Corrupted data can propagate to other
+  devices through cloud sync, yet a device that has finished ingesting it keeps running
+  without symptoms. Nothing surfaces in the UI either — counting rows in the database is the
+  only way to see it.
+- **Do not settle for a partial fix.** Moving one library off the volume leaves every other
+  Apple library on it still violating the same rule. Revisit the whole volume layout.
+- **Check for case collisions before migrating.** Moving to a case-insensitive volume makes
+  names that differ only in case collide, and one of them is lost. Lowercase the paths, count
+  duplicates, and confirm zero before moving.
+- **As a general triage rule:** when several machines share the same data and only one
+  misbehaves, the cause is that machine's unique conditions, not the data. **Always include
+  the filesystem format in the checklist.** Asking "does this happen in any other
+  environment?" before digging into symptoms narrows the search dramatically.
+
+### launchd periodic jobs can be delayed or dropped, and there is no way to observe it
+
+**Symptom:** A 30-minute launchd job (launching an AI-agent batch analysis)
+had one firing skipped and ran an hour late. The unprocessed backlog grew,
+stretching turn time and token consumption in a positive-feedback loop. A
+post-hoc AI investigation could not determine the cause.
+
+**Why:** Since OS X 10.9, launchd timers are coalesced for power efficiency
+(firings can be delayed). Additionally, while a job with the same label is
+still running, the next firing is **dropped** (not queued). There is no way to
+tell after the fact which happened: launchd cannot be queried for the next
+fire time and keeps no record of a skip. Once the unified log retention
+(days) has passed, the trail is gone entirely.
+
+**How to apply:**
+- `LegacyTimers: true` in the plist disables coalescing (precise firing at
+  the cost of power efficiency).
+- If a job's run time can exceed its period, do not use launchd periodic
+  execution — a firing that lands mid-run is silently dropped.
+- For periodic tasks where "it did not run" must be observable, use
+  [task-clock](https://github.com/nlink-jp/task-clock): it evaluates cron
+  itself and records every fire as scheduled-vs-actual
+  (`on_time` / `queued` / `missed` with reasons), keeping launchd only for
+  KeepAlive residency.
+- Give resident daemons `ProcessType: Interactive` to avoid background
+  throttling, and structure the timing loop as a short-interval ticker poll
+  instead of one long sleep-until-next-fire timer — under App Nap /
+  coalescing the worst-case delay stays bounded by the tick interval.
+
+### Never park a launchd daemon's binary inside someone else's lifecycle
+
+**Incident:** a daemon installed from a GUI-bundled CLI wrote
+`os.Executable()` — an .app-interior path — into its plist. Merely
+quitting the app took the daemon down with it, and a running task was
+killed mid-flight; the work was lost.
+
+**Why:** launchd cannot spawn a program whose path has vanished, and even a
+running daemon is destroyed by whatever owns that path: the parent app
+quitting, a cask upgrade replacing the .app, `brew upgrade` deleting the
+Cellar, a rebuild re-signing dist/. The lifetime of the path in the plist
+becomes the lifetime of the daemon.
+
+**How to apply:**
+- Have install self-copy the binary into a **daemon-owned home** (e.g.
+  `data_dir/bin/<name>`) and point the plist only there. Order:
+  bootout → copy → write plist → bootstrap (replacing a running binary
+  gets it SIGKILLed on signature change; a failed copy must not leave a
+  plist pointing at nothing).
+- A durable stop is `launchctl disable` + `bootout`. A bootout without the
+  disable is silently undone by RunAtLoad at the next login; and since
+  launchd refuses to bootstrap a disabled service, the start path must
+  `enable` first.
+- To keep a daemon stop from destroying child work, record pid + process
+  start time (`ps -o lstart=`) in a registry **at spawn time**, and have
+  the next daemon adopt processes that are alive with a matching start
+  time. Stop-time bookkeeping cannot cover a crash; command-line matching
+  yields false negatives after an in-run exec and false positives after
+  pid reuse — the start time survives exec and always changes with reuse.
+  Reference implementation:
+  [task-clock](https://github.com/nlink-jp/task-clock)'s live-run registry.
+
+## Operations (logs, SSH, ports, config)
+
+### rsyslog's logrotate config is a separate package — without it, only some logs grow unbounded
+
+**Symptom:** On a server up for 2.7 years, `/var/log/messages` had reached 62 MB
+and 606,000 lines and had never been rotated. `logrotate` itself completed
+successfully every day, and logs such as `dnf`, `btmp` and `wtmp` were rotating
+correctly.
+
+**Why:** Recent rsyslog ships its logrotate configuration in a separate
+**`rsyslog-logrotate` subpackage**. Without it there is no
+`/etc/logrotate.d/rsyslog`, and only the five files rsyslog writes — `messages`,
+`cron`, `secure`, `maillog`, `spooler` — fall outside rotation. Everything else
+keeps rotating, so nothing looks broken.
+
+**How to apply:**
+- Check with `ls /etc/logrotate.d/rsyslog`; install `rsyslog-logrotate` if absent.
+- To spot the symptom, run `ls -la /var/log/` and look for **a large log with no
+  rotated siblings** (`.1` or `-YYYYMMDD`).
+- An oversized log contaminates daily log-summary reports (see "Establish a log's
+  timestamp semantics before drawing any conclusion about time" in testing).
+- Installing it does not rotate immediately: with a `weekly` schedule the first
+  rotation can be up to a week away. Force it if the switchover is needed now. If
+  the long history is archived before the switch, keep the archive **outside**
+  the summary tool's scan path (outside `/var/log`).
+
+### Passing an individual config file to `logrotate -f` discards the global settings
+
+**Symptom:** A forced rotation via `logrotate -f /etc/logrotate.d/rsyslog` ignored
+`rotate 4` — the rotated file was deleted instead of kept.
+
+**Why:** logrotate reads **only the file it is given**. Unless
+`/etc/logrotate.conf` is passed, the globals declared there (`weekly`,
+`rotate 4`, `create`, `dateext`) never apply, and the built-in defaults take over
+(`rotate 0`, i.e. keep nothing).
+
+**How to apply:** Pass `/etc/logrotate.conf` even for manual runs:
+
+```
+logrotate -d -f /etc/logrotate.conf     # dry run; -d changes nothing
+logrotate -f /etc/logrotate.conf
+```
+
+Confirm `rotating pattern: ... (N rotations)` in the dry-run output before the
+real run. `(no old logs will be kept)` means `rotate` is not in effect. The
+systemd daily run uses `ExecStart=/usr/sbin/logrotate /etc/logrotate.conf`, so the
+automated path is correct and only manual invocations hit this.
+
+### An SSH liveness check locks out the checker itself on OpenSSH 9.8+
+
+**Symptom:** While investigating a server whose SSH went unreachable every few
+minutes — `ping` and DNS answering 100% of the time, SSH alone dead — storage I/O
+hang was the working theory. The cause was **the reachability probe and retry
+loop being used to investigate**.
+
+**Why:** `PerSourcePenalties`, added in OpenSSH 9.8 and enabled by default in 9.9,
+accumulates penalties per source address. The defaults:
+
+```
+crash:90 authfail:5 noauth:1 grace-exceeded:10
+refuseconnection:10 max:600 min:15
+```
+
+A port check with `nc -z` disconnects without authenticating — `noauth`. A timed
+out `ssh` is `grace-exceeded`; a killed one is `crash`. Repeated retries pin the
+total at `max`, **blocking the source for up to ten minutes**.
+
+**How to apply:**
+- **It looks exactly like a storage I/O hang.** Tell them apart from sshd's logs:
+  while a penalty is active no connection is recorded at all (packets never reach
+  sshd). A disk-induced stall leaves entries such as
+  `Timeout before authentication`.
+- If SSH is a monitored service, add the monitoring source to
+  `PerSourcePenaltyExemptList`.
+- Running a retry loop during an investigation makes **the investigation itself
+  produce the symptom**. Back off when connections start failing; penalties
+  accumulate, so retrying without a pause only deepens the hole.
+
+### Allocating an ephemeral port and binding it later is inherently racy — the fix is a bounded retry
+
+**Symptom:** An integration gate that publishes a container on an ephemeral loopback
+port failed once in three consecutive runs:
+
+```
+Error: something went wrong with the request: "listen tcp 127.0.0.1:41343: bind: address already in use"
+```
+
+It happened starting the phase-2 peer right after the phase-1 peer was stopped. The same
+sequence passed many times before and after, so it was not a configuration error.
+
+**Why:** Publishing an ephemeral port always leaves a gap between asking the kernel for a
+free one and actually binding it, and nothing reserves it in that gap. A socket that just
+left TIME_WAIT, or an unrelated outbound connection, can take the same number first. No
+container runtime offers an option that closes the gap (pinning the port number closes
+it but reintroduces collisions with the previous run's leftovers, which is a different
+problem). This is a race that follows from the shape of the API, not a defect in an
+implementation. Because it is rare, the usual outcome is a team learning to treat the
+gate as flaky.
+
+**How to apply:** Retry the start itself, a bounded number of times, taking a fresh
+allocation on each attempt. Waiting for the same port is pointless.
+
+- Gate the retry on the error text for **"address already in use" only**. Every other
+  failure — missing image, bad argument — must surface immediately with its own status
+  and message. Retrying all failures turns a real fault into "tried five times, gave up"
+  and deletes the cause.
+- Print one line to stderr when you retry. A silent fix hides the frequency going up.
+- Remove the named container before retrying: a failed start can leave the name taken.
+- The limit can be small; five was enough. On reaching it, fail with the last error text
+  included verbatim.
+
+### A default written into the config file at install time never receives later default bumps
 
 **Symptom:** a containerized CLI tool moved its default Node.js from 20, which had reached end of life, to 24
 (2026-10-25). Existing installs went on building with 20, the maintainer's own included.
@@ -459,22 +486,3 @@ machine with no config file, it runs on the new default.
 - Test on a machine that has a config file made from the old template. A clean machine hides this bug.
 - The warning can only tell "older than the default", not "unsupported": an unsupported odd release line can
   be newer than the default. Do not make the tool judge support; keep the default on a supported line instead.
-
-## When a published image is gone, rebuild the pinned release from official source — podman-compose stops silently on an unpullable image
-
-**Symptom:** Bringing up an OpenCTI 6.7.4 development stack on Podman, nothing happened for 23 minutes (2026-11, a lookup tool for OpenCTI).
-The MinIO image the stack pinned could no longer be pulled from Docker Hub or quay.io: the upstream repository was
-archived on 2026-04-24 and its images removed. OpenCTI's current compose had moved to a community fork's `latest`.
-
-**Why:** podman-compose did not surface the failed pull; it kept waiting for the dependent services. With no error and
-no exit, it looks like a slow start.
-
-**How to apply:**
-- Watch start-up for container state changes and health, with a deadline. When it stalls, first check that the images
-  were pulled (`podman images`, `podman manifest inspect`, the registry API).
-- Do not substitute a community fork or `latest`. Build the pinned release from official source yourself: pin the base
-  images by digest, and check that the fetched source is the commit the tag points at before building.
-- For an annotated tag, GitHub's refs API (`git/ref/tags/<tag>`) returns the tag object's id. Verify against the sha
-  from `commits/<tag>` — mixing them up fails the check on the right source.
-- A healthcheck that relies on a client bundled in the upstream image (MinIO's `mc`) does not survive the rebuild.
-  Replace it with the service's own liveness URL.

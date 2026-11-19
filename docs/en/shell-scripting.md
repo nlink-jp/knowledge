@@ -4,7 +4,9 @@ Bash / zsh / sed pitfalls. Each entry follows **symptom → why → how to apply
 
 ---
 
-## macOS sed is BSD sed — GNU-incompatible, and which one runs is environment-dependent
+## Shell dialects
+
+### macOS sed is BSD sed — GNU-incompatible, and which one runs is environment-dependent
 
 **Symptom:** Scripts that work on Linux (GNU sed) break on macOS and vice versa —
 a recurring class of trouble. Worse, on machines with Homebrew GNU sed (`gsed`)
@@ -36,7 +38,7 @@ machine" says nothing about portability.
 - Runtime detection: `sed --version` answers only for GNU (BSD sed errors).
 - Review trigger: on seeing `sed -i`, always ask "on which OS, with which sed?"
 
-## zsh parameter expansion is not bash — no word splitting, no globbing
+### zsh parameter expansion is not bash — no word splitting, no globbing
 
 **Symptom:** Pasting bash-oriented one-liners and snippets into macOS's default
 interactive shell (zsh) changes their behavior — another recurring class of
@@ -72,7 +74,67 @@ trouble.
 - One-liners in documentation either state "run under bash" or are written to
   behave identically in both shells.
 
-## trap handlers run outside function scope
+### On macOS's bash 3.2, an empty array under `set -u` is an unbound variable
+
+**Symptom:** A fixture script built its optional arguments as an array and
+expanded them in the middle of a long command:
+
+```sh
+set -euo pipefail
+AUDIO_ARGS=()
+[ -n "${WANT_AUDIO:-}" ] && AUDIO_ARGS=(-audiodev spice,id=a -device virtio-sound-pci,audiodev=a)
+podman run ... "${AUDIO_ARGS[@]}" ...
+```
+
+With the option off, the script died before doing anything:
+`AUDIO_ARGS[@]: unbound variable`.
+
+**Why:** macOS still ships bash 3.2 as `/bin/bash`, and there `"${arr[@]}"` on an
+*empty* array counts as unset under `set -u`. Bash 4.4 and later special-case it.
+A script with `#!/bin/bash` gets 3.2 on macOS no matter which bash Homebrew
+installed, so this is invisible when it is developed or tested under bash 5.
+
+**How to apply:** Expand optional arrays as `${arr[@]+"${arr[@]}"}`, which yields
+nothing when the array is empty and the elements otherwise. The same applies to
+`$@` in a function with no arguments. Do not reach for `set +u` around the call:
+that disables the check for everything else on the line too. And remember the
+neighbouring trap in the same construct — a `#` comment cannot be placed inside a
+backslash-continued command; it swallows the continuation and the command runs
+with the wrong arguments or not at all.
+
+### In zsh, `log` is a builtin — read the macOS log with `/usr/bin/log`
+
+**Symptom:** `log show --last 5m ...` in zsh failed with
+`log:1: too many arguments`. Where the error was easy to miss (output piped into
+grep), it looked like "no matching entries".
+
+**Why:** zsh has a builtin `log` (for login watching), and a builtin wins over
+`/usr/bin/log` on the PATH.
+
+**How to apply:**
+- Write `/usr/bin/log show ...` with the absolute path.
+- Believe a result of zero entries only after the same command finds entries in
+  a window known to have them (a positive control).
+
+### zsh's `path` is tied to `PATH` — as a loop variable it makes every command disappear
+
+**Symptom:** `while read sha path; do h=$(git hash-object -- "$path"); ...; done < list`
+run in zsh printed `command not found: git` from the first line on, and all
+1,043 files were reported as mismatches (lib-series TOML decoder, 2026-11).
+
+**Why:** in zsh `path` is an array tied to `PATH`; assigning it rewrites `PATH`.
+Once `read ... path` stores the first file name in `path`, `PATH` is that file
+name alone. In bash it is an ordinary variable, so the same script works there.
+
+**How to apply:**
+- In scripts zsh may run, never name a variable `path` (nor `cdpath`, `fpath`,
+  `manpath` and the other tied arrays). Use `f` or `file`.
+- When a verification loop reports every item as a mismatch, first check that
+  the command producing the comparison ran at all (do not discard its stderr).
+
+## Syntax & exit-status pitfalls
+
+### trap handlers run outside function scope
 
 **Symptom:** A cleanup trap handler referenced `local` variables and died with
 unbound-variable errors under `set -u` (the same trap was hit three times).
@@ -83,7 +145,7 @@ unbound-variable errors under `set -u` (the same trap was hit three times).
   with `|| true`.
 - Trap `INT TERM`, not just `EXIT`.
 
-## Never inline `$(...)` in the pattern of `${var//pattern/replacement}`
+### Never inline `$(...)` in the pattern of `${var//pattern/replacement}`
 
 **Symptom:** A substitution loop resolving `$(VAR)` references **silently** did
 nothing. No error, so the cause stayed invisible until a test was written.
@@ -98,81 +160,7 @@ pat='$(OUT)'; echo "${s//"$pat"/$val}"  # => dist/tool  correct
 variable and write `${s//"$pat"/$rep}`. Suspect any existing inline form. Never
 "simplify" it back inline (leave a prohibition comment in the code).
 
-## An operational script must not infer its root from $PWD — and a skipped check must never summarize green
-
-**Symptom:** an org-wide health-check script defaulted its target root to
-`$(pwd)`. Run by an agent whose shell had silently persisted in another
-repository's directory, every repo came back "not found locally" — as a
-warning — and the run still printed **"Result: all checks passed." with
-exit 0, having checked nothing**. The wrong-cwd invocation was not a
-one-off: an agent environment's working directory persists invisibly
-between shell calls and drifts away from what the operator believes.
-
-**Why:** two defects compounding. (1) The script could derive its root
-from its own location (`BASH_SOURCE`) but delegated it to the caller's
-cwd — the least trustworthy input deciding the most important question.
-(2) Missing repositories were warnings, not counted failures — a
-fail-open skip that made unexamined targets look like passing ones.
-Either alone is survivable (with only the first, an INCOMPLETE verdict
-surfaces the mistake; with only the second, the right root is used);
-composed, they manufacture a green result out of zero checks.
-
-**How to apply:**
-- A script that lives inside the tree it examines derives its root
-  **relative to `BASH_SOURCE`** (`SCRIPT_DIR/../..`), keeping an explicit
-  argument as the override. A `$PWD` default is an unverified assumption
-  that the caller stands in the right place.
-- A checking script **separates skips from passes**: targets it could not
-  find or read are counted, the summary says "INCOMPLETE — N not
-  checked", and the exit status is non-zero. Green means "every target
-  examined, every check passed" and nothing less — a check must never
-  claim more than it verified.
-- The operator-side twin habit: prefix agent shell calls with
-  `cd /absolute/path &&`. But discipline slips somewhere eventually,
-  which is why the script-side mechanism is the real wall.
-
-## Tell "the input could not be fetched" apart from an empty answer
-
-**Symptom:** While speeding up an organization-wide health check, three fail-opens of the same
-shape turned up.
-
-- The tap currency check read each repository's latest release with
-  `$(gh release view … 2>/dev/null || true)` and skipped an empty answer as "no visible release,
-  so no drift". Run with gh unable to authenticate, it skipped all 92 entries and printed
-  `[OK] 92 entr(ies) point at their latest release` and "all checks passed".
-- A failed fetch was silenced with `2>/dev/null`. With one repository's fetch made to fail, the
-  check compared against the stale `origin/main` of the last fetch that worked and printed
-  `[OK] up to date`.
-- The organization's repository list came from `gh repo list --limit 300`. gh stops at the limit
-  without a word, and a repository cut off the end reads as unreleased and unarchived.
-
-On top of that, the passing line counted entries it had not compared (it said 92; it compared 91).
-
-**Why:** `$(cmd 2>/dev/null || true)` folds "failed" into "empty", and empty is also a legitimate
-answer (no release, no drift), so the failure takes the passing path. A stale ref has the same
-shape: the input that could not be fetched survives as a plausible "value from last time". The
-previous entry closed the case where a target is not found; a target that exists but whose input
-cannot be fetched is a different path.
-
-**How to apply:**
-- Judge an external input once, where it is fetched. Absent command, failed call, empty result,
-  or a result exactly as long as its limit (possibly truncated) makes it unusable; empty it so
-  nothing can read part of it.
-- Report an unusable input once, as NOT checked, and count it as INCOMPLETE. A consuming check
-  never prints a passing line without its input.
-- A passing line that states a count counts only what was actually compared; say separately what
-  was not.
-- Record failures of a preparatory step such as a fetch, and report that target's comparison as
-  NOT checked. Never compare against a stale ref.
-- Verify before and after the fix by injecting the fault into the real target. gh fails with an
-  invalid token (a bogus `GH_TOKEN`). To fail one repository's fetch only, point that one URL at
-  an unreachable proxy (`GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.<repo-url>.proxy
-  GIT_CONFIG_VALUE_0=http://127.0.0.1:9`); neither the repository nor any config file is touched.
-- "The output is the same as before" does not prove a rebuilt check equivalent when the check
-  prints its passing line even without input: it prints the same line when it compares nothing.
-  Compare the old and new answers item by item.
-
-## `|| true` at the end of an `&&` chain forgives the whole chain, not the last command
+### `|| true` at the end of an `&&` chain forgives the whole chain, not the last command
 
 **Symptom:** A release check was written like this:
 
@@ -191,7 +179,7 @@ excuse one command swallows every mandatory gate in front of it.
 mandatory step separately with its own message: `|| { echo …; exit 1; }`. A pipeline ending in
 `head` has the same shape — the exit status is `head`'s — and is not a reason to add `|| true`.
 
-## `cmd | grep -q` under `set -o pipefail` fails on a match
+### `cmd | grep -q` under `set -o pipefail` fails on a match
 
 **Symptom:** A release-verification script checked the signature of a downloaded binary:
 
@@ -223,65 +211,7 @@ a gate reports a failure that the same evidence, printed a line earlier, contrad
 the plumbing before the asset — then fix the check and re-run it for a machine verdict instead
 of reasoning the FAIL away.
 
-## Do not pick "the artifact just built" with `ls <glob> | tail -1` — version strings do not sort by age
-
-**Symptom:** To check a rebuilt zip, a script used `Z=$(ls dist/<name>-v*-darwin-arm64.zip | tail -1)`. `dist/` held
-the previous `<name>-v0.1.1-darwin-arm64.zip` and the new `<name>-v0.1.1-2-gbcb4938-darwin-arm64.zip`, and `-2-g…`
-sorts before `-darwin…` (`2` < `d`). `tail -1` picked the old zip, and the check reported the fix as not working. The
-script printed the path, which is how it was caught (2026-09-27, measured).
-
-**Why:** `git describe` versions (`v0.1.1`, `v0.1.1-2-g<hash>`, `v0.1.1-dirty`) do not sort lexically in build order.
-`ls -t` (by mtime) is not reliable either once files are copied or unpacked.
-
-**How to apply:**
-- Name the artifact from the same version the build used (have the Makefile print `$(VERSION)`, or take the path the
-  build printed).
-- Always print the path of the file a check examined. When a result is unexpected, first suspect the wrong file.
-
-## `git add` given a path already removed with `git rm` stages nothing at all
-
-**Symptom:** A bulk-commit script staged a deletion with `git rm`, then ran `git add Makefile <new file> <removed file>`.
-It exited with `fatal: pathspec '<removed file>' did not match any files` (exit 128) and **staged none of the other
-paths either**; `git add -A -- …` behaved the same (git 2.54.0, 2026-09-27, measured). A guard that checked for
-unstaged changes before committing stopped all 19 repositories, so no partial commit was made.
-
-**Why:** `git add` fails as a whole when any pathspec matches nothing (a path absent from both the work tree and the
-index's remaining entries matches nothing).
-
-**How to apply:**
-- Stage deletions with `git rm`, and pass `git add` only paths that exist (a directory also works).
-- In a bulk-commit script, check right before committing that no unstaged or untracked change is left, and skip and
-  report the repository if one is. That catches a failed `git add` even when its error is missed.
-
-## On macOS's bash 3.2, an empty array under `set -u` is an unbound variable
-
-**Symptom:** A fixture script built its optional arguments as an array and
-expanded them in the middle of a long command:
-
-```sh
-set -euo pipefail
-AUDIO_ARGS=()
-[ -n "${WANT_AUDIO:-}" ] && AUDIO_ARGS=(-audiodev spice,id=a -device virtio-sound-pci,audiodev=a)
-podman run ... "${AUDIO_ARGS[@]}" ...
-```
-
-With the option off, the script died before doing anything:
-`AUDIO_ARGS[@]: unbound variable`.
-
-**Why:** macOS still ships bash 3.2 as `/bin/bash`, and there `"${arr[@]}"` on an
-*empty* array counts as unset under `set -u`. Bash 4.4 and later special-case it.
-A script with `#!/bin/bash` gets 3.2 on macOS no matter which bash Homebrew
-installed, so this is invisible when it is developed or tested under bash 5.
-
-**How to apply:** Expand optional arrays as `${arr[@]+"${arr[@]}"}`, which yields
-nothing when the array is empty and the elements otherwise. The same applies to
-`$@` in a function with no arguments. Do not reach for `set +u` around the call:
-that disables the check for everything else on the line too. And remember the
-neighbouring trap in the same construct — a `#` comment cannot be placed inside a
-backslash-continued command; it swallows the continuation and the command runs
-with the wrong arguments or not at all.
-
-## `$?` after an `if` statement is the statement's own status, not the condition's
+### `$?` after an `if` statement is the statement's own status, not the condition's
 
 **Symptom:** A helper classified failures and retried one of them, passing every other
 failure back with its original status:
@@ -326,7 +256,7 @@ is exempt from `set -e`, which makes `if`/`else` the only form that is safe to w
 The same trap sits after `while`, `until` and `case`. Whenever you want to keep a
 condition's status, keep it inside the branch.
 
-## `! grep -q` reads a grep error as "no match" — pass a pattern that starts with `-` through `-e`
+### `! grep -q` reads a grep error as "no match" — pass a pattern that starts with `-` through `-e`
 
 **Symptom:** A test checked that no trace of the old form was left in a converted file:
 `! grep -qF '--version && \' file`. The test also passed when the conversion rewrote nothing.
@@ -345,7 +275,149 @@ check falls toward passing whenever the check itself did not run.
 - Break a negated check on purpose once and watch it fail. Here the only sign was grep's usage
   text mixed into the test output. Anyone reading only the pass/fail count saw a pass.
 
-## `git rev-parse` prints a missing ref's name to stdout — read refs with `--verify --quiet`
+## Operational scripts & checks
+
+### An operational script must not infer its root from $PWD — and a skipped check must never summarize green
+
+**Symptom:** an org-wide health-check script defaulted its target root to
+`$(pwd)`. Run by an agent whose shell had silently persisted in another
+repository's directory, every repo came back "not found locally" — as a
+warning — and the run still printed **"Result: all checks passed." with
+exit 0, having checked nothing**. The wrong-cwd invocation was not a
+one-off: an agent environment's working directory persists invisibly
+between shell calls and drifts away from what the operator believes.
+
+**Why:** two defects compounding. (1) The script could derive its root
+from its own location (`BASH_SOURCE`) but delegated it to the caller's
+cwd — the least trustworthy input deciding the most important question.
+(2) Missing repositories were warnings, not counted failures — a
+fail-open skip that made unexamined targets look like passing ones.
+Either alone is survivable (with only the first, an INCOMPLETE verdict
+surfaces the mistake; with only the second, the right root is used);
+composed, they manufacture a green result out of zero checks.
+
+**How to apply:**
+- A script that lives inside the tree it examines derives its root
+  **relative to `BASH_SOURCE`** (`SCRIPT_DIR/../..`), keeping an explicit
+  argument as the override. A `$PWD` default is an unverified assumption
+  that the caller stands in the right place.
+- A checking script **separates skips from passes**: targets it could not
+  find or read are counted, the summary says "INCOMPLETE — N not
+  checked", and the exit status is non-zero. Green means "every target
+  examined, every check passed" and nothing less — a check must never
+  claim more than it verified.
+- The operator-side twin habit: prefix agent shell calls with
+  `cd /absolute/path &&`. But discipline slips somewhere eventually,
+  which is why the script-side mechanism is the real wall.
+
+### Tell "the input could not be fetched" apart from an empty answer
+
+**Symptom:** While speeding up an organization-wide health check, three fail-opens of the same
+shape turned up.
+
+- The tap currency check read each repository's latest release with
+  `$(gh release view … 2>/dev/null || true)` and skipped an empty answer as "no visible release,
+  so no drift". Run with gh unable to authenticate, it skipped all 92 entries and printed
+  `[OK] 92 entr(ies) point at their latest release` and "all checks passed".
+- A failed fetch was silenced with `2>/dev/null`. With one repository's fetch made to fail, the
+  check compared against the stale `origin/main` of the last fetch that worked and printed
+  `[OK] up to date`.
+- The organization's repository list came from `gh repo list --limit 300`. gh stops at the limit
+  without a word, and a repository cut off the end reads as unreleased and unarchived.
+
+On top of that, the passing line counted entries it had not compared (it said 92; it compared 91).
+
+**Why:** `$(cmd 2>/dev/null || true)` folds "failed" into "empty", and empty is also a legitimate
+answer (no release, no drift), so the failure takes the passing path. A stale ref has the same
+shape: the input that could not be fetched survives as a plausible "value from last time". The
+previous entry closed the case where a target is not found; a target that exists but whose input
+cannot be fetched is a different path.
+
+**How to apply:**
+- Judge an external input once, where it is fetched. Absent command, failed call, empty result,
+  or a result exactly as long as its limit (possibly truncated) makes it unusable; empty it so
+  nothing can read part of it.
+- Report an unusable input once, as NOT checked, and count it as INCOMPLETE. A consuming check
+  never prints a passing line without its input.
+- A passing line that states a count counts only what was actually compared; say separately what
+  was not.
+- Record failures of a preparatory step such as a fetch, and report that target's comparison as
+  NOT checked. Never compare against a stale ref.
+- Verify before and after the fix by injecting the fault into the real target. gh fails with an
+  invalid token (a bogus `GH_TOKEN`). To fail one repository's fetch only, point that one URL at
+  an unreachable proxy (`GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.<repo-url>.proxy
+  GIT_CONFIG_VALUE_0=http://127.0.0.1:9`); neither the repository nor any config file is touched.
+- "The output is the same as before" does not prove a rebuilt check equivalent when the check
+  prints its passing line even without input: it prints the same line when it compares nothing.
+  Compare the old and new answers item by item.
+
+### Do not pick "the artifact just built" with `ls <glob> | tail -1` — version strings do not sort by age
+
+**Symptom:** To check a rebuilt zip, a script used `Z=$(ls dist/<name>-v*-darwin-arm64.zip | tail -1)`. `dist/` held
+the previous `<name>-v0.1.1-darwin-arm64.zip` and the new `<name>-v0.1.1-2-gbcb4938-darwin-arm64.zip`, and `-2-g…`
+sorts before `-darwin…` (`2` < `d`). `tail -1` picked the old zip, and the check reported the fix as not working. The
+script printed the path, which is how it was caught (2026-09-27, measured).
+
+**Why:** `git describe` versions (`v0.1.1`, `v0.1.1-2-g<hash>`, `v0.1.1-dirty`) do not sort lexically in build order.
+`ls -t` (by mtime) is not reliable either once files are copied or unpacked.
+
+**How to apply:**
+- Name the artifact from the same version the build used (have the Makefile print `$(VERSION)`, or take the path the
+  build printed).
+- Always print the path of the file a check examined. When a result is unexpected, first suspect the wrong file.
+
+### xargs implementations differ on empty input — combined with `git -C ""`, the work runs where the caller is
+
+**Symptom:** A list of repositories was piped to `xargs -0 -n 1 -P 8 sh -c 'git -C "$1" fetch …' _`
+to fetch them in parallel. Checking what happens when the list holds an empty line, or is empty,
+gave different answers per xargs implementation.
+
+**Why:** GNU xargs runs the command once, with no argument, even when its input is empty
+(documented; `-r` stops it). macOS xargs does not, and drops empty items under `-0` (measured). And
+`git -C ""` leaves the current directory as it is, as documented, so an empty argument fetches in
+the caller's repository. Tried on macOS, that path never happens.
+
+**How to apply:**
+- Refuse an empty argument in what xargs calls (`[ -n "$1" ] || exit 0`); that works under any
+  xargs.
+- The guard cannot be tested through xargs, because macOS xargs never hands it an empty argument.
+  Keep the called code in a variable and call `sh -c "$worker" _ ""` and `sh -c "$worker" _`
+  directly: reproduce what GNU xargs can pass without going through the local xargs.
+- Check that removing the guard fails the test. The first test, written through xargs, still passed
+  on macOS with the guard removed.
+
+### An app started with `open` runs from `/` — a relative path in its arguments reads nothing
+
+**Symptom:** A relative path passed to an `.app` with
+`open -W ... MyApp.app --args draw dist/payload.bin` could not be read, and the
+app "sent" an empty payload (4 times).
+
+**Why:** `open` launches through LaunchServices; the app's working directory is
+`/`, not the calling shell's.
+
+**How to apply:**
+- Make paths absolute in the caller before passing them with `--args`
+  (`"$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"`).
+- In the app, stop with an error when what it read is empty instead of carrying on.
+
+## git pitfalls
+
+### `git add` given a path already removed with `git rm` stages nothing at all
+
+**Symptom:** A bulk-commit script staged a deletion with `git rm`, then ran `git add Makefile <new file> <removed file>`.
+It exited with `fatal: pathspec '<removed file>' did not match any files` (exit 128) and **staged none of the other
+paths either**; `git add -A -- …` behaved the same (git 2.54.0, 2026-09-27, measured). A guard that checked for
+unstaged changes before committing stopped all 19 repositories, so no partial commit was made.
+
+**Why:** `git add` fails as a whole when any pathspec matches nothing (a path absent from both the work tree and the
+index's remaining entries matches nothing).
+
+**How to apply:**
+- Stage deletions with `git rm`, and pass `git add` only paths that exist (a directory also works).
+- In a bulk-commit script, check right before committing that no unstaged or untracked change is left, and skip and
+  report the repository if one is. That catches a failed `git add` even when its error is missed.
+
+### `git rev-parse` prints a missing ref's name to stdout — read refs with `--verify --quiet`
 
 **Symptom:** A submodule-pointer check read
 `latest=$(git -C "$sub" rev-parse origin/main 2>/dev/null || echo unknown)` and had a branch that
@@ -367,67 +439,3 @@ the right side of `||` fails too, `set -e` fires.
   `return 0`), and have the caller handle empty as "no such ref" explicitly.
 - A branch on a fallback value such as `|| echo unknown` assumes the left side prints nothing when
   it fails. Measure that assumption once, in a repository without the ref.
-
-## xargs implementations differ on empty input — combined with `git -C ""`, the work runs where the caller is
-
-**Symptom:** A list of repositories was piped to `xargs -0 -n 1 -P 8 sh -c 'git -C "$1" fetch …' _`
-to fetch them in parallel. Checking what happens when the list holds an empty line, or is empty,
-gave different answers per xargs implementation.
-
-**Why:** GNU xargs runs the command once, with no argument, even when its input is empty
-(documented; `-r` stops it). macOS xargs does not, and drops empty items under `-0` (measured). And
-`git -C ""` leaves the current directory as it is, as documented, so an empty argument fetches in
-the caller's repository. Tried on macOS, that path never happens.
-
-**How to apply:**
-- Refuse an empty argument in what xargs calls (`[ -n "$1" ] || exit 0`); that works under any
-  xargs.
-- The guard cannot be tested through xargs, because macOS xargs never hands it an empty argument.
-  Keep the called code in a variable and call `sh -c "$worker" _ ""` and `sh -c "$worker" _`
-  directly: reproduce what GNU xargs can pass without going through the local xargs.
-- Check that removing the guard fails the test. The first test, written through xargs, still passed
-  on macOS with the guard removed.
-
-## In zsh, `log` is a builtin — read the macOS log with `/usr/bin/log`
-
-**Symptom:** `log show --last 5m ...` in zsh failed with
-`log:1: too many arguments`. Where the error was easy to miss (output piped into
-grep), it looked like "no matching entries".
-
-**Why:** zsh has a builtin `log` (for login watching), and a builtin wins over
-`/usr/bin/log` on the PATH.
-
-**How to apply:**
-- Write `/usr/bin/log show ...` with the absolute path.
-- Believe a result of zero entries only after the same command finds entries in
-  a window known to have them (a positive control).
-
-## An app started with `open` runs from `/` — a relative path in its arguments reads nothing
-
-**Symptom:** A relative path passed to an `.app` with
-`open -W ... MyApp.app --args draw dist/payload.bin` could not be read, and the
-app "sent" an empty payload (4 times).
-
-**Why:** `open` launches through LaunchServices; the app's working directory is
-`/`, not the calling shell's.
-
-**How to apply:**
-- Make paths absolute in the caller before passing them with `--args`
-  (`"$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"`).
-- In the app, stop with an error when what it read is empty instead of carrying on.
-
-## zsh's `path` is tied to `PATH` — as a loop variable it makes every command disappear
-
-**Symptom:** `while read sha path; do h=$(git hash-object -- "$path"); ...; done < list`
-run in zsh printed `command not found: git` from the first line on, and all
-1,043 files were reported as mismatches (lib-series TOML decoder, 2026-11).
-
-**Why:** in zsh `path` is an array tied to `PATH`; assigning it rewrites `PATH`.
-Once `read ... path` stores the first file name in `path`, `PATH` is that file
-name alone. In bash it is an ordinary variable, so the same script works there.
-
-**How to apply:**
-- In scripts zsh may run, never name a variable `path` (nor `cdpath`, `fpath`,
-  `manpath` and the other tied arrays). Use `f` or `file`.
-- When a verification loop reports every item as a mismatch, first check that
-  the command producing the comparison ran at all (do not discard its stderr).

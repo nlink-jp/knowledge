@@ -5,23 +5,9 @@ cannot reach. Each entry follows **symptom → why → how to apply**.
 
 ---
 
-## Disable Go's successful test cache when rechecking changed execution restrictions
+## Real data, E2E & real boundaries
 
-**Symptom:** While validating a security paper, Seatbelt enforcement tests skipped under a restricted
-environment. A rerun with local HTTP listeners permitted passed overall, but previously successful
-packages replayed their cached skips. Running `go test -count=1 -json ./...` removed 16 skipped tests
-in each of the two runtimes and exercised their enforcement tests successfully (2026-09-22).
-
-**Why:** A package that succeeds with skipped tests can be cached. Changes to execution restrictions
-outside the process do not necessarily invalidate Go's cache. Reusing results for unchanged code is
-different from measuring the current environment.
-
-**How to apply:** After changing sandbox restrictions, permissions, or external process conditions,
-use `-count=1` for tests intended to measure those conditions. Inspect test-level pass and skip events
-and their reasons in JSON output; exit status zero alone does not establish a live enforcement check.
-Distinguish counts that include subtests from independent checks and from unexecuted live suites.
-
-## All-green unit tests still need real-data E2E and real-binary simulation
+### All-green unit tests still need real-data E2E and real-binary simulation
 
 **Symptom (three kinds of real cases):**
 - A mail-analysis tool with 47 passing unit tests revealed 6 bugs in an E2E over
@@ -47,7 +33,298 @@ Distinguish counts that include subtests from independent checks and from unexec
 - Never trust GUI error display until an error is deliberately triggered on the
   real app.
 
-## Mocks exercise the error path; nobody reads the sentence it produces
+### A pipeline that ends in delivery is not verified until something is delivered
+
+**Symptom:** A feed-digest tool passed 315 unit tests and a real-data run from
+collection through to a rendered file. Every defect below survived all of that
+and appeared only when a message was actually sent.
+
+- Inline `[title](url)` links reached the destination as **titles with no
+  address**. Its markup converter had no inline links and dropped the URL
+  rather than translating it — so a tool that selects what is worth reading
+  delivered everything except the way to read it.
+- The character limit was measured before a `*(continued)*` prefix was added to
+  every part after the first. The real message came out **seven characters
+  over**, and the destination rejects rather than truncates.
+- A run producing two parts after one that produced four left `msg-03` and
+  `msg-04` on disk. The sender walks the parts in order, so two current
+  messages would have been followed by two from the previous run.
+
+None of these is reachable from a fixture. The first needs the destination's
+own converter, the second needs multibyte text at real length (a Japanese
+digest is ~3 bytes to the character, so a byte-based limit is silently wrong in
+both directions), and the third needs the transition from more parts to fewer.
+
+**How to apply:**
+- Treat "rendered correctly" and "arrived correctly" as different claims, and
+  make the second one before release. Read the message *back* from the
+  destination — what is stored there is what the reader sees, and it is not
+  always what was sent.
+- Turn each defect into an invariant over the pipeline's own output rather than
+  a case: *every item's URL appears in the delivered text, for every
+  destination flavour*; *every part is within the limit, marker included*. An
+  invariant keeps holding when a new flavour or a new marker is added.
+- Clear previous output before writing a variable number of files. Anything
+  that consumes them by enumeration will otherwise consume the leftovers.
+
+### A drill runbook is unfinished until it has been run once
+
+**Symptom:** A seven-step monthly drill runbook for a fallback tool was
+written, and its first run **rewrote three of its own steps**. (1) The
+read-only step meant to exercise the tool path asked what the project does
+and what its build commands are — the agent injects the project's
+instruction files into its system prompt, so a correct answer came back with
+zero tool calls. Correct answer, path never exercised. (2) Auto-approve was
+on by config, so the step meant to exercise the approval gate would have run
+unattended. (3) The sandbox-containment step asked the model to write outside
+the project; the model read the restriction and declined to try — a pass that
+tests nothing — while an earlier run of the same request did try and hit the
+gate first.
+
+**How to apply:**
+- **Run it once after writing it.** Steps changing is the normal outcome; if
+  nothing changed, doubt that it was really run. When you edit a runbook, run
+  at least the step you changed — write that rule into AGENTS.md so it sticks.
+- **Suspect three shapes of "looks like a pass, verifies nothing":** a
+  question answerable without traversing the path under test (the answer is
+  cached somewhere else); a check that depends on the subject's cooperation
+  (replace it with a direct path); a check whose result varies between runs
+  (that is not a check).
+- **Pin state-dependent defaults at the top of the procedure.** "It happened
+  to be on" is enough to hollow out a check.
+- Alongside the checklist, include a step that **completes one real task with
+  the tool alone**. A checklist shows the thing runs; only real work shows it
+  is usable.
+- **Make the verdict binary: pass or issue.** Allowing "mostly worked" makes
+  the record meaningless. Record a skip as a skip — an unrecorded gap reads as
+  a pass.
+
+### Automate MCP-server E2E with a dummy JSON-RPC client
+
+**Symptom:** Tests with an LLM in the loop are nondeterministic, slow, and cost
+tokens. Yet protocol round-trips / error paths / timeouts / workspace isolation
+are all verifiable with fixed JSON-RPC.
+
+**How to apply:**
+- Implement a harness that spawns the server as a child process and speaks
+  JSON-RPC over stdin/stdout (`Start / Call / Notify / CallTool / Close`).
+- Isolate behind a `//go:build e2e` tag; gate container-requiring tests with an
+  env var.
+- Minimum scenarios: lifecycle / errors / timeout / sequential workspace
+  isolation.
+- Real-LLM verification (Claude Desktop etc.) can wait until the end — but the
+  separate "use it as a client yourself" lap is still required (see above).
+- Native-library stdout contamination does not reproduce in stub builds — E2E
+  against the real engine (see mcp-server-design.md).
+
+### When you add a boundary, write the test that drives the real product through the real boundary — stubs and permission stand-ins pass while production is broken
+
+**Symptom:** The file tools' reads were moved into a child process under a purpose-built profile that denies the credential list. Unit tests and the full gate were green and it shipped; independent review measured a Critical. **One `.env` in a project made `search_files` answer "no matches (0 files scanned)"** — a false negative with no error and no warning. Four High findings followed from the same pass: reads silently truncated at 85 KB, `file_info` collapsing a permission error into "not found", a cancelled walk losing its partial result, and the note the design promised being unreachable.
+
+**Why:** No test **drove the real thing**. Every test stubbed the child (injecting a function) and simulated the kernel's refusal with `chmod 000`. `chmod 000` denies `open` and leaves `lstat` working; Seatbelt's `file-read*` denies both. That single difference was the defect, and the stand-in pinned a path production never takes. The kernel-level test ran `/bin/bash`, never the Go child that actually runs, and the startup probe did the same — so it passed while every walk in the project was broken.
+
+**How to apply:**
+- When you add a boundary (a sandbox, a separate process, a different privilege), write in the same commit a test that drives **the shipped artifact through the shipped boundary**: build the binary, run it under the real profile, feed it a real request. Slow is fine (2–4 s here).
+- **Distrust permission stand-ins.** `chmod`, not-running-as-root and a severed network each deny a *different set of operations* than a kernel deny does. If you cannot state the difference between the stand-in and the real thing in one line, you cannot use the stand-in.
+- **Verify the startup probe with the operation the runtime actually performs.** A probe that uses a different process, profile or library stays green through a production break. Make it walk the same sequence, listings included.
+- **Drive the path that TURNS THE BOUNDARY ON, in its production form.** The next release of this same design did write a test driving the real artifact through the real cage — and never ran the function that *installs* the cage. The probe was asking the child for a tool outside its set, so it failed on every start, the cage was never installed, and the whole feature shipped inert. A test must pin not only "does it behave correctly inside the boundary" but "does the boundary go up at all". The second is a single path — installer, wiring, startup verification — that exists only in production.
+- Say in the stubbed tests that they are **not the production path**, and name the test that covers it.
+
+Related: "independent review turns up something real right after a fix". For the same reason a fix creates a new unverified surface, **a new boundary is at its least verified the moment it is added**.
+
+### Verify WebKit authorization at the actual callback boundary
+
+**Symptom:** During a macOS client port, JavaScript navigation produced click-like
+metadata. An async method with a name resembling an authentication delegate
+compiled successfully but never received the certificate challenge.
+
+**Why:** Navigation type and button number do not prove human approval. A method
+that merely resembles an optional Objective-C protocol method can compile without
+implementing it. Isolated predicates cannot reveal missing call paths for redirect
+cookies or certificate verification.
+
+**How to apply:** Bind web-to-native connection authority to a one-shot native
+confirmation of an immutable candidate. Use a temporary HTTPS server and real
+WKWebView to exercise automatic location changes, form POSTs, cookies received
+after redirects, certificate challenges, and replay after cancellation. Trust
+fixture certificates only inside the test; do not alter the system trust store.
+Check the SDK's async delegate name and do not equate successful compilation with
+callback delivery. If a parallel dependency suite stalls shared fixtures, rerun
+sequentially to diagnose it rather than deleting failed tests.
+
+Source: spice-client port and simulation verification (2026-09).
+
+### Reaching a LAN peer from `swift test` is not evidence that the application can — the Local Network permission belongs to whatever launched the process
+
+**Symptom:** A macOS application gained a route to virtual machines through a proxy on the LAN. The real-node check
+ran from `swift test` and went as far as a received frame and sent input, against a container and a VM. The
+documents said "verified on a real node". When the user opened the built application from Finder, the first
+connection failed at once. The unified log held `unsatisfied (Local network prohibited)` (macOS 27.2, 2026-11).
+
+**Why:** The Local Network permission attaches to the "responsible application" that launched a process. A child of
+`swift test` runs on the terminal's (or editor's) permission; the application itself is launched by LaunchServices
+and needs its own. The test was checking one layer outside the one the user uses.
+
+**How to apply:**
+- Do not write "verified" for anything that reaches a peer on the LAN until the built application, started with
+  `open`, has done it.
+- Where a human step such as a confirmation screen is in the way, make a temporary build that approves the candidate
+  by itself and writes the outcome to standard error, and start it with
+  `open -n --stderr <file> -a <App> --args …`: that measures automatically under the application's own permission.
+  Do not ship that change (leave no entry in the product that skips confirmation).
+- The state without the permission can only be produced by the user switching it off in System Settings. If there is
+  a value to measure, build the means of measuring first and ask second (here the asking came first, the means
+  turned out insufficient, and the user was asked three times).
+- In zsh `log` is a builtin, and `log show …` ends without printing anything. Read the unified log with
+  `/usr/bin/log`.
+
+## Test tooling & runs
+
+### Disable Go's successful test cache when rechecking changed execution restrictions
+
+**Symptom:** While validating a security paper, Seatbelt enforcement tests skipped under a restricted
+environment. A rerun with local HTTP listeners permitted passed overall, but previously successful
+packages replayed their cached skips. Running `go test -count=1 -json ./...` removed 16 skipped tests
+in each of the two runtimes and exercised their enforcement tests successfully (2026-09-22).
+
+**Why:** A package that succeeds with skipped tests can be cached. Changes to execution restrictions
+outside the process do not necessarily invalidate Go's cache. Reusing results for unchanged code is
+different from measuring the current environment.
+
+**How to apply:** After changing sandbox restrictions, permissions, or external process conditions,
+use `-count=1` for tests intended to measure those conditions. Inspect test-level pass and skip events
+and their reasons in JSON output; exit status zero alone does not establish a live enforcement check.
+Distinguish counts that include subtests from independent checks and from unexecuted live suites.
+
+### golangci-lint truncates identical findings at three — list everything before a bulk fix
+
+**Symptom:** errcheck reported "8" unchecked `defer x.Close()` calls; there
+were 18. golangci-lint caps identical messages at `max-same-issues`
+(default 3) and per-linter findings at `max-issues-per-linter` (default 50).
+Each receiver name got three lines, so fixing what was shown and re-running
+surfaced the "next" three — a whack-a-mole loop.
+
+**How to apply:**
+- Before a bulk fix, run `golangci-lint run --max-same-issues 0
+  --max-issues-per-linter 0 ./...` to see the whole set, then fix it
+  mechanically (a regex from `defer x.Close()` to
+  `defer func() { _ = x.Close() }()`, for instance).
+- One finding of a shape is a reason to grep every file for that shape.
+  The displayed count is a floor, not the total.
+
+### An E2E script aimed at a fixture must refuse to run in your own repository even with an empty argument
+
+**Symptom:** An E2E script was generated through an unquoted heredoc
+(`<<EOF`), so the `$1`/`$P` in its body expanded to empty strings at
+generation time. The script ran `cd ""` (a no-op) and then
+`printf ... > AGENTS.md`, replacing the repository's 700-line `AGENTS.md`
+with the two-line fixture. The feature commit carried it; a review found it.
+
+**Why:** "It points at the fixture" is the script's assumption, not a fact
+the script checks. Arguments go empty through several paths (heredoc
+expansion, a mistyped call), and `cd` with an empty argument does nothing
+and does not fail.
+
+**How to apply:**
+- Start scripts with `set -u` and **validate the target directory against
+  a pattern** before acting (`case "$P" in */scratchpad/e2e-*) ;; *) exit 1;;
+  esac`). `cd "$P" || exit 1` alone does not stop an empty argument.
+- Generate scripts through a quoted heredoc (`<<'EOF'`) or a Python raw
+  string, and `cat` the result once to see the `$` still there.
+- **Pin the required sections of agent-facing briefing files (`AGENTS.md`
+  and kin) in `make check`.** A check that fails the moment a section
+  disappears beats noticing in review.
+- Look at `git diff --stat` before committing. Hundreds of deleted lines in
+  a documentation file is a signal an intended change almost never sends.
+
+### A server that serves one client at a time turns parallel test suites into flakes
+
+**What happened:** A live-peer gate grew a second test suite. Both suites drove
+the same QEMU SPICE server, and `swift test` runs suites in parallel. Connections
+started failing, a frame observer starved, and the failures moved between tests
+from run to run. Nothing was wrong with either suite: QEMU's SPICE server serves
+one client, and the two suites were fighting over it (spice-client, 2026-09-18).
+
+**How to apply:** Before adding a second suite against a shared live fixture, ask
+how many clients the fixture serves at once. When the answer is one, `.serialized`
+on each suite is not enough — it serialises within a suite, not across suites. Run
+them as separate sequential invocations of the test runner, which is the only
+arrangement the runner cannot undo. The symptom to recognise is failures that
+migrate between tests across runs while each test passes when run alone.
+
+### A bats assertion written as `! cmd`, made inside a function called with `||`, or a mid-test `[[ … ]]` on bash 3.2, never fails the test
+
+**Symptom:** A bats test was meant to forbid piping a download into a shell:
+`! grep -Eq '\|\s*sh\b' Dockerfile`. A mutation that added `curl … | sh` to the Dockerfile left
+the test green (cclaude v0.6.0, 2026-10-25). A helper used as `check_stage … || { echo …; return 1; }`
+had the same hole, caught before it ran: only its last line would have counted.
+The next day, two tests of a temporary directory's cleanup passed against a copy with the cleanup
+code deleted (cclaude v0.7.0, 2026-10-26). A mid-test `[[ "${lines[0]}" == "context=${TMPDIR}/"* ]]`
+was in fact false, and the test still passed.
+
+**Why:** bats fails a test through errexit. Bash does not apply errexit to a command negated
+with `!`, nor to any command inside a function whose call is the left side of `||` or `&&` — the
+function returns the status of its last command, and earlier failed checks are forgotten.
+On macOS's `/bin/bash` (3.2.57), a false `[[ … ]]` does not trigger errexit either, and bats's
+`#!/usr/bin/env bash` picks that bash unless another one is installed. Measured on macOS 27:
+`/bin/bash -c 'set -e; [[ a == b ]]; echo survived'` prints `survived`. A `[[ … ]]` on a test's
+last line still counts, because its status becomes the test's result. Separately, macOS `mktemp -d`
+ignores `TMPDIR` and creates the directory under `_CS_DARWIN_USER_TEMP_DIR` (`/var/folders/…/T`)
+(`man mktemp`, and measured), so a test that points `TMPDIR` at its own directory and checks that it
+stays empty checks nothing.
+macOS `mktemp` also fills in only trailing X's: `mktemp …/ccc-config-XXXXXX.toml` returned the
+literal name `ccc-config-XXXXXX.toml` every time, so every test shared one file (measured). Once the
+mid-test checks counted, one test failed, skipped its cleanup, and every later test failed on that
+leftover file with "File exists". The same rewrite also found an expected value that had been false
+since an early release.
+
+**How to apply:**
+- Write mid-test checks with `[ … ]`, or fail explicitly: `[[ … ]] || { echo …; return 1; }`.
+- Assert absence with `run cmd; [ "$status" -eq 1 ]`. `[[ ! … ]]` is a test expression, not a
+  negated command, but on bash 3.2 it only counts on a test's last line.
+- To check a path the code under test created, do not assume you chose where it lands: have the
+  process that received it (a stub, say) record the path, and check `[ ! -e "$path" ]`.
+- Put test files in `$BATS_TEST_TMPDIR` (per test, removed by bats), not in a `mktemp` template.
+- Wrap output checks in helpers that `return 1` when false (`output_has`, say) and use them on the
+  last line too, so a line added later cannot silently disable a check.
+- A helper meant to be called with `||` must make its last expression carry every check:
+  `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
+- Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch
+  directory, never the working tree).
+
+### Go fuzzing with seeds of tens of KB stalls for seconds minimizing each new input — cap `-fuzzminimizetime`
+
+**Symptom:** a 60-second fuzz run of a compound-file (MS-CFB) reader made 39,850 executions, its progress lines
+alternating between 0/sec and hundreds of thousands per second (Go 1.27.3, macOS, 2026-11). Each stretch of about
+15 seconds at 0/sec ended with "new interesting" going up by one. With `-fuzzminimizetime 1x`, 30 seconds made
+11.88 million executions and found 152 new inputs. Neither run failed.
+
+**Why:** a newly found input is minimized before it is kept, and minimizing does not count as executions. With seeds of
+tens of KB (built compound files), one minimization takes seconds to tens of seconds. It looks stuck but is not (a slow
+input was suspected; the stalls disappearing once minimizing was capped settled it).
+
+**How to apply:**
+- Fuzz with large seeds using `-fuzzminimizetime 1x` (or a short time), and put it in the Makefile's `fuzz` target.
+- When the execution count is low or 0/sec persists, rerun with minimizing capped first; only if it still stalls,
+  suspect a slow input.
+- With minimizing capped, a failing input stays large. To investigate a failure, rerun with minimizing on.
+
+### Feed lines to a child process's REPL one prompt at a time — written all at once, they arrive as one pasted input
+
+**Symptom:** a characterization wrote eight lines to the child's stdin at once. The plain REPL joined every buffered line into one message and ran none of the commands — what it is meant to do with a multi-line paste.
+
+**Why:** the line reader, having read one line, keeps reading while the buffer holds more, and joins them. A pipe hands over everything written at once.
+
+**How to apply:**
+- Watch the child's stderr and write the next line each time a prompt (`\n> `) appears. After the last line, wait for one more prompt, then close stdin.
+- Never let the watcher stall the child's writes. Send each signal to the bounded channel without blocking, dropping it if full. The child keeps writing after the feeder has finished, and a blocking send jams its stderr and the test never ends (found by the pre-release review).
+- Count prompts only in what was just written, plus the two bytes before it for a prompt split across writes. Recounting the whole output each time is quadratic in its size.
+
+Origin: the characterization tests of an agent runtime (2026-11).
+
+## Test design
+
+### Mocks exercise the error path; nobody reads the sentence it produces
 
 Mocks cover the **branches** of a failure path. What they cannot cover is
 whether the sentence assembled at the end of that path **means anything to the
@@ -88,73 +365,7 @@ it and **reading the output as a human**.
 
 Related: [[all-green-unit-tests-still-need-real-data-e2e]]
 
-## A pipeline that ends in delivery is not verified until something is delivered
-
-**Symptom:** A feed-digest tool passed 315 unit tests and a real-data run from
-collection through to a rendered file. Every defect below survived all of that
-and appeared only when a message was actually sent.
-
-- Inline `[title](url)` links reached the destination as **titles with no
-  address**. Its markup converter had no inline links and dropped the URL
-  rather than translating it — so a tool that selects what is worth reading
-  delivered everything except the way to read it.
-- The character limit was measured before a `*(continued)*` prefix was added to
-  every part after the first. The real message came out **seven characters
-  over**, and the destination rejects rather than truncates.
-- A run producing two parts after one that produced four left `msg-03` and
-  `msg-04` on disk. The sender walks the parts in order, so two current
-  messages would have been followed by two from the previous run.
-
-None of these is reachable from a fixture. The first needs the destination's
-own converter, the second needs multibyte text at real length (a Japanese
-digest is ~3 bytes to the character, so a byte-based limit is silently wrong in
-both directions), and the third needs the transition from more parts to fewer.
-
-**How to apply:**
-- Treat "rendered correctly" and "arrived correctly" as different claims, and
-  make the second one before release. Read the message *back* from the
-  destination — what is stored there is what the reader sees, and it is not
-  always what was sent.
-- Turn each defect into an invariant over the pipeline's own output rather than
-  a case: *every item's URL appears in the delivered text, for every
-  destination flavour*; *every part is within the limit, marker included*. An
-  invariant keeps holding when a new flavour or a new marker is added.
-- Clear previous output before writing a variable number of files. Anything
-  that consumes them by enumeration will otherwise consume the leftovers.
-
-## A drill runbook is unfinished until it has been run once
-
-**Symptom:** A seven-step monthly drill runbook for a fallback tool was
-written, and its first run **rewrote three of its own steps**. (1) The
-read-only step meant to exercise the tool path asked what the project does
-and what its build commands are — the agent injects the project's
-instruction files into its system prompt, so a correct answer came back with
-zero tool calls. Correct answer, path never exercised. (2) Auto-approve was
-on by config, so the step meant to exercise the approval gate would have run
-unattended. (3) The sandbox-containment step asked the model to write outside
-the project; the model read the restriction and declined to try — a pass that
-tests nothing — while an earlier run of the same request did try and hit the
-gate first.
-
-**How to apply:**
-- **Run it once after writing it.** Steps changing is the normal outcome; if
-  nothing changed, doubt that it was really run. When you edit a runbook, run
-  at least the step you changed — write that rule into AGENTS.md so it sticks.
-- **Suspect three shapes of "looks like a pass, verifies nothing":** a
-  question answerable without traversing the path under test (the answer is
-  cached somewhere else); a check that depends on the subject's cooperation
-  (replace it with a direct path); a check whose result varies between runs
-  (that is not a check).
-- **Pin state-dependent defaults at the top of the procedure.** "It happened
-  to be on" is enough to hollow out a check.
-- Alongside the checklist, include a step that **completes one real task with
-  the tool alone**. A checklist shows the thing runs; only real work shows it
-  is usable.
-- **Make the verdict binary: pass or issue.** Allowing "mostly worked" makes
-  the record meaningless. Record a skip as a skip — an unrecorded gap reads as
-  a pass.
-
-## A feature that never fires still passes every unit test
+### A feature that never fires still passes every unit test
 
 **Symptom:** Automatic conversation-history compaction was implemented. Unit
 tests all green. In real use it **never fired once, and said nothing**. Two
@@ -178,7 +389,7 @@ agent loop contains exactly one user message, at the very beginning — so the r
 - If "cannot fire" is reachable, report it. **A silent no-op is
   indistinguishable from a missing feature.**
 
-## Design external dependencies mockable from the start
+### Design external dependencies mockable from the start
 
 **Symptom:** A test launched a real browser. It was later retrofitted into an
 injectable function variable — it should have been designed that way from the
@@ -187,7 +398,7 @@ start.
 **How to apply:** Inject external dependencies (browser launch, external HTTP,
 clock) via package variables or interfaces; swap them in tests.
 
-## xattr write failures can be injected for real with a deny ACL
+### xattr write failures can be injected for real with a deny ACL
 
 **Symptom:** Wanting to test the path where `setxattr` fails (volumes that can't
 take quarantine). Mock seams add mutable globals to production code and skip the
@@ -205,25 +416,7 @@ xattr writes — the same shape as extracting onto an xattr-less volume. Fast
 (0.13 s measured) and exercises the genuine failure path. Run chmod from the
 test and skip if it fails (insurance against environment differences).
 
-## Automate MCP-server E2E with a dummy JSON-RPC client
-
-**Symptom:** Tests with an LLM in the loop are nondeterministic, slow, and cost
-tokens. Yet protocol round-trips / error paths / timeouts / workspace isolation
-are all verifiable with fixed JSON-RPC.
-
-**How to apply:**
-- Implement a harness that spawns the server as a child process and speaks
-  JSON-RPC over stdin/stdout (`Start / Call / Notify / CallTool / Close`).
-- Isolate behind a `//go:build e2e` tag; gate container-requiring tests with an
-  env var.
-- Minimum scenarios: lifecycle / errors / timeout / sequential workspace
-  isolation.
-- Real-LLM verification (Claude Desktop etc.) can wait until the end — but the
-  separate "use it as a client yourself" lap is still required (see above).
-- Native-library stdout contamination does not reproduce in stub builds — E2E
-  against the real engine (see mcp-server-design.md).
-
-## Green tests prove nothing when the expectation itself is wrong
+### Green tests prove nothing when the expectation itself is wrong
 
 **Symptom:** code mapping an external API's status values onto UI behaviour had
 unit tests, all passing. The feature still shipped in a state where nobody could
@@ -244,7 +437,506 @@ assumption cannot be tested against itself**.
   Discovering it later is worse, because a wall of green tests will have been
   informing the judgement in the meantime.
 
-## Before calling something "measured", ask whether the probe input represents the real thing
+### Verify the fixture before blaming the code
+
+**What happened:** Validating speaker diarization meant synthesising a conversation
+from two voices, `say -v Kyoko` and `say -v Otoya`. Half an hour went into
+suspecting the implementation for reporting one speaker where there should have been
+two. The cause was that **`Otoya` was not installed, and `say` fell back to the
+default voice without a word**. All four clips were the same speaker, so reporting
+one speaker had been correct all along.
+
+**Why:** Generative commands often answer a missing resource with a **plausible
+substitute** rather than an error — `say` voices, font selections, model names,
+locale identifiers. The output file is produced normally, so nothing hints that the
+fixture is wrong.
+
+**How to apply:** Confirm a synthesised fixture actually has the property you need,
+by some means other than the thing under test. At minimum, check the named resource
+exists first (`say -v '?'`, a font list, a model list). Reading a correct answer as a
+bug costs more than the bug would have.
+
+**Second instance (2026-10-31):** To test a Deflate64 decoder, a Deflate64 ZIP was made with
+7-Zip from a 40 KiB random block repeated four times, meant to force both codes only Deflate64
+has: distances beyond 32 KiB and match lengths beyond 258 bytes. Having the decoder count each
+code it decoded showed the far distances were used and **the long-length code was used zero
+times** (measured): 7-Zip's encoder does not emit it even for a 40 KiB match. The fixture tests
+stayed green, so without the count the claim would have been "that path is cross-checked
+against an external implementation too". For a fixture meant to cover a format's codes or
+paths, **count on the decoding side which paths actually ran, and assert on the count**. Cover
+the paths one encoder never emits with inputs built by hand from the specification.
+
+### Verify concurrency concerns with a concurrent test, not by reading — the bug lives next door
+
+**Symptom:** asked whether timestamp-based session ids collide under parallel
+execution, code-reading found the suspected layer safe (O_EXCL + suffix retry
++ flock). The 16-way concurrent test written to PROVE that safety caught a
+real race in the ADJACENT layer (the state-dir ownership marker) at ~50%
+frequency. A reading-based "it's safe" answer would have shipped the bug.
+
+**How to apply:**
+- On any concurrency doubt, write the concurrent regression test first
+  (start-channel for simultaneous release, `-race`, several rounds) whatever
+  you expect the verdict to be — the test exercises the whole path, not just
+  the suspected hypothesis, so adjacent defects surface.
+- Confirm goroutine findings with real simultaneous processes (O_EXCL, flock,
+  rename are kernel vocabulary, so the semantics match — but the E2E catches
+  wiring mistakes).
+- Measure before answering "no issue": the negative-answer integrity duty
+  applies to concurrency too.
+
+### The single production call site is the weak point of injected features — pin the wiring with an AST test
+
+**Symptom:** a UI language-catalog feature shipped with all unit tests green
+and a non-interactive E2E pass — while the one production TUI-constructor
+call omitted the catalog argument, so the whole TUI silently ran on the
+English fallback for a full release. Unit tests inject the dependency
+themselves and cannot see a wiring gap; the E2E only exercised the surface
+that WAS wired.
+
+**How to apply:**
+- Third pattern of "implemented but silently never fires": **an options-struct
+  field with a nil default degrades quietly** — the graceful fallback hides
+  the missing wire precisely because it is graceful.
+- Behavioral tests cannot reach a literal inside a monolithic init function.
+  **Parse the production file with go/ast and assert the constructor literal
+  sets the required fields** — a few dozen lines, robust to formatting, and
+  it fails the moment the field disappears.
+- Run one E2E per surface the feature passes through, not per surface where
+  it visibly worked: here only the non-interactive (cmd) side was measured,
+  and the interactive (TUI) side was the broken one.
+
+### A feature that learns from usage must be tested against usage-shaped data
+
+**Symptom:** An approval-rule learner shipped with unit tests, an E2E,
+and a threshold of "approved in three separate sessions". Its first
+real session — 25 escalations, all approved — produced zero proposals.
+The E2E had seeded exactly three sessions to satisfy the threshold, so
+it measured whether the mechanism worked and never whether the
+threshold was reachable.
+
+**Why it matters:** Fixtures written to satisfy a threshold cannot
+falsify it. The tests were green, the feature ran, and the defect was
+invisible until real data arrived — the same class as a feature that
+never fires, but hiding behind passing tests rather than behind silence.
+
+**How to apply:**
+1. **Shape at least one fixture like production, not like the
+   threshold.** For a learner, that means the distribution real usage
+   produces: work concentrated in one session, many one-off items, a
+   long tail — whatever the domain actually looks like.
+2. **Ask "is this bar reachable?" separately from "does this work?"**
+   They are different questions and only the first needs real
+   distributions. Answer it before shipping, with numbers.
+3. **When the real report arrives, reproduce before diagnosing.** A
+   synthetic transcript in the reported shape turned a plausible story
+   into two measured causes in one test run — and became the
+   regression test.
+4. **Check whether the friction even has the shape you are counting.**
+   Here half the problem was categorical: per-tool frequency cannot see
+   friction made of many different tools called once each. No threshold
+   over that counter is both safe and reachable, so the unit of the
+   rule had to change, not its number.
+
+### If a design document says "applied at every N", write the test that enumerates N in the same commit
+
+**Symptom:** An agent runtime's ADR said one function is applied at **every spawn site**, so a child process cannot be added without inheriting the rule. The rule: the runtime's own configuration variables (an API key among them) reach no child. The build was green, and an AST test pinning the namespace partition passed. Four kinds of child did not apply the rule: the shell of a sandbox-disabled launch (where the API key did reach it), two kinds of startup verification probe, and the clipboard capture. It surfaced not months later but the same day, during unrelated work.
+
+**Why:** The existing test pinned a **list of names** — which variables are "mine" and which are "exported for children" — not the **coverage of call sites**. However rigorous the name partition is, it never looks at an `exec.Command` that forgot to call the function. "Every X" in a design document means the set of X its author knew at the time, not every X in the code. The two diverge from the moment the sentence is written.
+
+**How to apply:**
+- When a design document says "applied at every X" or "X always goes through Y", put a test that **enumerates X and checks Y** in the same commit. If you cannot write one, weaken the sentence to "as of today".
+- Write it against the AST so it closes the **class**: fail when a function that builds an `exec.Cmd` does not name the helper, fail when a path-handling package calls `os.Open` directly. If you use an allowlist of reviewed sites instead, make an **unused allowlist entry fail too**, so a site that disappeared does not linger as debris.
+- Put exceptions in the code with their reason. In the example above the legitimate exception was the bench harness, which **launches** the runtime — a parent, not a child it spawns. Choose exclusions by reason, not by directory name.
+- When fixing, look for a line that **undoes the fix** right after it. Two lines below the probe's new rule, the code rebuilt the environment from the parent's to set a temporary directory; left alone, the fix would have died in the commit that made it.
+
+Related: "drive the path that turns the boundary on". That one pins whether the boundary is installed at all; this one pins whether it is installed at **every** entrance.
+
+### A withdrawn mechanism disappears from the code, not from the **prose** — write a test that compiles the strings the model reads
+
+**Symptom:** File-mediated results were removed from two servers and released. The
+implementation, the schemas and the tests were all correct, and an arch test pinning the
+`work_dir` spelling passed. The shipped artifacts still told the model, in `run_query`'s
+**description**, that large results are written as JSONL under `workspace_root`, and in
+`get_usage`'s error table, to retry with `workspace_root` or raise
+`inline_row_threshold` — both operations the server now rejects. On another server the
+container manifest returned by `describe_runtime` still said results are files under
+`/work`; on a third, the setup guide still told the reader to fill in a config key that
+had been deleted. The same sweep turned up a server whose schema declared `work_dir`
+**optional** while the handler required it: the model reads that it may omit the
+argument, and the call then fails.
+
+**Why:** The arch test pinned **identifiers** — the spelling inside a schema, the presence
+of `required` — not the sentence next to them. Prose is not compiled: it has no type and
+no reference, so removing a mechanism leaves the paragraph describing it untouched, and
+nothing prompts anyone to grep. In MCP that paragraph is not a comment but **part of the
+product**: the `tools/list` description, the `get_usage` body and the `describe_runtime`
+manifest are inputs the model reads and acts on, so a lie there becomes a wrong call.
+Build-tagged suites (`integration`, `e2e`) compound it: `go test ./...` never compiles
+them, so a field deleted by the withdrawal leaves them broken for months.
+
+**How to apply:**
+- When you withdraw a mechanism, make a list of the retired terms and, in the same
+  commit, write a test that walks every string the model reads — each tool's description
+  and input schema, the usage document, the runtime manifest — and fails on any of them.
+  Keep one list, not one for schemas and one for prose.
+- Pin the **shape** of the contract too, not just the identifiers: "a tool that declares
+  `work_dir` must also require it". An optional mandatory argument reads, to a model, as
+  one with a default.
+- Add `go vet -tags <each tag> ./...` to `make test`. A tagged suite you cannot run can
+  still be type-checked; needing real hardware to execute is not a reason to let it rot
+  uncompiled.
+- Count the sweep in **surfaces the user and the model read**, not in code. The
+  checklist: the `initialize` `instructions` field (the first thing the model reads —
+  it arrives before `tools/list`), serverInfo, each tool's description and input schema,
+  the usage document, the runtime manifest, error messages and their details, `--help`,
+  READMEs (**every language**), setup guides, config examples, the RFP, and any
+  **bundled skill or prompt you ship**. The last two are the easiest to forget: a skill
+  is *installed into the agent's skill directory and read as instruction*, so a retired
+  argument name left there is not a documentation wart — it is the agent being told to
+  make a call the server refuses. Fixing only one language's README is the likeliest miss.
+- Check whether the existing tests only assert that things are **present**. The bundled
+  skill's tests checked that every tool name appeared in it, so a retired argument
+  surviving in eight files failed nothing. A withdrawal needs **absence** tests.
+- Do not rewrite historical design documents; annotate the withdrawal in place with a
+  strike-through, a date and the successor. History stays honest and stops reading as
+  current.
+
+Related: "If a design document says a rule applies to all N, write the test that
+enumerates N in the same commit." That one pins the coverage of the application points;
+this one pins the coverage of the **explanations**.
+
+### Hold a bundled skill to its server with a closed vocabulary — "is it mentioned" and a retired-name list let wrong names through
+
+**Symptom:** Bundled skills were added to three MCP servers (2026-11). The check was written as a closed
+vocabulary: every identifier the skill puts in backticks must exist in the server. Every name comes from the
+server itself: registered tools, input schema properties, error-code constants, the json/toml tags of the
+server's own types, and front-matter keys the parser accepts. The templates and examples shipped with the
+skill were run through the server's own parsers. This found:
+- three existing templates that stopped at `casting_unresolved` as written: their scripts used a style
+  missing from the casting table, or a character left commented out;
+- another server's skill using an upstream server's argument that no hand-kept list had;
+- a hole in the existing "get_usage names every code" test. It read only some of the forms that raise a
+  code, so it missed a code that is returned but not documented.
+
+The independent review then showed that one-word names (`captions`, `classification`, `toc`) could be
+changed and still pass.
+
+**Why:** A test that "the required names are mentioned" passes extra, misspelled and retired names. A
+retired-name list guards only what someone remembered. With a closed vocabulary, a name fails as soon as the
+server drops it. But it can only check forms that can be told from prose: snake_case, the key of a
+`key: value` example, a fixed syntax. A one-word name looks like any other word.
+
+**How to apply:**
+- Check from skill to server. Derive the vocabulary from the server's registrations, constants, tags and
+  parsers; keep no copied list.
+- List the names outside the vocabulary with their owner: fields of the skill's own material, the calling
+  client's tools, an upstream server's arguments. Also test that the list matches actual use, so an entry
+  the skill no longer uses fails too.
+- Do not compare templates and code examples as strings; run them through the server's parsers. Check how
+  templates fit together (do the script's characters resolve in the casting table?) and placement rules
+  (is the caption paired with its table?) with the real functions.
+- Say in the README and the ADR which forms are not checked (one-word names). Do not write "every name is
+  checked".
+- Inject errors and watch the test fail: a misspelling, a retired name, a key inside an example, and a
+  misspelled directive.
+
+### Cut an interval at a boundary on "touches it", not only on "straddles it" — a miss hides behind sampling phase
+
+**What happened:** An aggregation filing activity into logical days (a day
+starting at 05:00, say) looked for the day-boundary cut with
+`seg.Start < boundary && boundary < seg.End` — a segment straddling it. Segments
+are contiguous, so when a state change or a gap split lands exactly on the hour,
+**nothing straddles the boundary**. No cut happened, and because the next
+boundary was only recomputed once the stored one was cleared, **a boundary
+already passed stayed as the limit and every later boundary was skipped too**.
+A session crossing days then ran until the next long absence, and the day it
+should have opened reported zero. This also disabled an already-released cap
+("a session spans at most two logical days") by the same route.
+
+**Why it stayed hidden:** Whether it fires is decided by the **phase** of the
+sampling tick (`unix % interval == 0`). The tests used a single phase, and in a real multi-week history almost no
+sample ever met the condition — so the deployment was asymptomatic. The phase is re-rolled every time the daemon
+restarts, so "not happening now" is not "cannot happen". A code-reading
+verification pass also failed to see that the predicate tested only the straddle.
+
+**How to apply:**
+- Make the predicate **two-pronged**: cut on a straddling segment *and* on a
+  segment that begins **at or after** the boundary (`!start.Before(limit)`). In a
+  contiguous series the second is the common case; the first alone always misses
+  the exact touch.
+- For any value held until a condition is met (a limit, a next deadline, a next
+  boundary), ask whether it **recovers from a miss**. If it does not, put the
+  code that advances it next to the test that consumes it — one miss otherwise
+  becomes a permanent outage.
+- Test this class with a **table over step sizes and start offsets (phases)**.
+  A test written at one phase cannot detect it, structurally.
+- If the boundary is a wall-clock hour, **daylight saving makes the logical day
+  23 or 25 hours**. Before writing "never exceeds 24h", write the test that
+  crosses the change and measure what is conserved and where the boundary lands.
+
+### The write path turns an escape into the raw character — close it by checking every source file
+
+**Symptom:** Every time a fixture for "upstream sends an escape sequence" was written, the path
+between the author and the file (an agent's file-writing tool, the decoding of a shell
+argument) turned the typed backslash + u + four digits into **the raw character**. It happened
+three times. The first put a raw ESC into a JSON fixture inside a Go raw string: invalid JSON,
+and a test that passed without having tested anything. The third put a raw U+202E into the
+source of a test about bidirectional controls — the very shape of a "Trojan Source" change.
+The document warning about all this carried a raw ESC itself.
+
+**Why:** Somewhere along the path, one JSON-style unescape too many. It cannot be seen (editors
+do not show control characters), so care does not prevent it. The same kind three times over
+gets a structural fix.
+
+**How to apply:**
+- Put a test at the repository root that walks every source file (code, Markdown, config,
+  scripts) and refuses a raw C0 control (other than tab and newline), DEL, C1, a bidirectional
+  control, U+FFFD and a BOM. Assert a floor on the number of files walked, so that it cannot
+  go green having looked at nothing.
+- When it fails, do not retype. Replace with a script that builds the code points with
+  `chr()` — and holds neither the characters nor the escapes itself.
+- Build fixtures that carry escapes from double-quoted strings, and assert first **that the
+  text arrived**. A test firing blanks over a broken fixture is green with or without the
+  guard.
+
+### A fake that answers every question the same way cannot see a wrong question
+
+**Symptom:** three defects in one audit had passed their suites for the same reason. A fake
+container runtime answered every lookup with one canned id, so a delete that looked up a name
+the create path never uses stayed green for several releases. A slash command's test handed it
+a fake resolver, proving only that the argument reached the layer that then lost it. A
+preferences stub failed by throwing *before* changing anything, while the OS fails *after* — so
+every test of "what happens after a failed write" ran against a failure that does not occur,
+and a relaunch was modelled by reusing the same object, which kept the very state a relaunch
+discards.
+
+**How to apply:**
+- A fake keeps state and matches the way the real thing does; a canned reply is a test of the
+  caller's control flow and nothing else.
+- Name the layer a test observes. If the defect is one layer down, the test is a test of the
+  layer above — add one that goes through.
+- A stub's failure modes come from the real component's, not from what is easy to write.
+  Where both "nothing changed" and "changed, then failed" exist, run every case both ways.
+- A process boundary in a test is a **new** object over the same persistent stubs.
+- A refusal test needs a positive control: the same flags with a valid value must be accepted,
+  or a mistyped flag name passes as a refusal (the flag package refuses it with the same exit
+  status).
+- When a repair is for a class, mutate a scratch copy per clause and watch the named test
+  fail. Four of four did here, and two earlier "fixes" that reviews later withdrew had tests
+  that passed against the behaviour they were meant to exclude.
+
+### When a dependency's cancel waits for the other side, keep the slot until it answers — and measure whether it does
+
+**Symptom:** spice-client finished a cancelled row at once and freed its transfer slot. The SPICE library
+it uses keeps the job, and its slot, until the guest answers the cancellation; the next transfer hit the
+library's limit and failed, and the waiting files failed one after another. Reproduced on the live peer
+before the fix, then recorded: spice-vdagent did not answer the cancellation at all (2026-09-22), so the
+slot does not come back until the connection ends.
+
+**How to apply:**
+- Where your count and the dependency's can disagree (a cancel, a timeout), count the slot as in use until
+  the dependency reports the job ended. Treat a refusal on the dependency's limit as "not now": back in
+  the queue, not a failure.
+- Do not time out queued items on the clock of the ones being sent: waiting is not a stall.
+- Measure whether the other side answers, and keep the result in the gate's record (`cancel-ack none`).
+- If the release procedure requires a gate pass on the exact commit, the release commit that adds the
+  change log needs its own run — count it when planning.
+
+### Run the tests' properties at run time too — one function, a strict flag, and a generator that makes every form
+
+**Symptom:** a renderer's layout was guarded only by property tests (no two boxes overlap, every
+label drawn, arrows pointing at their receivers). They run offline, so a layout bug in a diagram the
+tests never generated would ship a wrong picture with nothing to refuse it. The same properties were
+moved into the renderer and run on every render, refusing a drawing that breaks one. The first
+version then refused 11% of random sequence diagrams that used `activate` statements: an exact
+end-point check counted a bar opened *after* a message as open at its arrow, and the tests had never
+seen it because the random generator only wrote the `+`/`-` form (mermaid-render, 2026-09). The same
+pre-release review found the run-time check cost 0.5 s at the limits (every pair of segments), then
+0.14 s after an x-sweep, on a chain whose links shared a few columns.
+
+**Why:** a property that only the tests hold guards the inputs the tests make. Moving it to run
+time guards every input, but also turns every false positive into a refusal a user sees, and every
+O(n²) loop that was fine in a test into latency.
+
+**How to apply:**
+- Keep **one function per property list** with a `strict` flag. The tests call it strictly; the
+  run-time path calls it without. Strict adds only what is a matter of looks (spacing, centring,
+  crossings), and each loose threshold is at most its strict one, so run time can never refuse what
+  the tests accept. Test that direction too: an ugly-but-right layout must pass the loose check.
+- Exact-to-epsilon comparisons are precision, not wrong pictures: keep them strict-only.
+- Before a check runs on every input, make the random generator produce **every syntactic form**
+  that reaches it (statements as well as shorthands), and sweep with the real font or data.
+- Bucket what is compared (a grid, not a one-axis sweep, when many items share a column) and put a
+  cost test on the worst legal inputs. Run the cheapest refusals (size limits) first.
+- Give the check a seam to corrupt a layout (`probe{corrupt: …}`), or no test can show it runs.
+
+### The first item of a list built by map iteration changes from run to run — error messages are output too
+
+**Symptom:** A box-drawing renderer checked its line cells in map order and returned the first fault
+(mermaid-render, 2026-09). For 3 of 61 refused inputs the error message differed between runs. The
+drawn art was deterministic, so no test noticed.
+
+**Why:** Go's map iteration order changes every run. With two or more faults, which one comes first
+changes too.
+
+**How to apply:**
+- When you pick one item from a list to show, sort the list into a fixed order first (reading order:
+  row, then column).
+- Determinism tests should compare error messages, not only the drawn result. To catch a mutant
+  that removes the sort, pull the sorting into a function and test it directly: an input refused
+  for a single fault never exercises the order.
+
+### Run the examples you write on the day you write them — a manual's own example was silently returning zero
+
+**Symptom:** An MCP server's manual gave a pivot example: "count the hosts that carry the same
+certificate, by its fingerprint". The fingerprint the tool printed was SHA-256; the upstream
+filter matches SHA-1 only. Upstream answered 0 with no error, so following the example
+produced a false negative, "no other host has this certificate". Every test was green; the
+independent verification found it (lookup CLI+MCP for IP exposure, 2026-10).
+
+**Why:** Examples are assembled from the documentation's vocabulary, and their author reads
+them as things that should work. When upstream answers a non-match with a silent zero, a wrong
+example wears the face of a valid negative answer. Unit tests never execute the prose of an
+example.
+
+**How to apply:**
+- Run every example in user-facing docs (`get_usage`, the README) **once against the real API**
+  on the day it is written, and make pivot examples fixed tests in the e2e suite.
+- Put the very value a filter matches (here `sha1`) in the tool's output, and state in the docs
+  which value the filter matches.
+- Refuse, before sending, a value shape known to match nothing (a SHA-256's length). A refusal
+  that says why guides the caller; a silent zero misleads it.
+
+### Do not mix the test's clock with the code's — past the fixed date, the test silently checks nothing
+
+**Symptom:** The tests of a TUI dialog notice (gem-agent and lagent, 2026-11-04) injected a fake clock into the
+model and advanced it from a fixed date (12:00 UTC that day). One case, checking that a key counts even inside the
+grace window that drops keys arriving right after a dialog opens, set the dialog's opening time from the fake clock.
+The grace check, though, read the real clock (`time.Since`). Once the real time passed the fixed date by a few
+seconds, the key was no longer inside the grace window, and the test passed whether the code was right or wrong. A
+pre-release independent review showed it by moving the fixed date back one day: the mutation "do not count keys in
+the grace window" then passed every test (written that morning, it had caught it when written).
+
+**Why:** When one decision mixes a clock the test moves with one it does not, the difference between them depends
+on when the test runs. Checked only right after writing, the difference is small and the test looks right.
+
+**How to apply:**
+- Take the two times a test compares from the same clock. Where the code reads the real clock, build the input it
+  compares from the real clock (`time.Now()`) too.
+- Do not use the fake clock's base date for a value the code compares against the real clock.
+- Mutate a time-dependent test's code on purpose and see it fail. Green on the day it was written does not mean it
+  is still checking next week.
+
+### A `\u` escape in agent-written source turns into the raw character — stop it with a test over the source text
+
+**Symptom:** In a test of making terminal output inert, a right-to-left override meant to be written as `\u202e` landed
+in the source as a raw U+202E (2026-11, a lookup tool for OpenCTI; twice, the second time even through a Python
+write). A sibling tool had recorded it three times. When the expected value turns raw too, the test passes with its
+meaning unchanged — vacuously.
+
+**Why:** The input to the writing tool is interpreted on the way, and the six characters `\u202e` become the character
+itself.
+
+**How to apply:**
+- Keep a test that refuses raw control characters, bidirectional controls, a BOM and the replacement character in every
+  source file — not only `.go` but `.md`, `.py`, `.graphql`, `.sh`. It also stops a "Trojan Source" change.
+- When writing an escape, assemble the backslash (`chr(92) + "u202e"` in Python) instead of typing `\u` directly.
+- When the test fails, replace the raw character with the assembled escape; the meaning is the same, so nothing else
+  breaks.
+
+**Further cases (2026-11, a mail-parsing library, five times):** an RTF `\u12354` written inside a Go raw string turned
+its first `\u1235` into the character U+1235, leaving the `4` behind. A shell heredoc mangled it the same way. The
+result was not a control character, so the check let it through and the test's input itself had changed (it failed
+against the expected value, which is how it was noticed). Another was a soft hyphen (U+00AD), missing from a list of
+bidirectional controls.
+- Hold the refusal as a Unicode class, not a list (in Go, `unicode.Is(unicode.Cf, r)` plus C0, C1 and U+FFFD, and NBSP,
+  which reads as a space). A list misses the next character.
+- A character that is not a control passes any such check. When writing `\u` followed by four or more hex-looking
+  characters, print the line back after writing it.
+
+### Don't put a `strings.Builder` held by value in elements of a slice that append grows — the next write after growth panics
+
+**Symptom:** A compressed-RTF reader pushed a struct holding a `strings.Builder` by value onto a slice for each open
+`\field` group. A 60-second fuzz run hit the panic "strings: illegal use of non-zero Builder copied by value"
+(2026-11, Go 1.27.3). It reproduced with 40 nested `\field` groups where each outer field gets one character from
+`\uN` before the next opens. A crafted .msg could stop the consumer's process.
+
+**Why:** When append reallocates, elements are copied by value. A `strings.Builder` remembers its own address and
+panics when written after being copied (nothing happens if it was never written, so only inputs that write to the
+outer field first trigger it).
+
+**How to apply:**
+- Don't give slice elements or structs passed by value a `strings.Builder` (or any noCopy type). Use `[]byte`, or
+  make the elements pointers.
+- Build the regression test from an input that writes before the copy. An input where the copy happens before any
+  write does not fail (the first regression test written here passed on the unfixed code for that reason). Check
+  that the test fails on the code before the fix.
+
+### A loop that advances by rebuilding a time from its calendar fields stops on the night the clocks go back — advance by adding to the instant you have
+
+**What happened:** Code that splits a span at every local hour found the next hour with
+`time.Date(y, m, d, hour, 0, 0, 0, loc).Add(time.Hour)` (Go). On the night summer time ends and the 1 o'clock
+hour happens twice, `time.Date` resolves the repeated time to its **first** occurrence. Called from inside the
+second one, it returns "the first 01:00 plus an hour" — the second 01:00 it is already in — which equals the
+start, and the loop never advanced. An aggregation command looped forever over any range containing that night
+(reproduced with America/New_York on 2026-11-01; it cannot happen in Japan time, so it never showed on the
+development machine).
+The first fix ("add what is left of the hour to the current instant") stopped the hang, and verification then
+found the next case: **where the clocks change part-way through an hour** (Pacific/Chatham changes at 03:45) the
+next local hour is not sixty minutes away, and one piece spanned two local hours.
+
+**Why:** A function that builds a time from calendar fields rounds a repeated or non-existent local time one way
+or the other. The result is not guaranteed to be later than the instant you hold.
+
+**How to apply:**
+- A loop that advances through time **adds a positive duration to the current instant, and does not rebuild
+  from calendar fields**. Shape it so that having advanced can be checked inside the loop.
+- To split at local boundaries, walk the UTC quarter-hours and stop at the first that "begins a local hour" or
+  "carries a different UTC offset". Every offset in current use is a multiple of fifteen minutes, so every local
+  hour start and every clock change falls on one (historical local mean time is another matter).
+- Test **the night the clocks go back, the night they go forward, a zone that shifts by thirty minutes (Lord
+  Howe) and one that changes part-way through an hour (Chatham)** across a year, judging "every piece lies
+  inside one local hour" and "the lengths sum to the whole". An infinite loop stops the test run, so run it in
+  another goroutine and fail on a timeout.
+- A defect that cannot happen in the development machine's time zone is found only if the tests name other
+  zones.
+
+### Before restructuring a large function, record what the whole thing does as a characterization — re-run the test binary as a child process and script the outside service
+
+**Symptom:** in a Go agent runtime, the one function that assembled a session had grown to about 1,900 lines and 255 branches. Tests could not call it, so they copied its flow or read its source and matched strings. Nothing could judge "nothing changed" before restructuring it — a restructure that, with the type checker's help, rewrote 758 references to locals.
+
+**Why:** a function that cannot be called forces copies and source matching on its tests, and a copy keeps agreeing with itself while the original changes. Reading and believing it right does not find the one of 758 rewrites whose meaning shifted. The judge has to be built before the restructure, from everything the function does that can be seen from outside.
+
+**How to apply:**
+- Make the characterization the first step: write it against the unchanged code and commit its output as the reference. Never rewrite the reference during the restructure; rewrite it only in a change meant to alter behaviour.
+- To run the start for real, re-run the test binary itself as a child: `TestMain` checks an environment variable and, in the child, executes the real command (`os.Executable()` with `-test.run=^$`). The start touches the environment, whether stdin is a terminal and package variables, so one run is one process. Rebuild the child's environment: drop variables with your own prefix, `HOME` and `LANG`, and point `HOME` at a temporary directory.
+- Add exactly one seam. Make the constructor of the outside service's client (here, the model) a package variable, and in the child only, replace it with a fake that answers from a script. The fake records what it was given: system prompt, tool declarations, messages. The order of the tool declarations is the request itself, so a restructure that moves a registration is caught here.
+- Compare stdout, stderr, the exit status, the transcripts, what the outside service received and the teardown order. Normalize only what changes between runs: temporary paths and their flattened forms, ids, times, random tags. A random tag after `_`, as in `tool_output_<hex>`, is not matched by `\b`. Leave machine-dependent lines out of the comparison. A startup note about a sandbox check that did not pass reported exit status 1 or 2 depending on the circumstances (measured); kept in, it fails every reference on another machine (found by the pre-release review).
+- Record the reference for a scenario added mid-restructure on the commit before the restructure too. Inside a submodule, do not use a worktree: export the tree with `git archive <commit> | tar -x` and run the test there.
+- For a TUI, run the same child as a TUI under a private tmux server, before and after, and compare the transcripts and screens of the same keystrokes.
+- Run it many times in a row before taking it as the reference (15 here).
+
+Result: in six steps the function became 67 lines, and every step matched the reference. A display-order defect found later was written with the same machinery as a test that fails on the unfixed code.
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
+
+### A test that checks wiring by reading source passes without checking anything once the code moves to another file
+
+**Symptom:** in the restructure above, eight tests read the entry file's (`root.go`) source. Moving the code failed most of them. One — "never wrap `os.Stdin` in a second `bufio.Reader`" — kept passing just because the string was no longer in that file: once the thing it checked had moved, it checked nothing. Another test that kept a list of files to read had not been told about a file created later (found by the pre-release review).
+
+**Why:** a test that checks for an absence stays green when what it looks for leaves the range it reads.
+
+**How to apply:**
+- The AST test of "The single production call site is the weak point of injected features — pin the wiring with an AST test" reads every non-test file of the package, not a named file. A test that checks for a presence checks there is exactly one (and fails on zero).
+- If the files to read are a list, add a test that fails when the list misses one — for example, that every file handling the core type is on it.
+- Once the function can be called, replace the copies and the source matching with real calls. Here the test that copied the resume flow now calls the startup phase itself.
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
+
+## Measurement, observation & evidence
+
+### Before calling something "measured", ask whether the probe input represents the real thing
 
 **Symptom:** how a terminal Markdown renderer treats over-wide code-block lines
 was "measured" with a single 132-cell line of box-drawing characters **containing
@@ -277,122 +969,7 @@ see what it omits.
   real renderer's decorations shipped a false negative — expectations and probes
   alike are built from real artifacts.
 
-## Verify a GUI on the assumption that what you can see and what actually runs are independent
-
-**Symptom:** a menu-bar app's bar label rendered correctly, which was taken as
-evidence the app worked. The panel opened by clicking it had in fact been empty
-since the first version.
-
-**Why:** the bar label and the panel are separate view hierarchies; either can be
-broken while the other is fine. The panel is also awkward to open
-programmatically (accessibility prompts, clicks landing on the frontmost
-process), so it falls out of automated checking easily.
-
-**How to apply:**
-- "The label is showing" is not a verification. **Count each surface of the UI as
-  its own thing to check.**
-- Where a surface cannot be opened automatically, **write into the plan that a
-  person has to look at it**. Left vague, an unchecked surface gets treated as
-  checked.
-- Behaviour that only appears over hours — a frozen timer, a counter that should
-  reset at midnight — is verified from the stored data after leaving it running.
-
-## Driving a menu-bar (LSUIElement) app for E2E: CGEvent + CGWindowList + per-window screencapture
-
-**Symptom:** a menu-bar-resident app's panel could not be opened from a test
-script, so its states went unverified (see the entry above). AppleScript does
-not help: `System Events`' `key code` never reaches a Carbon
-`RegisterEventHotKey` handler, and an `NSStatusItem` action does not fire from
-an AppleScript click.
-
-**Why:** the panel has no scriptable surface. What it does have is a global
-hotkey and a window, and both are reachable at a lower level.
-
-**How to apply:** three pieces, all from a small Swift helper the harness
-compiles once.
-
-- **Open it** — post the hotkey as a `CGEvent`
-  (`CGEvent(keyboardEventSource:virtualKey:keyDown:)` →
-  `post(tap: .cghidEventTap)`). Requires the posting process to be
-  Accessibility-trusted (`AXIsProcessTrusted()`).
-- **Confirm it opened** — `CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID)`,
-  filtered by owner name; read `kCGWindowIsOnscreen` and `kCGWindowNumber`.
-- **Look at it** — `screencapture -x -o -l <windowid>` captures that window
-  alone. Prefer this over a full-screen capture: it keeps unrelated windows —
-  other people's chat, mail, tickets — out of the image entirely.
-
-Read the hotkey out of the app's own `UserDefaults` before sending it, rather
-than assuming the shipped default. The stored value is typically
-`NSEvent.ModifierFlags` (shift `0x20000`, command `0x100000`, option `0x80000`),
-**not** a Carbon mask — sending the wrong chord looks exactly like a broken
-hotkey and invites a false bug report.
-
-**The failure mode to plan for:** synthetic keystrokes go to whatever holds key
-status, which is frequently *not* the app under test — a non-activating panel
-takes key status inconsistently, and macOS focus-stealing prevention can deny
-activation for ~30 s after launch. Every keystroke that misses lands in the
-user's frontmost application, typing stray text into it and setting off alert
-beeps. So: verify the window has key status before typing, keep the typed
-strings short and inert, and **stop the technique the moment it stops landing**
-instead of retrying — the retries are what reach the user's other windows. This
-harness is well suited to opening a window and photographing states; it is not a
-reliable text-input driver.
-
-**The status item itself cannot be observed through the window list (macOS 27.0, two
-observations):** the check above looks at the **panel's window**, which the app opens.
-Using the same method to confirm that the menu bar item is showing leads to a wrong
-conclusion. Launching an app with one `NSStatusItem` left zero windows owned by that app's
-pid, and the total number of windows in the list was the same before and after the launch —
-no process gained a window. The item was visibly there. An empty result is not evidence that
-nothing is shown. Confirm the item by eye, through the accessibility tree, or by having the
-app report its own geometry. Also confirm that the probe can see the window server at all:
-print the total window count alongside, so that "cannot see" is never mistaken for "does not
-exist".
-
-**Complementary, not a replacement:** the states this cannot reach (an IME
-composition, a first-time model download) still need unit tests over pure
-functions plus a person looking once.
-
----
-
-## Check layout by rendering off-screen from the test target, not by launching the app
-
-**Symptom:** unit tests over pure functions touch strings and arithmetic only, so
-whether a string actually fits the real width is undetectable by construction.
-Adding a single display line can push the longest branch into truncation, and no
-amount of reasoning settles it. Driving the real app with synthetic events (see
-the previous entry) does settle it, but it is too heavy — and too leaky — to reach
-for on every layout change.
-
-**Why:** a SwiftPM executable target is importable from tests with
-`@testable import`. Put the view in an `NSHostingView` and its layout resolves
-without launching the app; `bitmapImageRepForCachingDisplay(in:)` plus
-`cacheDisplay(in:to:)` writes it to a PNG. The same layout engine and the same
-real fonts run, so wrapping, truncation and true glyph widths all show up.
-Nothing appears on the user's screen.
-
-**How to apply:**
-
-- Put a throwaway renderer in the test target: build
-  `NSHostingView(rootView: TheView().environmentObject(model))`, give it **the
-  production width** (e.g. the popover's content width plus padding), and call
-  `layoutSubtreeIfNeeded()`.
-- Take the height from `fittingSize.height` rather than pinning it. You are
-  looking for content that does not fit; a fixed height hides the evidence.
-- Build state by assigning to the `@Published` properties directly. This verifies
-  rendering, so let it call no subprocess and no network.
-- **Render one image per branch and look at all of them** (normal / warning /
-  over / no-data). What breaks is usually the branch carrying the longest string,
-  and that is not the everyday branch.
-- Delete the renderer once you have looked. Keeping snapshots as regression tests
-  buys failures from OS font and system-colour changes; keep them only as a
-  deliberate choice.
-- Save the synthetic-event route for what only a real app does: permission
-  prompts, actual placement in the menu bar, behaviour right after launch.
-
----
-
-## When two defences cover one failure, an observation explained by either is evidence for neither
+### When two defences cover one failure, an observation explained by either is evidence for neither
 
 **What happened:** An MCP server guarded stdout in two layers — (1) replacing the
 runtime's log callbacks at the source, and (2) duplicating the real stdout for the
@@ -420,36 +997,7 @@ alive.
 
 ---
 
-## Verify the fixture before blaming the code
-
-**What happened:** Validating speaker diarization meant synthesising a conversation
-from two voices, `say -v Kyoko` and `say -v Otoya`. Half an hour went into
-suspecting the implementation for reporting one speaker where there should have been
-two. The cause was that **`Otoya` was not installed, and `say` fell back to the
-default voice without a word**. All four clips were the same speaker, so reporting
-one speaker had been correct all along.
-
-**Why:** Generative commands often answer a missing resource with a **plausible
-substitute** rather than an error — `say` voices, font selections, model names,
-locale identifiers. The output file is produced normally, so nothing hints that the
-fixture is wrong.
-
-**How to apply:** Confirm a synthesised fixture actually has the property you need,
-by some means other than the thing under test. At minimum, check the named resource
-exists first (`say -v '?'`, a font list, a model list). Reading a correct answer as a
-bug costs more than the bug would have.
-
-**Second instance (2026-10-31):** To test a Deflate64 decoder, a Deflate64 ZIP was made with
-7-Zip from a 40 KiB random block repeated four times, meant to force both codes only Deflate64
-has: distances beyond 32 KiB and match lengths beyond 258 bytes. Having the decoder count each
-code it decoded showed the far distances were used and **the long-length code was used zero
-times** (measured): 7-Zip's encoder does not emit it even for a 40 KiB match. The fixture tests
-stayed green, so without the count the claim would have been "that path is cross-checked
-against an external implementation too". For a fixture meant to cover a format's codes or
-paths, **count on the decoding side which paths actually ran, and assert on the count**. Cover
-the paths one encoder never emits with inputs built by hand from the specification.
-
-## "Not found" is only an answer when every source actually answered
+### "Not found" is only an answer when every source actually answered
 
 **What happened:** A lookup tool queries OTX under two indicator types, because
 upstream indexes a name under exactly one of `domain` and `hostname` and answers
@@ -479,7 +1027,7 @@ the failure only exists when one source fails and another succeeds.
   **all of them return 200**, choosing wrong is not an error — it is a silent
   empty result. Query the alternatives and report which one answered.
 
-## Never state a metric of a jittery system from a single run
+### Never state a metric of a jittery system from a single run
 
 **What happened:** Comparing two models on a local inference engine, one was
 reported as falling into a run of 48 identical consecutive segments over a
@@ -511,7 +1059,7 @@ sees that has reason to doubt every other measurement you took.**
   counts agreed to within ±1% and said nothing whatever about whether the loop
   would reproduce.
 
-## Output with no ground truth can still be measured structurally
+### Output with no ground truth can still be measured structurally
 
 **What happened:** Two transcription models needed comparing on a 39-minute real
 recording, but no reference transcript existed, so error rate was unmeasurable.
@@ -544,7 +1092,7 @@ something measures the structure.
   audio was dropped, or it may mean the model hallucinated over silence and
   music. Disambiguate with an independent third observation (here, a VAD).
 
-## Reconcile what an enumerator returned against what you meant to measure
+### Reconcile what an enumerator returned against what you meant to measure
 
 **Symptom:** While investigating whether SMART data could be read from a
 USB-attached external SSD, a diagnostic tool's auto-enumeration mode (`--scan`)
@@ -577,7 +1125,7 @@ tell what broke when a premise changes (different hardware, a later OS release).
 - "The conclusion is right, so the evidence must be" does not hold. Audit the
   conclusion and the evidence separately.
 
-## Do not infer physical layout from a position in a logical tree
+### Do not infer physical layout from a position in a logical tree
 
 **Symptom:** In the same investigation, the target SSD appeared under an
 SoC-internal USB controller in the OS device tree. That was taken as proof it
@@ -606,46 +1154,7 @@ at only one plane makes the device look absent from it.
   seconds.** Asking is faster, more reliable, and cheaper to be wrong about.
   Infer only when there is nobody to ask.
 
-## Verify concurrency concerns with a concurrent test, not by reading — the bug lives next door
-
-**Symptom:** asked whether timestamp-based session ids collide under parallel
-execution, code-reading found the suspected layer safe (O_EXCL + suffix retry
-+ flock). The 16-way concurrent test written to PROVE that safety caught a
-real race in the ADJACENT layer (the state-dir ownership marker) at ~50%
-frequency. A reading-based "it's safe" answer would have shipped the bug.
-
-**How to apply:**
-- On any concurrency doubt, write the concurrent regression test first
-  (start-channel for simultaneous release, `-race`, several rounds) whatever
-  you expect the verdict to be — the test exercises the whole path, not just
-  the suspected hypothesis, so adjacent defects surface.
-- Confirm goroutine findings with real simultaneous processes (O_EXCL, flock,
-  rename are kernel vocabulary, so the semantics match — but the E2E catches
-  wiring mistakes).
-- Measure before answering "no issue": the negative-answer integrity duty
-  applies to concurrency too.
-
-## The single production call site is the weak point of injected features — pin the wiring with an AST test
-
-**Symptom:** a UI language-catalog feature shipped with all unit tests green
-and a non-interactive E2E pass — while the one production TUI-constructor
-call omitted the catalog argument, so the whole TUI silently ran on the
-English fallback for a full release. Unit tests inject the dependency
-themselves and cannot see a wiring gap; the E2E only exercised the surface
-that WAS wired.
-
-**How to apply:**
-- Third pattern of "implemented but silently never fires": **an options-struct
-  field with a nil default degrades quietly** — the graceful fallback hides
-  the missing wire precisely because it is graceful.
-- Behavioral tests cannot reach a literal inside a monolithic init function.
-  **Parse the production file with go/ast and assert the constructor literal
-  sets the required fields** — a few dozen lines, robust to formatting, and
-  it fails the moment the field disappears.
-- Run one E2E per surface the feature passes through, not per surface where
-  it visibly worked: here only the non-interactive (cmd) side was measured,
-  and the interactive (TUI) side was the broken one.
-## Establish a log's timestamp semantics before drawing any conclusion about time
+### Establish a log's timestamp semantics before drawing any conclusion about time
 
 **Symptom:** A daily log-summary report announced "disk I/O errors yesterday". The
 kernel lines (ATA command timeouts and link resets) were read correctly and a
@@ -704,39 +1213,7 @@ The same date string appearing at widely separated line numbers proves the file
 spans multiple years. Bracketing each cluster by the year boundaries fixes its
 year (this relies on the monotonicity assumption in 5).
 
-## A feature that learns from usage must be tested against usage-shaped data
-
-**Symptom:** An approval-rule learner shipped with unit tests, an E2E,
-and a threshold of "approved in three separate sessions". Its first
-real session — 25 escalations, all approved — produced zero proposals.
-The E2E had seeded exactly three sessions to satisfy the threshold, so
-it measured whether the mechanism worked and never whether the
-threshold was reachable.
-
-**Why it matters:** Fixtures written to satisfy a threshold cannot
-falsify it. The tests were green, the feature ran, and the defect was
-invisible until real data arrived — the same class as a feature that
-never fires, but hiding behind passing tests rather than behind silence.
-
-**How to apply:**
-1. **Shape at least one fixture like production, not like the
-   threshold.** For a learner, that means the distribution real usage
-   produces: work concentrated in one session, many one-off items, a
-   long tail — whatever the domain actually looks like.
-2. **Ask "is this bar reachable?" separately from "does this work?"**
-   They are different questions and only the first needs real
-   distributions. Answer it before shipping, with numbers.
-3. **When the real report arrives, reproduce before diagnosing.** A
-   synthetic transcript in the reported shape turned a plausible story
-   into two measured causes in one test run — and became the
-   regression test.
-4. **Check whether the friction even has the shape you are counting.**
-   Here half the problem was categorical: per-tool frequency cannot see
-   friction made of many different tools called once each. No threshold
-   over that counter is both safe and reachable, so the unit of the
-   rule had to change, not its number.
-
-## A constant that bounds a feature: measure the population its window covers
+### A constant that bounds a feature: measure the population its window covers
 
 **Symptom:** An agent's risk evaluator gained a feature — the operator's
 instruction rides along as alignment evidence — bounded, by intuition, to
@@ -771,7 +1248,7 @@ it behaves correctly, which is exactly why nobody notices.
   by pairing each escalation with the human's next decision. Escalations
   that are approved every time are friction, not defense.
 
-## An external API's vocabulary and visibility vary by licence tier — measure with your own key, not the docs
+### An external API's vocabulary and visibility vary by licence tier — measure with your own key, not the docs
 
 **Symptom:** the filter vocabulary in the official documentation (hyphenated)
 was rejected by the live API with 400, and the accepted vocabulary
@@ -808,49 +1285,567 @@ tier".
   before sending (`plan_restricted`); pin the evidence for the list as a fixed
   test in the live e2e.
 
-## golangci-lint truncates identical findings at three — list everything before a bulk fix
+### A model-comparison bench interleaves configurations per case, time-boxes every call, and prints progress live
 
-**Symptom:** errcheck reported "8" unchecked `defer x.Close()` calls; there
-were 18. golangci-lint caps identical messages at `max-same-issues`
-(default 3) and per-linter findings at `max-issues-per-linter` (default 50).
-Each receiver name got three lines, so fixing what was shown and re-running
-surfaced the "next" three — a whack-a-mole loop.
+**Symptom:** Three thinking configurations of the same model, run in
+parallel, throttled each other: medians above 30 s against a measured 4 s
+in production, useless for comparison. Run sequentially instead, one call
+stalled for 515 s, ate the 25-minute budget, and three of four
+configurations ended with zero data. Output sat in `t.Log`'s buffer, so
+nothing was visible for 25 minutes (2026-09, choosing an agent runtime's
+risk-evaluation model).
 
-**How to apply:**
-- Before a bulk fix, run `golangci-lint run --max-same-issues 0
-  --max-issues-per-linter 0 ./...` to see the whole set, then fix it
-  mechanically (a regex from `defer x.Close()` to
-  `defer func() { _ = x.Close() }()`, for instance).
-- One finding of a shape is a reason to grep every file for that shape.
-  The displayed count is a floor, not the total.
-
-## An E2E script aimed at a fixture must refuse to run in your own repository even with an empty argument
-
-**Symptom:** An E2E script was generated through an unquoted heredoc
-(`<<EOF`), so the `$1`/`$P` in its body expanded to empty strings at
-generation time. The script ran `cd ""` (a no-op) and then
-`printf ... > AGENTS.md`, replacing the repository's 700-line `AGENTS.md`
-with the two-line fixture. The feature commit carried it; a review found it.
-
-**Why:** "It points at the fixture" is the script's assumption, not a fact
-the script checks. Arguments go empty through several paths (heredoc
-expansion, a mistyped call), and `cd` with an empty argument does nothing
-and does not fail.
+**Why:** API conditions — congestion, retries, stalls — change by the
+minute. Running each configuration as a block mixes time-of-day into the
+between-configuration difference. A single overall deadline lets one stall
+take everything after it down. Buffered output cannot distinguish "not
+finished" from "broken".
 
 **How to apply:**
-- Start scripts with `set -u` and **validate the target directory against
-  a pattern** before acting (`case "$P" in */scratchpad/e2e-*) ;; *) exit 1;;
-  esac`). `cd "$P" || exit 1` alone does not stop an empty argument.
-- Generate scripts through a quoted heredoc (`<<'EOF'`) or a Python raw
-  string, and `cat` the result once to see the `$` still there.
-- **Pin the required sections of agent-facing briefing files (`AGENTS.md`
-  and kin) in `make check`.** A check that fails the moment a section
-  disappears beats noticing in review.
-- Look at `git diff --stat` before committing. Hundreds of deleted lines in
-  a documentation file is a signal an intended change almost never sends.
+- **Cases outside, configurations inside**: interleave, so a swing in API
+  conditions hits every configuration alike.
+- **`context.WithTimeout` per call** (say 90 s); a stall is one ERR line
+  and the loop moves on. The overall deadline sits above that.
+- **`fmt.Printf` each decision as it lands**, timestamped; keep `t.Log` for
+  the end summary. `go test -v` shows logs only when the test ends.
+- Do not run the same model in parallel with itself; parallelise across
+  models only.
+- Report both per-decision (several rounds folded into one verdict) and
+  per-call numbers, and count retries.
 
+### Do not write a single observation as a rule — write it with its counts
 
-## A cross-platform test harness detects its own defects first
+**Symptom:** A search API's answers came back without citations twice when
+the reply language was `ja`, and README, the manual and a note attached to
+results all asserted "citations are emitted only for `language=en`". The
+third `ja` run returned 24 citations. Five runs read en → 29, 29 / ja → 0, 0,
+24.
+
+**Why:** Two agreeing observations look like a rule, and isolating the cause
+(country vs language) one variable at a time only added confidence. But the
+system was non-deterministic (an LLM sits behind the API) and two samples
+were far too few. The assertion spread at once to every reader-facing surface
+— manual, README, result note — and the correction had to reach all of them.
+
+**How to apply:**
+- For non-deterministic systems (LLMs, search, the content of external
+  responses), **record the count and the breakdown verbatim** ("5 runs: en
+  29, 29 / ja 0, 0, 24"). "Only when" and "always" wait for ten or more
+  agreeing runs on the same input.
+- Reader-facing wording follows the observation ("unreliable for non-English
+  replies"). A note attached to a result does the same, and adds the sentence
+  that keeps an empty value from being read as "does not exist".
+- Isolating experiments (one variable at a time) narrow the candidate causes;
+  they **do not prove a rule**. Repetition under identical conditions comes
+  after the isolation, not instead of it.
+- When correcting an assertion, grep every surface that carried it (README,
+  manual, result note, ADR, CHANGELOG) and fix them in one pass; fixing one
+  surface creates drift.
+
+### A stall at a round number on a credit-controlled channel is a window problem, not a data-handling bug
+
+**Symptom:** Sending a file to a guest agent stopped at exactly 32,000 of 64,000 bytes,
+every run. The partial content was correct, nothing errored, nothing disconnected. The
+chunk size was the dependency's 16,000-byte default.
+
+**Why:** The channel was under token (credit) flow control. A message costs one token per
+2 KiB wire fragment; the peer grants ten tokens and returns them five at a time. A
+16,000-byte chunk needs eight. The first one spends eight of ten leaving two, the batch
+of five arrives making seven, and the second chunk needs eight — for ever. The stop
+position is the same round number every run because it is decided by the window's
+arithmetic, not by the data. Reading the byte handling and the buffer boundaries finds
+nothing, because there is nothing there to find.
+
+**How to apply:**
+
+- A stall at a position that is constant across runs and an exact multiple of the chunk
+  size points at flow control. A data-dependent bug moves with the content.
+- Measure the credits first: initial token count, the unit a message is charged in, and
+  the granularity of replenishment. Three numbers, and the implementation's log gives
+  them faster and more reliably than the specification.
+- Choose the chunk so it **fits the window the peer can open**, not so it is as large as
+  possible. If one message costs more than half the initial credit, the second one jams.
+- A dependency's default is a default for the peer that dependency had in mind. Pointing
+  it at a different hypervisor or server implementation voids the assumption with it.
+  Pass the number explicitly as your application's, with the reason recorded.
+
+### Size stability is not a completion signal when the writer preallocates
+
+**Symptom:** A guest-side watcher observed the receipt of a transferred file by hashing
+it "once its size has been stable for two seconds". It returned the hash of a partial
+file.
+
+**Why:** The receiving daemon allocated the whole file before the first byte arrived, so
+a file still being written already has its final size. "The size is stable" is true from
+the moment the transfer starts, which makes it a check that asserts nothing.
+
+**How to apply:** Key on a quantity that tracks the writing. Modification time is not
+affected by preallocation. Always pair it with:
+
+- **A hard deadline that always emits a line.** Silence does not distinguish "still
+  writing" from "never coming", so a quiet observer leaves the verifier waiting.
+- **A line for the file being removed.** Cleaning up after a completed transfer is
+  common, and a vanished file should be a reported outcome rather than silence.
+- **A digest computed by the receiver** as the evidence of completion. The sender's
+  "succeeded" is a statement about the sender's own state.
+
+### After measuring in a synced folder, check later that what you removed has not come back
+
+**Symptom:** For a write measurement, a dedicated folder and files were created in a
+Dropbox synced folder and removed afterwards (the remove command succeeded). Later
+the folder and its files were there again (2026-11; observed once; the cause was not
+established — a sync conflict or a restore is inferred). The same steps in Google Drive
+and iCloud Drive left nothing.
+
+**Why:**
+- A removal in a synced folder does not end with the local operation: the item can come
+  back through the provider before it has taken the removal. A successful remove command
+  does not show that the place is clean.
+- The cleanup had already been reported as done, and the report had to be corrected.
+
+**How to apply:**
+- Measure in a dedicated empty folder, and after the cleanup check again, some time
+  later, before reporting it clean.
+- Tell the user that removed items may remain in the provider's web-side trash or
+  history, which cannot be checked from the machine.
+
+### "The output did not change" is the wrong yardstick when the old output came from a partial read — compare with what the whole record gives
+
+**What happened:** A work-time logger's commands each read a slice of the record (the window asked for, plus a
+fixed margin) and applied rules that judge a span by its neighbours. To make two commands agree, the read was
+extended with the one sample before it and the one after it. The design said the other commands' output would
+not change, and the tests pinned exactly that. A fuzz run in verification (600 random records, 7,200 runs)
+found 221 changed outputs. Every one of them equalled the result derived from the **whole** record: the old
+read had been wrong wherever a break longer than the margin cut it short, and the change had corrected it. The
+tests were pinning the old error.
+Two further defects came from the added samples themselves. A neighbour inserted with its real state became a
+sliver of a session at the head of the read; and when the read held nothing else, a neighbour inserted as a
+marker was reported as the current state.
+
+**Why:** "Unchanged from before" measures the distance from the previous implementation, not from the truth. For
+a function over a partial read, the truth is defined: it is the same function over everything, cut to the
+window.
+
+**How to apply:**
+- When a command reads part of a record, write the test as **"the output equals the derivation from the whole
+  record, cut to the window"**, over random records that include breaks longer than the read margin. Keep
+  "unchanged" only as a check on real data, and treat a difference there as a question, not a failure.
+- State in the design what a change to the read *is allowed to* change, and where. "Nothing changes" is a claim
+  to be measured before it is written.
+- A sample added only to give the rules a neighbour is a **marker**: give it the neutral state the gap already
+  implies, never let it stand alone as data, and test the read that contains nothing but the marker.
+- Keep every rule's reach (the longest span it can look across) inside the read margin by limiting the settings;
+  a setting longer than the margin makes the same day answer differently by window.
+
+### A table whose buckets are measured to the row's own completion sorts the slow rows by themselves — measure to the start
+
+**Symptom:** A usage report sorted model calls by "seconds since the previous call" to show how cache hits
+fall with time. The gap ran from the previous call's end to *this call's end*, because that is where the
+record is written. A pre-release reviewer recounted with the gap ending at the call's start: 139 of 199
+calls changed bucket. In the original table the 120–300 s row held 54 calls and 33 misses; 26 of those 33
+had been sent within 30 s of the previous answer, and for misses in the late rows the call itself was a
+median 94% of the gap. The documents read the late rows as "the cache had let go by then" — a cause the
+table could not show, since a miss is slow and a slow call lands in a late row whatever the cause.
+
+**Why:** The bucketing variable contained the outcome. A miss makes a call long; the call's length was part
+of the gap; so the outcome chose its own row. The code was correct against its definition, and an independent
+recount of that definition matched on every row — nothing but a second definition could show it.
+
+**How to apply:**
+- A bucket key must be fixed before the thing being measured happens. For a call: measure to its start, never
+  to the record written when it ends.
+- When asking a reviewer to recount, ask also for one alternative definition of each key and the number of
+  rows that move. Agreement on the author's definition says the code is right, not that the definition is.
+- Write under a distribution table what it shows and that it does not show why; move causal sentences out of
+  the README until something other than the table supports them.
+- In fixtures, give every event that should independently change a result its own timestamp. Two events at
+  the same instant cover for each other: 12 of 26 mutants survived tests whose fixtures did this, and 13 of 13
+  were killed once each start-moving record had a time of its own.
+
+## GUI, terminals & drawing
+
+### Verify a GUI on the assumption that what you can see and what actually runs are independent
+
+**Symptom:** a menu-bar app's bar label rendered correctly, which was taken as
+evidence the app worked. The panel opened by clicking it had in fact been empty
+since the first version.
+
+**Why:** the bar label and the panel are separate view hierarchies; either can be
+broken while the other is fine. The panel is also awkward to open
+programmatically (accessibility prompts, clicks landing on the frontmost
+process), so it falls out of automated checking easily.
+
+**How to apply:**
+- "The label is showing" is not a verification. **Count each surface of the UI as
+  its own thing to check.**
+- Where a surface cannot be opened automatically, **write into the plan that a
+  person has to look at it**. Left vague, an unchecked surface gets treated as
+  checked.
+- Behaviour that only appears over hours — a frozen timer, a counter that should
+  reset at midnight — is verified from the stored data after leaving it running.
+
+### Driving a menu-bar (LSUIElement) app for E2E: CGEvent + CGWindowList + per-window screencapture
+
+**Symptom:** a menu-bar-resident app's panel could not be opened from a test
+script, so its states went unverified (see the entry above). AppleScript does
+not help: `System Events`' `key code` never reaches a Carbon
+`RegisterEventHotKey` handler, and an `NSStatusItem` action does not fire from
+an AppleScript click.
+
+**Why:** the panel has no scriptable surface. What it does have is a global
+hotkey and a window, and both are reachable at a lower level.
+
+**How to apply:** three pieces, all from a small Swift helper the harness
+compiles once.
+
+- **Open it** — post the hotkey as a `CGEvent`
+  (`CGEvent(keyboardEventSource:virtualKey:keyDown:)` →
+  `post(tap: .cghidEventTap)`). Requires the posting process to be
+  Accessibility-trusted (`AXIsProcessTrusted()`).
+- **Confirm it opened** — `CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID)`,
+  filtered by owner name; read `kCGWindowIsOnscreen` and `kCGWindowNumber`.
+- **Look at it** — `screencapture -x -o -l <windowid>` captures that window
+  alone. Prefer this over a full-screen capture: it keeps unrelated windows —
+  other people's chat, mail, tickets — out of the image entirely.
+
+Read the hotkey out of the app's own `UserDefaults` before sending it, rather
+than assuming the shipped default. The stored value is typically
+`NSEvent.ModifierFlags` (shift `0x20000`, command `0x100000`, option `0x80000`),
+**not** a Carbon mask — sending the wrong chord looks exactly like a broken
+hotkey and invites a false bug report.
+
+**The failure mode to plan for:** synthetic keystrokes go to whatever holds key
+status, which is frequently *not* the app under test — a non-activating panel
+takes key status inconsistently, and macOS focus-stealing prevention can deny
+activation for ~30 s after launch. Every keystroke that misses lands in the
+user's frontmost application, typing stray text into it and setting off alert
+beeps. So: verify the window has key status before typing, keep the typed
+strings short and inert, and **stop the technique the moment it stops landing**
+instead of retrying — the retries are what reach the user's other windows. This
+harness is well suited to opening a window and photographing states; it is not a
+reliable text-input driver.
+
+**The status item itself cannot be observed through the window list (macOS 27.0, two
+observations):** the check above looks at the **panel's window**, which the app opens.
+Using the same method to confirm that the menu bar item is showing leads to a wrong
+conclusion. Launching an app with one `NSStatusItem` left zero windows owned by that app's
+pid, and the total number of windows in the list was the same before and after the launch —
+no process gained a window. The item was visibly there. An empty result is not evidence that
+nothing is shown. Confirm the item by eye, through the accessibility tree, or by having the
+app report its own geometry. Also confirm that the probe can see the window server at all:
+print the total window count alongside, so that "cannot see" is never mistaken for "does not
+exist".
+
+**Complementary, not a replacement:** the states this cannot reach (an IME
+composition, a first-time model download) still need unit tests over pure
+functions plus a person looking once.
+
+---
+
+### Check layout by rendering off-screen from the test target, not by launching the app
+
+**Symptom:** unit tests over pure functions touch strings and arithmetic only, so
+whether a string actually fits the real width is undetectable by construction.
+Adding a single display line can push the longest branch into truncation, and no
+amount of reasoning settles it. Driving the real app with synthetic events (see
+the previous entry) does settle it, but it is too heavy — and too leaky — to reach
+for on every layout change.
+
+**Why:** a SwiftPM executable target is importable from tests with
+`@testable import`. Put the view in an `NSHostingView` and its layout resolves
+without launching the app; `bitmapImageRepForCachingDisplay(in:)` plus
+`cacheDisplay(in:to:)` writes it to a PNG. The same layout engine and the same
+real fonts run, so wrapping, truncation and true glyph widths all show up.
+Nothing appears on the user's screen.
+
+**How to apply:**
+
+- Put a throwaway renderer in the test target: build
+  `NSHostingView(rootView: TheView().environmentObject(model))`, give it **the
+  production width** (e.g. the popover's content width plus padding), and call
+  `layoutSubtreeIfNeeded()`.
+- Take the height from `fittingSize.height` rather than pinning it. You are
+  looking for content that does not fit; a fixed height hides the evidence.
+- Build state by assigning to the `@Published` properties directly. This verifies
+  rendering, so let it call no subprocess and no network.
+- **Render one image per branch and look at all of them** (normal / warning /
+  over / no-data). What breaks is usually the branch carrying the longest string,
+  and that is not the everyday branch.
+- Delete the renderer once you have looked. Keeping snapshots as regression tests
+  buys failures from OS font and system-colour changes; keep them only as a
+  deliberate choice.
+- Save the synthetic-event route for what only a real app does: permission
+  prompts, actual placement in the menu bar, behaviour right after launch.
+
+---
+
+### Measure an inline TUI's row arithmetic in tmux and script — the renderer paints only the latest View per tick
+
+**Symptom:** With Bubble Tea's inline renderer, closing a panel left one
+line of earlier output standing at the top of the screen. Two fixes
+reasoned from the code (pad the frame to height-1; choose the layout per
+View from the rows remaining) passed the unit tests and did nothing on a
+real terminal. A pseudo-terminal of known size (`tmux new-session -d -x
+100 -y 30`, driven with `send-keys`, read with `capture-pane -p`) plus a
+raw byte recording under `script` settled it: (1) a frame of N rows
+drawn from row printed+1 scrolls the terminal by printed+N−height rows,
+so a frame of height-1 leaves one row; (2) the renderer buffers the View
+of every Update and paints only the latest one on its tick — the
+full-height frame healed the counter, the next View re-derived the
+layout from the healed counter and flipped to the shorter frame, and
+the shorter frame is what reached the terminal (2026-09, an agent's
+TUI).
+
+**Why:** The model's row accounting assumes the View it returned is the
+one drawn, but a later Update can replace it before the tick. State
+re-derived on every View diverges when an update is self-referential,
+like a self-heal. Unit tests see only View's return value and cannot
+detect the difference.
+
+**How to apply:**
+- Fixes that touch row positions or scroll amounts are **counted on a
+  real terminal**: tmux (fixed size, `capture-pane`) and `script` (raw
+  bytes: count the `<CSI nA>` cursor-ups and the `\r\n`s). Eyeballing a
+  screenshot comes last.
+- A layout choice (full screen vs. fit in the rows remaining) is **made
+  once when the panel opens and held until it closes**, never re-derived
+  from the counter inside View.
+- A trace of "lines the model returned" is not evidence of what was
+  painted; confirm painting from the raw bytes.
+
+### Anything that occupies N rows in an inline TUI must erase below itself — the renderer's flush clears one
+
+**Symptom:** Inline terminal images in an inline TUI, with the row
+accounting already correct (the emitter declares a box and tells the row
+counter that number; the unit tests pass). On a real terminal three images
+still left three footer fragments standing on the screen. Neither the unit
+tests nor four independent verification passes reading the source found it
+(2026-09, an agent's TUI).
+
+**Why:** Bubble Tea's inline renderer flushes a queued line from the top of
+its own frame and appends `EraseLineRight`, which clears **one row, to the
+right of the cursor**. The image then draws down N rows at its declared
+width, so every cell of the old frame to the RIGHT of a narrower picture
+survives on every row the picture covers. A 40-column picture under a wider
+footer leaves the difference on every one of those rows. This is
+independent of the row arithmetic and happens with the accounting perfectly
+correct.
+
+**How to apply:**
+- Under an inline renderer, output that occupies **more than one row**
+  (images, sixel, hand-drawn boxes) writes one erase-to-end-of-screen
+  (`ESC[J`) immediately before its payload. Nothing above the cursor is
+  touched, and the renderer repaints just below it anyway.
+- "If the row count is right the screen is right" does not hold: the
+  declared **width** is occupied too, and erasing happens per row.
+- This class is **decidable only on a real terminal**. No number of
+  source-reading passes reaches it. Take an A/B on the real terminal — the
+  fix, and the same tree with the one line removed — under the same
+  conditions, and count the leftovers.
+
+### A terminal capability probe asks a second question every terminal answers
+
+**Symptom:** A probe asked whether the terminal could draw inline images
+with an APC graphics query and read silence as "no" via a timeout. On Apple
+Terminal it blocked for the **full 2.001 s at every start**, and because
+that terminal does not understand APC it printed the query's own body —
+`Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA` — on the operator's screen first (2026-09,
+an agent's TUI; the environment classified only tmux/screen, the kitty
+family and iTerm2, so every other terminal took this path).
+
+**Why:** The capability question has **no negative answer**. A terminal that
+does not know the protocol simply says nothing, and silence cannot be told
+from slowness, so the only usable verdict is the timeout — which every
+terminal that cannot draw then pays in full.
+
+**How to apply:**
+- Send a **DA1 request (`ESC[c`) immediately after** the capability query.
+  Every VT-compatible terminal answers it, so "a DA1 reply arrived with no
+  graphics reply before it" is a definitive no. Measured: 2.001 s → under
+  1 ms. Keep the timeout as the backstop for a terminal that answers
+  neither.
+- A terminal that does not parse the escape **prints its body**. Erase the
+  line the probe dirtied before handing the terminal to the UI (`\r` plus a
+  line erase).
+- Record the effect by **measuring before and after with the same
+  instrument**. Both the probe's duration and the dirtied screen are
+  observable only on a real terminal.
+
+### A counter fed by the view's draw callback proves nothing in a headless test
+
+**What happened:** A live-peer gate for a SPICE client asserted that the session's
+`frames_presented` diagnostic grew once a real server was sending frames. The
+first run waited 30 s and failed: that counter is incremented in the Metal view's
+drawable callback, and a `swift test` process has no view. The frames were
+arriving; nothing was counting them. The design review had predicted it from the
+source before the run reproduced it (spice-client ADR-0002, 2026-09-18).
+
+**How to apply:** In a headless test, observe what the view observes, not what
+the view reports: subscribe to the frame source with the demand a visible window
+would set and count distinct revisions. Do the same audit for every counter a
+gate asserts — find the one call site that increments it and ask whether that
+code runs in the test process at all. And when a suite is enabled by an
+environment variable, `swift test` exits 0 with the suite skipped if the variable
+is missing; a gate that trusts the exit status alone passes with zero tests, so
+have the tests leave a receipt the gate checks.
+
+### kitty's graphics protocol takes PNG only — and `q=2` hides the refusal
+
+**Symptom:** gem-agent and lagent sent pictures to kitty-protocol terminals with `f=100`, which means PNG;
+the protocol has no JPEG format. A JPEG sent as `f=100` drew nothing on kitty (seen by the operator,
+2026-09-22), `q=2` — which discards the terminal's replies — hid the failure, and the rows it would
+have used were still counted.
+
+**How to apply:** Before sending to kitty, decode anything that is not PNG and re-encode it as PNG, scaled
+first to what the declared box can show (a photo re-encoded as PNG at full size is many times its JPEG).
+iTerm2's `File=` names no format and draws JPEG itself, so leave that path alone. Terminal drawing is
+judged only on a real terminal: of two runtimes sharing the code, record which one was actually checked.
+
+**When the box grows, re-measure the bytes (2026-11-02):** the two runtimes later drew a picture as large
+as the screen allows instead of at most 40 columns. The re-encode still assumed 20×40 pixels a cell —
+generous for a 40-column box — and a pre-release review measured every photo it tried (1600–3200 px
+JPEGs, real wallpapers) at 3–9 MB as PNG, past the 2 MiB ceiling, so kitty drew nothing again: the bug
+above, back through a constant nobody revisited. Scaling at one picture pixel per pixel the terminal
+reports for a cell (about 8×18 on Retina — logical units) put a 3200 px photo in a 149×45 box at about
+1 MB in about 0.1 s (measured); a second, smaller try covers what still does not fit. A ceiling that
+changes moves every quantity derived from it — bytes, time — so measure those on real data, not on
+the synthetic pictures the unit tests use, before release. Noise is PNG's worst case: if it fits, a
+photo does.
+
+### Test drawing by comparing a record of what is drawn with the source — record inside the primitive
+
+**Symptom:** layout property tests (a line's end sits on the right entity, and so on) passed, yet
+no test failed for mutants that swapped the two ends' cardinality markers, mixed up a marker's
+shape, swapped solid and dashed lines, or drew an arrowhead at the start. The first drawing record
+computed its values at the call site, so a mutant that inverted only the value passed to the
+primitive still passed (mermaid-render, 2026-09). In the same review, a property pinning arrow ends
+exactly found a real bug: arrows ran into the inner bars of nested activations.
+
+**Why:** layout checks look at coordinates, not at what is drawn there. A record made outside the
+drawing is a separate expression from the drawing, so one can break while the other still agrees.
+
+**How to apply:**
+- Give the canvas an optional trace function and record markers, heads and each line's dash flag
+  inside the primitive that draws them. Record the same variable that is drawn.
+- Build the expected values from the source and compare. A loose tolerance ("within 3.85 em of
+  the lifeline") lets wrong ends, bars and note sides through; compute the expectation exactly.
+- In mutation checks, always confirm the mutant **builds**. A mutant that failed to build on an
+  unused variable was nearly read as "not caught".
+
+### An inline image taller than the screen, or on the screen at a clear, is lost differently per terminal — measure before drawing big pictures
+
+**Symptom:** a TUI drew mermaid diagrams as inline images at one em of diagram text per terminal line
+(gem-agent, 2026-09). iTerm2 scrolled a picture taller than the screen correctly; kitty clipped its
+lower part and the input frame was drawn over it. Cutting the picture into bands of at most half the
+screen fixed kitty, but on iTerm2 the bands showed seams and a missing lower-right corner (iTerm2 fits
+each band with preserveAspectRatio). Separately, narrowing the window — which made the TUI clear the
+screen (`ESC[2J`) to sweep its frame's re-wrapped leftovers — lost every picture on the screen at that
+moment on both terminals (kitty deleted them, iTerm2 left black space), while the text survived in
+the scrollback; both terminals also piled black space into the scrollback, with text alone too.
+
+**Why:** an inline image is not text. Terminals differ in whether a placement taller than the screen
+scrolls, how a band is fitted into its declared box, and whether a clear keeps an image in the
+scrollback. None of this is in the protocol documents in a form you can rely on.
+
+**How to apply:**
+- Measure each terminal with the real picture sizes before deciding: tall pictures, pictures near
+  the bottom of a full screen, and a resize after a picture. Record which terminal did what.
+- Workarounds are per terminal and measured: bands for kitty only; iTerm2 gets the picture whole.
+- A clear on resize is not harmless once pictures are on screen: it costs the pictures, not only the
+  frame. Count that before choosing a clear; erasing only the frame's rows is the candidate to measure.
+- **Later measurement (same project, 2026-09) corrected part of the reading above:** on `ESC[2J`
+  iTerm2 moves the screen's content into the scrollback (pictures included). A drag runs a clear per
+  width report, so one nearly empty screen piles up per report — that was the black space (565 rows
+  in one drag). kitty erases in place, so nothing piles up, but it loses the **text** that was on the
+  screen too (49 lines): "the text survives" was wrong for kitty. A reflow on its own kept pictures in
+  place on both. The fix is config-and-io's "An inline TUI's resize erases the frame's rows…" entry.
+
+### Drive the real terminal with nobody at the keyboard — open a new window and measure there, instead of asking someone to drag and capture
+
+**Symptom:** measuring a TUI resize defect, the operator was first asked to "narrow it", "capture it
+now", "copy everything" (gem-agent, 2026-09). Overshooting drags, missed captures and different copy
+methods got into the results. Then, with an automated probe already measuring, the final check went
+back to a hand check and a report, and the record called the binaries untested — the operator's
+words: this is wrong, and the real binaries need automated tests too.
+
+**Why:** a measurement that depends on a person's actions measures the person's timing too. Once
+automated, the leftovers that could not be explained by hand were reproduced and taken apart, and two
+hypotheses were refuted. And with the means to automate, doing the last step by hand makes the weaker
+evidence the main record.
+
+**How to apply (macOS, measured on iTerm2 and kitty):**
+- **Do not touch the user's windows: open a new one and measure there.** kitty enables remote
+  control for that launch only: `kitty -o allow_remote_control=yes --listen-on unix:<sock> …`, then
+  `kitten @ resize-os-window --unit cells`, `get-text --extent all` (scrollback included),
+  `send-text`, and `ls` (`platform_window_id`). A unix socket path is limited to about 104 bytes and
+  kitty resolves a relative one against its temporary directory — put it directly under a short
+  temporary directory. `send-text` decodes backslashes, so double any `\` in what you send.
+- iTerm2 through AppleScript: `create window with default profile command`, a session's
+  `columns`/`rows` (settable), `contents` (scrollback included) and `write text … newline no`. A
+  window's `id` was the number `screencapture -l` takes. iTerm2 splits a command itself, so a nested
+  `sh -c '…'` does not survive — hand it a launcher file.
+- **Do not close an iTerm2 window whose process still runs.** A confirmation dialog appears and holds
+  every later AppleScript call and screenshot (it stayed on the user's iTerm2). Record the pid in the
+  launcher, stop the process, then close with a bounded timeout.
+- Capture per window with `screencapture -x -o -l <window number>` (a full-screen capture shows
+  other apps).
+- Synthesize a mouse drag with CGEvent (run with `swift`). Before pressing, bring the target window
+  forward and check that the topmost window at that point (layers 0–19; the Dock keeps a transparent
+  full-screen window at 20) is the target; if not, do not press and do not retry. Restore the pointer
+  afterwards. Before running, tell the user how many minutes not to touch anything and wait for a yes.
+- **Measure the built binary the same way.** Start it with an isolated config (no MCP, a model name
+  that is never called and marks the footer), type commands through the terminal so it prints
+  numbered lines and markers, then read the screen's text back and count. The binary's echo of typed
+  input is not history.
+- Filtering results with grep hides lines such as a failed capture. Look at failures unfiltered.
+
+### Check what is drawn, not the room kept for it — the passes after a layout make states the layout's data does not describe
+
+**Symptom:** A box-drawing renderer for terminals (mermaid-render, 2026-09) checked every render on
+its grid, and still the pre-release independent review found four ways wrong art passed. Three came
+from passes that move things after the layout:
+
+- a leaf node moved to straighten its link landed inside a frame it was not in;
+- a link moved but its label stayed where the line had been;
+- a widened frame shared a border with its neighbour.
+
+After the fixes, the second review found `Y│` — a one-cell label standing beside its line on 21% of
+random flowcharts. A label's room was kept two cells wide, the text was centred in it, and the line
+ran through the right-hand cell. The check asked whether the room touched the line, not the text.
+
+**Why:** The checks were written against the layout's data (boxes, paths, label rectangles). Later
+passes rewrite that data, and what covers what is not in it. The reader sees drawn characters, not
+rectangles.
+
+**How to apply:**
+- Write checks in the unit the reader sees. For box drawing: per cell, what is drawn there and
+  whose it is. For a label: whether the cells of its drawn text lie on its own line, not its
+  rectangle.
+- When you add a pass that moves or widens something after the layout, add a drawing-time check
+  for every wrong state it can make: no node in a frame it is not in, no frames touching, nothing
+  off the grid. Prevention inside the pass is not enough.
+- Refuse anything off the grid before drawing it: writing past the grid either clips or panics.
+
+### A rate floor does not catch a mutant that costs 1% — pin each rule with a direct test
+
+**Symptom:** Breaking the label-placement rules of a box-drawing renderer one at a time left its
+random-diagram rate test green (1,200 diagrams, floor 97%; mermaid-render, 2026-09). Ten mutants
+changed which diagrams drew by up to 1% (41 of 4,000). The drawing-time checks kept refusing wrong
+art, so nothing was ever drawn wrong; fewer diagrams simply drew.
+
+**Why:** A floor has slack, and a loss inside it shows in no single run. The better the drawing-time
+checks refuse wrong output, the more a broken rule shows only as "draws a little less".
+
+**How to apply:**
+- Test a routine that has rules (how candidates are made, what excludes them, how one is chosen)
+  directly, with small hand-built inputs, one input per rule whose result that rule changes.
+- Keep rate tests as smoke detection for a collapse. Do not rely on a floor to hold a rule.
+- A mutant whose only effect is "the rate drops a little" is not equivalent. It marks a missing
+  direct test.
+
+## Gates & verifying the verifiers
+
+### A cross-platform test harness detects its own defects first
 
 **Symptom:** A harness was built to run Linux tests in a container from a
 macOS/arm64 development host, and pointed at the 21 repositories carrying GOOS
@@ -888,8 +1883,7 @@ hunt for a bug that does not exist begins.
 - qemu writes core dumps into the bind-mounted source tree (100MB+ each). Check
   the working tree is still clean after a run.
 
-
-## An independent pass finds its real defects right after a fix — the place of the fix is the place of the next defect
+### An independent pass finds its real defects right after a fix — the place of the fix is the place of the next defect
 
 **Symptom:** One release of a CLI agent (2026-09; 68 files, three ADRs) went
 through five full independent verification passes and one narrowed one before
@@ -943,7 +1937,7 @@ it decides between "one more full pass" and "narrow it and finish".
   sides of the boundary — to exclude and to keep — in the test before writing
   the rule.
 
-## A gate that only ever runs by hand needs a test of its own
+### A gate that only ever runs by hand needs a test of its own
 
 **Symptom:** A release-verification target shipped in a state where it absorbed both an unpack
 failure and a binary that would not run, and still printed OK. The comment directly above that
@@ -960,364 +1954,7 @@ binary from another version, a missing marker — and assert a **non-zero exit**
 case too, so a gate that rejects everything is not mistaken for a working one. Run the self-test
 against the unfixed gate first and confirm it reports the misses, before trusting it.
 
-## A model-comparison bench interleaves configurations per case, time-boxes every call, and prints progress live
-
-**Symptom:** Three thinking configurations of the same model, run in
-parallel, throttled each other: medians above 30 s against a measured 4 s
-in production, useless for comparison. Run sequentially instead, one call
-stalled for 515 s, ate the 25-minute budget, and three of four
-configurations ended with zero data. Output sat in `t.Log`'s buffer, so
-nothing was visible for 25 minutes (2026-09, choosing an agent runtime's
-risk-evaluation model).
-
-**Why:** API conditions — congestion, retries, stalls — change by the
-minute. Running each configuration as a block mixes time-of-day into the
-between-configuration difference. A single overall deadline lets one stall
-take everything after it down. Buffered output cannot distinguish "not
-finished" from "broken".
-
-**How to apply:**
-- **Cases outside, configurations inside**: interleave, so a swing in API
-  conditions hits every configuration alike.
-- **`context.WithTimeout` per call** (say 90 s); a stall is one ERR line
-  and the loop moves on. The overall deadline sits above that.
-- **`fmt.Printf` each decision as it lands**, timestamped; keep `t.Log` for
-  the end summary. `go test -v` shows logs only when the test ends.
-- Do not run the same model in parallel with itself; parallelise across
-  models only.
-- Report both per-decision (several rounds folded into one verdict) and
-  per-call numbers, and count retries.
-
-## Measure an inline TUI's row arithmetic in tmux and script — the renderer paints only the latest View per tick
-
-**Symptom:** With Bubble Tea's inline renderer, closing a panel left one
-line of earlier output standing at the top of the screen. Two fixes
-reasoned from the code (pad the frame to height-1; choose the layout per
-View from the rows remaining) passed the unit tests and did nothing on a
-real terminal. A pseudo-terminal of known size (`tmux new-session -d -x
-100 -y 30`, driven with `send-keys`, read with `capture-pane -p`) plus a
-raw byte recording under `script` settled it: (1) a frame of N rows
-drawn from row printed+1 scrolls the terminal by printed+N−height rows,
-so a frame of height-1 leaves one row; (2) the renderer buffers the View
-of every Update and paints only the latest one on its tick — the
-full-height frame healed the counter, the next View re-derived the
-layout from the healed counter and flipped to the shorter frame, and
-the shorter frame is what reached the terminal (2026-09, an agent's
-TUI).
-
-**Why:** The model's row accounting assumes the View it returned is the
-one drawn, but a later Update can replace it before the tick. State
-re-derived on every View diverges when an update is self-referential,
-like a self-heal. Unit tests see only View's return value and cannot
-detect the difference.
-
-**How to apply:**
-- Fixes that touch row positions or scroll amounts are **counted on a
-  real terminal**: tmux (fixed size, `capture-pane`) and `script` (raw
-  bytes: count the `<CSI nA>` cursor-ups and the `\r\n`s). Eyeballing a
-  screenshot comes last.
-- A layout choice (full screen vs. fit in the rows remaining) is **made
-  once when the panel opens and held until it closes**, never re-derived
-  from the counter inside View.
-- A trace of "lines the model returned" is not evidence of what was
-  painted; confirm painting from the raw bytes.
-
-## Anything that occupies N rows in an inline TUI must erase below itself — the renderer's flush clears one
-
-**Symptom:** Inline terminal images in an inline TUI, with the row
-accounting already correct (the emitter declares a box and tells the row
-counter that number; the unit tests pass). On a real terminal three images
-still left three footer fragments standing on the screen. Neither the unit
-tests nor four independent verification passes reading the source found it
-(2026-09, an agent's TUI).
-
-**Why:** Bubble Tea's inline renderer flushes a queued line from the top of
-its own frame and appends `EraseLineRight`, which clears **one row, to the
-right of the cursor**. The image then draws down N rows at its declared
-width, so every cell of the old frame to the RIGHT of a narrower picture
-survives on every row the picture covers. A 40-column picture under a wider
-footer leaves the difference on every one of those rows. This is
-independent of the row arithmetic and happens with the accounting perfectly
-correct.
-
-**How to apply:**
-- Under an inline renderer, output that occupies **more than one row**
-  (images, sixel, hand-drawn boxes) writes one erase-to-end-of-screen
-  (`ESC[J`) immediately before its payload. Nothing above the cursor is
-  touched, and the renderer repaints just below it anyway.
-- "If the row count is right the screen is right" does not hold: the
-  declared **width** is occupied too, and erasing happens per row.
-- This class is **decidable only on a real terminal**. No number of
-  source-reading passes reaches it. Take an A/B on the real terminal — the
-  fix, and the same tree with the one line removed — under the same
-  conditions, and count the leftovers.
-
-## A terminal capability probe asks a second question every terminal answers
-
-**Symptom:** A probe asked whether the terminal could draw inline images
-with an APC graphics query and read silence as "no" via a timeout. On Apple
-Terminal it blocked for the **full 2.001 s at every start**, and because
-that terminal does not understand APC it printed the query's own body —
-`Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA` — on the operator's screen first (2026-09,
-an agent's TUI; the environment classified only tmux/screen, the kitty
-family and iTerm2, so every other terminal took this path).
-
-**Why:** The capability question has **no negative answer**. A terminal that
-does not know the protocol simply says nothing, and silence cannot be told
-from slowness, so the only usable verdict is the timeout — which every
-terminal that cannot draw then pays in full.
-
-**How to apply:**
-- Send a **DA1 request (`ESC[c`) immediately after** the capability query.
-  Every VT-compatible terminal answers it, so "a DA1 reply arrived with no
-  graphics reply before it" is a definitive no. Measured: 2.001 s → under
-  1 ms. Keep the timeout as the backstop for a terminal that answers
-  neither.
-- A terminal that does not parse the escape **prints its body**. Erase the
-  line the probe dirtied before handing the terminal to the UI (`\r` plus a
-  line erase).
-- Record the effect by **measuring before and after with the same
-  instrument**. Both the probe's duration and the dirtied screen are
-  observable only on a real terminal.
-
-## Do not write a single observation as a rule — write it with its counts
-
-**Symptom:** A search API's answers came back without citations twice when
-the reply language was `ja`, and README, the manual and a note attached to
-results all asserted "citations are emitted only for `language=en`". The
-third `ja` run returned 24 citations. Five runs read en → 29, 29 / ja → 0, 0,
-24.
-
-**Why:** Two agreeing observations look like a rule, and isolating the cause
-(country vs language) one variable at a time only added confidence. But the
-system was non-deterministic (an LLM sits behind the API) and two samples
-were far too few. The assertion spread at once to every reader-facing surface
-— manual, README, result note — and the correction had to reach all of them.
-
-**How to apply:**
-- For non-deterministic systems (LLMs, search, the content of external
-  responses), **record the count and the breakdown verbatim** ("5 runs: en
-  29, 29 / ja 0, 0, 24"). "Only when" and "always" wait for ten or more
-  agreeing runs on the same input.
-- Reader-facing wording follows the observation ("unreliable for non-English
-  replies"). A note attached to a result does the same, and adds the sentence
-  that keeps an empty value from being read as "does not exist".
-- Isolating experiments (one variable at a time) narrow the candidate causes;
-  they **do not prove a rule**. Repetition under identical conditions comes
-  after the isolation, not instead of it.
-- When correcting an assertion, grep every surface that carried it (README,
-  manual, result note, ADR, CHANGELOG) and fix them in one pass; fixing one
-  surface creates drift.
-
-## When you add a boundary, write the test that drives the real product through the real boundary — stubs and permission stand-ins pass while production is broken
-
-**Symptom:** The file tools' reads were moved into a child process under a purpose-built profile that denies the credential list. Unit tests and the full gate were green and it shipped; independent review measured a Critical. **One `.env` in a project made `search_files` answer "no matches (0 files scanned)"** — a false negative with no error and no warning. Four High findings followed from the same pass: reads silently truncated at 85 KB, `file_info` collapsing a permission error into "not found", a cancelled walk losing its partial result, and the note the design promised being unreachable.
-
-**Why:** No test **drove the real thing**. Every test stubbed the child (injecting a function) and simulated the kernel's refusal with `chmod 000`. `chmod 000` denies `open` and leaves `lstat` working; Seatbelt's `file-read*` denies both. That single difference was the defect, and the stand-in pinned a path production never takes. The kernel-level test ran `/bin/bash`, never the Go child that actually runs, and the startup probe did the same — so it passed while every walk in the project was broken.
-
-**How to apply:**
-- When you add a boundary (a sandbox, a separate process, a different privilege), write in the same commit a test that drives **the shipped artifact through the shipped boundary**: build the binary, run it under the real profile, feed it a real request. Slow is fine (2–4 s here).
-- **Distrust permission stand-ins.** `chmod`, not-running-as-root and a severed network each deny a *different set of operations* than a kernel deny does. If you cannot state the difference between the stand-in and the real thing in one line, you cannot use the stand-in.
-- **Verify the startup probe with the operation the runtime actually performs.** A probe that uses a different process, profile or library stays green through a production break. Make it walk the same sequence, listings included.
-- **Drive the path that TURNS THE BOUNDARY ON, in its production form.** The next release of this same design did write a test driving the real artifact through the real cage — and never ran the function that *installs* the cage. The probe was asking the child for a tool outside its set, so it failed on every start, the cage was never installed, and the whole feature shipped inert. A test must pin not only "does it behave correctly inside the boundary" but "does the boundary go up at all". The second is a single path — installer, wiring, startup verification — that exists only in production.
-- Say in the stubbed tests that they are **not the production path**, and name the test that covers it.
-
-Related: "independent review turns up something real right after a fix". For the same reason a fix creates a new unverified surface, **a new boundary is at its least verified the moment it is added**.
-
-## If a design document says "applied at every N", write the test that enumerates N in the same commit
-
-**Symptom:** An agent runtime's ADR said one function is applied at **every spawn site**, so a child process cannot be added without inheriting the rule. The rule: the runtime's own configuration variables (an API key among them) reach no child. The build was green, and an AST test pinning the namespace partition passed. Four kinds of child did not apply the rule: the shell of a sandbox-disabled launch (where the API key did reach it), two kinds of startup verification probe, and the clipboard capture. It surfaced not months later but the same day, during unrelated work.
-
-**Why:** The existing test pinned a **list of names** — which variables are "mine" and which are "exported for children" — not the **coverage of call sites**. However rigorous the name partition is, it never looks at an `exec.Command` that forgot to call the function. "Every X" in a design document means the set of X its author knew at the time, not every X in the code. The two diverge from the moment the sentence is written.
-
-**How to apply:**
-- When a design document says "applied at every X" or "X always goes through Y", put a test that **enumerates X and checks Y** in the same commit. If you cannot write one, weaken the sentence to "as of today".
-- Write it against the AST so it closes the **class**: fail when a function that builds an `exec.Cmd` does not name the helper, fail when a path-handling package calls `os.Open` directly. If you use an allowlist of reviewed sites instead, make an **unused allowlist entry fail too**, so a site that disappeared does not linger as debris.
-- Put exceptions in the code with their reason. In the example above the legitimate exception was the bench harness, which **launches** the runtime — a parent, not a child it spawns. Choose exclusions by reason, not by directory name.
-- When fixing, look for a line that **undoes the fix** right after it. Two lines below the probe's new rule, the code rebuilt the environment from the parent's to set a temporary directory; left alone, the fix would have died in the commit that made it.
-
-Related: "drive the path that turns the boundary on". That one pins whether the boundary is installed at all; this one pins whether it is installed at **every** entrance.
-
-## A withdrawn mechanism disappears from the code, not from the **prose** — write a test that compiles the strings the model reads
-
-**Symptom:** File-mediated results were removed from two servers and released. The
-implementation, the schemas and the tests were all correct, and an arch test pinning the
-`work_dir` spelling passed. The shipped artifacts still told the model, in `run_query`'s
-**description**, that large results are written as JSONL under `workspace_root`, and in
-`get_usage`'s error table, to retry with `workspace_root` or raise
-`inline_row_threshold` — both operations the server now rejects. On another server the
-container manifest returned by `describe_runtime` still said results are files under
-`/work`; on a third, the setup guide still told the reader to fill in a config key that
-had been deleted. The same sweep turned up a server whose schema declared `work_dir`
-**optional** while the handler required it: the model reads that it may omit the
-argument, and the call then fails.
-
-**Why:** The arch test pinned **identifiers** — the spelling inside a schema, the presence
-of `required` — not the sentence next to them. Prose is not compiled: it has no type and
-no reference, so removing a mechanism leaves the paragraph describing it untouched, and
-nothing prompts anyone to grep. In MCP that paragraph is not a comment but **part of the
-product**: the `tools/list` description, the `get_usage` body and the `describe_runtime`
-manifest are inputs the model reads and acts on, so a lie there becomes a wrong call.
-Build-tagged suites (`integration`, `e2e`) compound it: `go test ./...` never compiles
-them, so a field deleted by the withdrawal leaves them broken for months.
-
-**How to apply:**
-- When you withdraw a mechanism, make a list of the retired terms and, in the same
-  commit, write a test that walks every string the model reads — each tool's description
-  and input schema, the usage document, the runtime manifest — and fails on any of them.
-  Keep one list, not one for schemas and one for prose.
-- Pin the **shape** of the contract too, not just the identifiers: "a tool that declares
-  `work_dir` must also require it". An optional mandatory argument reads, to a model, as
-  one with a default.
-- Add `go vet -tags <each tag> ./...` to `make test`. A tagged suite you cannot run can
-  still be type-checked; needing real hardware to execute is not a reason to let it rot
-  uncompiled.
-- Count the sweep in **surfaces the user and the model read**, not in code. The
-  checklist: the `initialize` `instructions` field (the first thing the model reads —
-  it arrives before `tools/list`), serverInfo, each tool's description and input schema,
-  the usage document, the runtime manifest, error messages and their details, `--help`,
-  READMEs (**every language**), setup guides, config examples, the RFP, and any
-  **bundled skill or prompt you ship**. The last two are the easiest to forget: a skill
-  is *installed into the agent's skill directory and read as instruction*, so a retired
-  argument name left there is not a documentation wart — it is the agent being told to
-  make a call the server refuses. Fixing only one language's README is the likeliest miss.
-- Check whether the existing tests only assert that things are **present**. The bundled
-  skill's tests checked that every tool name appeared in it, so a retired argument
-  surviving in eight files failed nothing. A withdrawal needs **absence** tests.
-- Do not rewrite historical design documents; annotate the withdrawal in place with a
-  strike-through, a date and the successor. History stays honest and stops reading as
-  current.
-
-Related: "If a design document says a rule applies to all N, write the test that
-enumerates N in the same commit." That one pins the coverage of the application points;
-this one pins the coverage of the **explanations**.
-
-## Hold a bundled skill to its server with a closed vocabulary — "is it mentioned" and a retired-name list let wrong names through
-
-**Symptom:** Bundled skills were added to three MCP servers (2026-11). The check was written as a closed
-vocabulary: every identifier the skill puts in backticks must exist in the server. Every name comes from the
-server itself: registered tools, input schema properties, error-code constants, the json/toml tags of the
-server's own types, and front-matter keys the parser accepts. The templates and examples shipped with the
-skill were run through the server's own parsers. This found:
-- three existing templates that stopped at `casting_unresolved` as written: their scripts used a style
-  missing from the casting table, or a character left commented out;
-- another server's skill using an upstream server's argument that no hand-kept list had;
-- a hole in the existing "get_usage names every code" test. It read only some of the forms that raise a
-  code, so it missed a code that is returned but not documented.
-
-The independent review then showed that one-word names (`captions`, `classification`, `toc`) could be
-changed and still pass.
-
-**Why:** A test that "the required names are mentioned" passes extra, misspelled and retired names. A
-retired-name list guards only what someone remembered. With a closed vocabulary, a name fails as soon as the
-server drops it. But it can only check forms that can be told from prose: snake_case, the key of a
-`key: value` example, a fixed syntax. A one-word name looks like any other word.
-
-**How to apply:**
-- Check from skill to server. Derive the vocabulary from the server's registrations, constants, tags and
-  parsers; keep no copied list.
-- List the names outside the vocabulary with their owner: fields of the skill's own material, the calling
-  client's tools, an upstream server's arguments. Also test that the list matches actual use, so an entry
-  the skill no longer uses fails too.
-- Do not compare templates and code examples as strings; run them through the server's parsers. Check how
-  templates fit together (do the script's characters resolve in the casting table?) and placement rules
-  (is the caption paired with its table?) with the real functions.
-- Say in the README and the ADR which forms are not checked (one-word names). Do not write "every name is
-  checked".
-- Inject errors and watch the test fail: a misspelling, a retired name, a key inside an example, and a
-  misspelled directive.
-
-
-## Verify WebKit authorization at the actual callback boundary
-
-**Symptom:** During a macOS client port, JavaScript navigation produced click-like
-metadata. An async method with a name resembling an authentication delegate
-compiled successfully but never received the certificate challenge.
-
-**Why:** Navigation type and button number do not prove human approval. A method
-that merely resembles an optional Objective-C protocol method can compile without
-implementing it. Isolated predicates cannot reveal missing call paths for redirect
-cookies or certificate verification.
-
-**How to apply:** Bind web-to-native connection authority to a one-shot native
-confirmation of an immutable candidate. Use a temporary HTTPS server and real
-WKWebView to exercise automatic location changes, form POSTs, cookies received
-after redirects, certificate challenges, and replay after cancellation. Trust
-fixture certificates only inside the test; do not alter the system trust store.
-Check the SDK's async delegate name and do not equate successful compilation with
-callback delivery. If a parallel dependency suite stalls shared fixtures, rerun
-sequentially to diagnose it rather than deleting failed tests.
-
-Source: spice-client port and simulation verification (2026-09).
-
-## Cut an interval at a boundary on "touches it", not only on "straddles it" — a miss hides behind sampling phase
-
-**What happened:** An aggregation filing activity into logical days (a day
-starting at 05:00, say) looked for the day-boundary cut with
-`seg.Start < boundary && boundary < seg.End` — a segment straddling it. Segments
-are contiguous, so when a state change or a gap split lands exactly on the hour,
-**nothing straddles the boundary**. No cut happened, and because the next
-boundary was only recomputed once the stored one was cleared, **a boundary
-already passed stayed as the limit and every later boundary was skipped too**.
-A session crossing days then ran until the next long absence, and the day it
-should have opened reported zero. This also disabled an already-released cap
-("a session spans at most two logical days") by the same route.
-
-**Why it stayed hidden:** Whether it fires is decided by the **phase** of the
-sampling tick (`unix % interval == 0`). The tests used a single phase, and in a real multi-week history almost no
-sample ever met the condition — so the deployment was asymptomatic. The phase is re-rolled every time the daemon
-restarts, so "not happening now" is not "cannot happen". A code-reading
-verification pass also failed to see that the predicate tested only the straddle.
-
-**How to apply:**
-- Make the predicate **two-pronged**: cut on a straddling segment *and* on a
-  segment that begins **at or after** the boundary (`!start.Before(limit)`). In a
-  contiguous series the second is the common case; the first alone always misses
-  the exact touch.
-- For any value held until a condition is met (a limit, a next deadline, a next
-  boundary), ask whether it **recovers from a miss**. If it does not, put the
-  code that advances it next to the test that consumes it — one miss otherwise
-  becomes a permanent outage.
-- Test this class with a **table over step sizes and start offsets (phases)**.
-  A test written at one phase cannot detect it, structurally.
-- If the boundary is a wall-clock hour, **daylight saving makes the logical day
-  23 or 25 hours**. Before writing "never exceeds 24h", write the test that
-  crosses the change and measure what is conserved and where the boundary lands.
-
-## A counter fed by the view's draw callback proves nothing in a headless test
-
-**What happened:** A live-peer gate for a SPICE client asserted that the session's
-`frames_presented` diagnostic grew once a real server was sending frames. The
-first run waited 30 s and failed: that counter is incremented in the Metal view's
-drawable callback, and a `swift test` process has no view. The frames were
-arriving; nothing was counting them. The design review had predicted it from the
-source before the run reproduced it (spice-client ADR-0002, 2026-09-18).
-
-**How to apply:** In a headless test, observe what the view observes, not what
-the view reports: subscribe to the frame source with the demand a visible window
-would set and count distinct revisions. Do the same audit for every counter a
-gate asserts — find the one call site that increments it and ask whether that
-code runs in the test process at all. And when a suite is enabled by an
-environment variable, `swift test` exits 0 with the suite skipped if the variable
-is missing; a gate that trusts the exit status alone passes with zero tests, so
-have the tests leave a receipt the gate checks.
-
-## A server that serves one client at a time turns parallel test suites into flakes
-
-**What happened:** A live-peer gate grew a second test suite. Both suites drove
-the same QEMU SPICE server, and `swift test` runs suites in parallel. Connections
-started failing, a frame observer starved, and the failures moved between tests
-from run to run. Nothing was wrong with either suite: QEMU's SPICE server serves
-one client, and the two suites were fighting over it (spice-client, 2026-09-18).
-
-**How to apply:** Before adding a second suite against a shared live fixture, ask
-how many clients the fixture serves at once. When the answer is one, `.serialized`
-on each suite is not enough — it serialises within a suite, not across suites. Run
-them as separate sequential invocations of the test runner, which is the only
-arrangement the runner cannot undo. The symptom to recognise is failures that
-migrate between tests across runs while each test passes when run alone.
-
-## Pin a defect you are not fixing as a checked fact, so the gate fails when it is fixed
+### Pin a defect you are not fixing as a checked fact, so the gate fails when it is fixed
 
 **What happened:** A live gate found a real product defect: after the first
 viewport resize, no later resize on the same agent connection reached the guest.
@@ -1333,54 +1970,7 @@ direction: it fails if it gets worse, and it fails if it gets better while the
 documents still claim it is broken. This is the machine-checked half of "record
 what you did not fix".
 
-## A stall at a round number on a credit-controlled channel is a window problem, not a data-handling bug
-
-**Symptom:** Sending a file to a guest agent stopped at exactly 32,000 of 64,000 bytes,
-every run. The partial content was correct, nothing errored, nothing disconnected. The
-chunk size was the dependency's 16,000-byte default.
-
-**Why:** The channel was under token (credit) flow control. A message costs one token per
-2 KiB wire fragment; the peer grants ten tokens and returns them five at a time. A
-16,000-byte chunk needs eight. The first one spends eight of ten leaving two, the batch
-of five arrives making seven, and the second chunk needs eight — for ever. The stop
-position is the same round number every run because it is decided by the window's
-arithmetic, not by the data. Reading the byte handling and the buffer boundaries finds
-nothing, because there is nothing there to find.
-
-**How to apply:**
-
-- A stall at a position that is constant across runs and an exact multiple of the chunk
-  size points at flow control. A data-dependent bug moves with the content.
-- Measure the credits first: initial token count, the unit a message is charged in, and
-  the granularity of replenishment. Three numbers, and the implementation's log gives
-  them faster and more reliably than the specification.
-- Choose the chunk so it **fits the window the peer can open**, not so it is as large as
-  possible. If one message costs more than half the initial credit, the second one jams.
-- A dependency's default is a default for the peer that dependency had in mind. Pointing
-  it at a different hypervisor or server implementation voids the assumption with it.
-  Pass the number explicitly as your application's, with the reason recorded.
-
-## Size stability is not a completion signal when the writer preallocates
-
-**Symptom:** A guest-side watcher observed the receipt of a transferred file by hashing
-it "once its size has been stable for two seconds". It returned the hash of a partial
-file.
-
-**Why:** The receiving daemon allocated the whole file before the first byte arrived, so
-a file still being written already has its final size. "The size is stable" is true from
-the moment the transfer starts, which makes it a check that asserts nothing.
-
-**How to apply:** Key on a quantity that tracks the writing. Modification time is not
-affected by preallocation. Always pair it with:
-
-- **A hard deadline that always emits a line.** Silence does not distinguish "still
-  writing" from "never coming", so a quiet observer leaves the verifier waiting.
-- **A line for the file being removed.** Cleaning up after a completed transfer is
-  common, and a vanished file should be a reported outcome rather than silence.
-- **A digest computed by the receiver** as the evidence of completion. The sender's
-  "succeeded" is a statement about the sender's own state.
-
-## A gate that cannot name the layer it observes has only proved the layer below
+### A gate that cannot name the layer it observes has only proved the layer below
 
 **Symptom:** A live-peer gate verified on every run that an injected key reached the
 guest, and passed throughout. The day someone gave that guest a desktop and typed into
@@ -1414,7 +2004,7 @@ program. **The convenient observation point is usually below the real one.**
   the readiness marker the harness waits on, so the injected key arrived first and was
   missed. Start it before that marker and confirm it is up before emitting it.
 
-## The script that reads the trace calls a working fix broken
+### The script that reads the trace calls a working fix broken
 
 **Symptom:** a GUI defect was fixed and checked against an event trace from the real machine
 (mouse-downs, actions, menu tracking and settings changes, to the millisecond). Twice in one
@@ -1448,7 +2038,7 @@ Reading the raw lines in time order settled each in minutes.
   (corrected 2026-09-20). **A check for absence must first be seen to come up positive on a
   target where the thing is present.**
 
-## Check a guard by mutating a copy — "not caught" comes in three kinds
+### Check a guard by mutating a copy — "not caught" comes in three kinds
 
 **Symptom:** Guards that tests had been green over from the first run were broken one at a time
 to see whether the tests noticed (90 mutations over four rounds). Most were caught. Some rounds
@@ -1488,7 +2078,7 @@ the author had in mind.
   which one is load-bearing).
 - Rerun all of them after fixing, and record "caught N / blind 0 / void 0".
 
-## A release gate that skips is a gate that passes
+### A release gate that skips is a gate that passes
 
 **Symptom:** A live e2e test measuring drift between an upstream API and the primary sources (a
 government catalogue, a standards body's scores) served as a release gate — and called
@@ -1510,7 +2100,7 @@ other than `|| true`.
   that compared nothing.
 - Demonstrate the gate failing once: falsify an expectation and watch it go red.
 
-## Write a drift check against primary sources with tolerances — exact equality fails on sync lag every time
+### Write a drift check against primary sources with tolerances — exact equality fails on sync lag every time
 
 **Symptom:** The design watched, in e2e, whether an aggregating API's data (catalogue listings,
 daily model scores) kept agreeing with the primary sources. Written as exact equality it fails
@@ -1529,98 +2119,7 @@ model's daily refresh.
 - Share **one engine, and so one pacer**, across the whole e2e suite. A client per test
   multiplies the burst allowance by the number of tests and runs into a per-IP ceiling.
 
-## The write path turns an escape into the raw character — close it by checking every source file
-
-**Symptom:** Every time a fixture for "upstream sends an escape sequence" was written, the path
-between the author and the file (an agent's file-writing tool, the decoding of a shell
-argument) turned the typed backslash + u + four digits into **the raw character**. It happened
-three times. The first put a raw ESC into a JSON fixture inside a Go raw string: invalid JSON,
-and a test that passed without having tested anything. The third put a raw U+202E into the
-source of a test about bidirectional controls — the very shape of a "Trojan Source" change.
-The document warning about all this carried a raw ESC itself.
-
-**Why:** Somewhere along the path, one JSON-style unescape too many. It cannot be seen (editors
-do not show control characters), so care does not prevent it. The same kind three times over
-gets a structural fix.
-
-**How to apply:**
-- Put a test at the repository root that walks every source file (code, Markdown, config,
-  scripts) and refuses a raw C0 control (other than tab and newline), DEL, C1, a bidirectional
-  control, U+FFFD and a BOM. Assert a floor on the number of files walked, so that it cannot
-  go green having looked at nothing.
-- When it fails, do not retype. Replace with a script that builds the code points with
-  `chr()` — and holds neither the characters nor the escapes itself.
-- Build fixtures that carry escapes from double-quoted strings, and assert first **that the
-  text arrived**. A test firing blanks over a broken fixture is green with or without the
-  guard.
-
-## A fake that answers every question the same way cannot see a wrong question
-
-**Symptom:** three defects in one audit had passed their suites for the same reason. A fake
-container runtime answered every lookup with one canned id, so a delete that looked up a name
-the create path never uses stayed green for several releases. A slash command's test handed it
-a fake resolver, proving only that the argument reached the layer that then lost it. A
-preferences stub failed by throwing *before* changing anything, while the OS fails *after* — so
-every test of "what happens after a failed write" ran against a failure that does not occur,
-and a relaunch was modelled by reusing the same object, which kept the very state a relaunch
-discards.
-
-**How to apply:**
-- A fake keeps state and matches the way the real thing does; a canned reply is a test of the
-  caller's control flow and nothing else.
-- Name the layer a test observes. If the defect is one layer down, the test is a test of the
-  layer above — add one that goes through.
-- A stub's failure modes come from the real component's, not from what is easy to write.
-  Where both "nothing changed" and "changed, then failed" exist, run every case both ways.
-- A process boundary in a test is a **new** object over the same persistent stubs.
-- A refusal test needs a positive control: the same flags with a valid value must be accepted,
-  or a mistyped flag name passes as a refusal (the flag package refuses it with the same exit
-  status).
-- When a repair is for a class, mutate a scratch copy per clause and watch the named test
-  fail. Four of four did here, and two earlier "fixes" that reviews later withdrew had tests
-  that passed against the behaviour they were meant to exclude.
-
-## kitty's graphics protocol takes PNG only — and `q=2` hides the refusal
-
-**Symptom:** gem-agent and lagent sent pictures to kitty-protocol terminals with `f=100`, which means PNG;
-the protocol has no JPEG format. A JPEG sent as `f=100` drew nothing on kitty (seen by the operator,
-2026-09-22), `q=2` — which discards the terminal's replies — hid the failure, and the rows it would
-have used were still counted.
-
-**How to apply:** Before sending to kitty, decode anything that is not PNG and re-encode it as PNG, scaled
-first to what the declared box can show (a photo re-encoded as PNG at full size is many times its JPEG).
-iTerm2's `File=` names no format and draws JPEG itself, so leave that path alone. Terminal drawing is
-judged only on a real terminal: of two runtimes sharing the code, record which one was actually checked.
-
-**When the box grows, re-measure the bytes (2026-11-02):** the two runtimes later drew a picture as large
-as the screen allows instead of at most 40 columns. The re-encode still assumed 20×40 pixels a cell —
-generous for a 40-column box — and a pre-release review measured every photo it tried (1600–3200 px
-JPEGs, real wallpapers) at 3–9 MB as PNG, past the 2 MiB ceiling, so kitty drew nothing again: the bug
-above, back through a constant nobody revisited. Scaling at one picture pixel per pixel the terminal
-reports for a cell (about 8×18 on Retina — logical units) put a 3200 px photo in a 149×45 box at about
-1 MB in about 0.1 s (measured); a second, smaller try covers what still does not fit. A ceiling that
-changes moves every quantity derived from it — bytes, time — so measure those on real data, not on
-the synthetic pictures the unit tests use, before release. Noise is PNG's worst case: if it fits, a
-photo does.
-
-## When a dependency's cancel waits for the other side, keep the slot until it answers — and measure whether it does
-
-**Symptom:** spice-client finished a cancelled row at once and freed its transfer slot. The SPICE library
-it uses keeps the job, and its slot, until the guest answers the cancellation; the next transfer hit the
-library's limit and failed, and the waiting files failed one after another. Reproduced on the live peer
-before the fix, then recorded: spice-vdagent did not answer the cancellation at all (2026-09-22), so the
-slot does not come back until the connection ends.
-
-**How to apply:**
-- Where your count and the dependency's can disagree (a cancel, a timeout), count the slot as in use until
-  the dependency reports the job ended. Treat a refusal on the dependency's limit as "not now": back in
-  the queue, not a failure.
-- Do not time out queued items on the clock of the ones being sent: waiting is not a stall.
-- Measure whether the other side answers, and keep the result in the gate's record (`cancel-ack none`).
-- If the release procedure requires a gate pass on the exact commit, the release commit that adds the
-  change log needs its own run — count it when planning.
-
-## A check that judges by a marker must look for it only inside what the marker describes
+### A check that judges by a marker must look for it only inside what the marker describes
 
 **Symptom:** After the release gate's fail-open form (`|| true` at the end of an `&&` chain)
 was removed from every repository, a check was added to catch it coming back. It passed a
@@ -1655,7 +2154,7 @@ fixing tool share one test, both go blind at once.
 
 **Second instance (2026-10, a transcript aggregator):** A shell result was counted as a timeout whenever it contained the runtime's timeout line anywhere. The runtime appends that line as the **last** line of a result. One counted result was the runtime's own source, found by a grep inside the session, quoting the format string. An earlier throwaway measurement script counted the same way, so the two agreed and were both wrong (one of two counted timeouts was not one; found by an independent verifier). Look for a line-shaped marker only on the line where the writer puts it, and take that place from the writer's code.
 
-## Record a person's check per item and per method — and read the settings that decide the result before asking
+### Record a person's check per item and per method — and read the settings that decide the result before asking
 
 **Symptom (three times):**
 1. Five items were handed over for a manual check; the answer was "fine", and an ADR then said "closes with Esc and
@@ -1681,122 +2180,27 @@ with their expectation, and an expectation is not an observation.
   confirmed".
 - Do not write your expected result as an observation.
 
-## Test drawing by comparing a record of what is drawn with the source — record inside the primitive
+### After adding a check, rerun every earlier mutant — corruption tests get caught by the new check first
 
-**Symptom:** layout property tests (a line's end sits on the right entity, and so on) passed, yet
-no test failed for mutants that swapped the two ends' cardinality markers, mixed up a marker's
-shape, swapped solid and dashed lines, or drew an arrowhead at the start. The first drawing record
-computed its values at the call site, so a mutant that inverted only the value passed to the
-primitive still passed (mermaid-render, 2026-09). In the same review, a property pinning arrow ends
-exactly found a real bug: arrows ran into the inner bars of nested activations.
+**Symptom:** A render-time check "a state's own part stays inside its node" was added
+(mermaid-render, 2026-09). Corruption tests that used to guard other checks ("states overlap", "a
+titled state is too small") were now refused by the new check first, so deleting the original
+checks left every test green. Only rerunning the whole mutant set showed it (4 of about 50).
 
-**Why:** layout checks look at coordinates, not at what is drawn there. A record made outside the
-drawing is a separate expression from the drawing, so one can break while the other still agrees.
+**Why:** A corruption test only asks that some check refuses. As checks are added, the corruption
+is refused before the check it aimed at, and that check's guard vanishes without a sound.
 
 **How to apply:**
-- Give the canvas an optional trace function and record markers, heads and each line's dash flag
-  inside the primitive that draws them. Record the same variable that is drawn.
-- Build the expected values from the source and compare. A loose tolerance ("within 3.85 em of
-  the lifeline") lets wrong ends, bars and note sides through; compute the expectation exactly.
-- In mutation checks, always confirm the mutant **builds**. A mutant that failed to build on an
-  unused variable was nearly read as "not caught".
+- After adding a check, rerun the feature's mutants. For each uncaught one, reshape the corruption
+  so only its target can see it (slide sideways on the same line, move the part and its node
+  together, add one item on the scope's side only).
+- Having the corruption test log the refusing check's message shows which check fired first.
+- When one guard exists in two places (an upstream refusal and a downstream defence), test the
+  downstream one directly with a hand-built input.
 
-## Run the tests' properties at run time too — one function, a strict flag, and a generator that makes every form
+## Porting & compatibility
 
-**Symptom:** a renderer's layout was guarded only by property tests (no two boxes overlap, every
-label drawn, arrows pointing at their receivers). They run offline, so a layout bug in a diagram the
-tests never generated would ship a wrong picture with nothing to refuse it. The same properties were
-moved into the renderer and run on every render, refusing a drawing that breaks one. The first
-version then refused 11% of random sequence diagrams that used `activate` statements: an exact
-end-point check counted a bar opened *after* a message as open at its arrow, and the tests had never
-seen it because the random generator only wrote the `+`/`-` form (mermaid-render, 2026-09). The same
-pre-release review found the run-time check cost 0.5 s at the limits (every pair of segments), then
-0.14 s after an x-sweep, on a chain whose links shared a few columns.
-
-**Why:** a property that only the tests hold guards the inputs the tests make. Moving it to run
-time guards every input, but also turns every false positive into a refusal a user sees, and every
-O(n²) loop that was fine in a test into latency.
-
-**How to apply:**
-- Keep **one function per property list** with a `strict` flag. The tests call it strictly; the
-  run-time path calls it without. Strict adds only what is a matter of looks (spacing, centring,
-  crossings), and each loose threshold is at most its strict one, so run time can never refuse what
-  the tests accept. Test that direction too: an ugly-but-right layout must pass the loose check.
-- Exact-to-epsilon comparisons are precision, not wrong pictures: keep them strict-only.
-- Before a check runs on every input, make the random generator produce **every syntactic form**
-  that reaches it (statements as well as shorthands), and sweep with the real font or data.
-- Bucket what is compared (a grid, not a one-axis sweep, when many items share a column) and put a
-  cost test on the worst legal inputs. Run the cheapest refusals (size limits) first.
-- Give the check a seam to corrupt a layout (`probe{corrupt: …}`), or no test can show it runs.
-
-## An inline image taller than the screen, or on the screen at a clear, is lost differently per terminal — measure before drawing big pictures
-
-**Symptom:** a TUI drew mermaid diagrams as inline images at one em of diagram text per terminal line
-(gem-agent, 2026-09). iTerm2 scrolled a picture taller than the screen correctly; kitty clipped its
-lower part and the input frame was drawn over it. Cutting the picture into bands of at most half the
-screen fixed kitty, but on iTerm2 the bands showed seams and a missing lower-right corner (iTerm2 fits
-each band with preserveAspectRatio). Separately, narrowing the window — which made the TUI clear the
-screen (`ESC[2J`) to sweep its frame's re-wrapped leftovers — lost every picture on the screen at that
-moment on both terminals (kitty deleted them, iTerm2 left black space), while the text survived in
-the scrollback; both terminals also piled black space into the scrollback, with text alone too.
-
-**Why:** an inline image is not text. Terminals differ in whether a placement taller than the screen
-scrolls, how a band is fitted into its declared box, and whether a clear keeps an image in the
-scrollback. None of this is in the protocol documents in a form you can rely on.
-
-**How to apply:**
-- Measure each terminal with the real picture sizes before deciding: tall pictures, pictures near
-  the bottom of a full screen, and a resize after a picture. Record which terminal did what.
-- Workarounds are per terminal and measured: bands for kitty only; iTerm2 gets the picture whole.
-- A clear on resize is not harmless once pictures are on screen: it costs the pictures, not only the
-  frame. Count that before choosing a clear; erasing only the frame's rows is the candidate to measure.
-- **Later measurement (same project, 2026-09) corrected part of the reading above:** on `ESC[2J`
-  iTerm2 moves the screen's content into the scrollback (pictures included). A drag runs a clear per
-  width report, so one nearly empty screen piles up per report — that was the black space (565 rows
-  in one drag). kitty erases in place, so nothing piles up, but it loses the **text** that was on the
-  screen too (49 lines): "the text survives" was wrong for kitty. A reflow on its own kept pictures in
-  place on both. The fix is config-and-io's "An inline TUI's resize erases the frame's rows…" entry.
-
-## Drive the real terminal with nobody at the keyboard — open a new window and measure there, instead of asking someone to drag and capture
-
-**Symptom:** measuring a TUI resize defect, the operator was first asked to "narrow it", "capture it
-now", "copy everything" (gem-agent, 2026-09). Overshooting drags, missed captures and different copy
-methods got into the results. Then, with an automated probe already measuring, the final check went
-back to a hand check and a report, and the record called the binaries untested — the operator's
-words: this is wrong, and the real binaries need automated tests too.
-
-**Why:** a measurement that depends on a person's actions measures the person's timing too. Once
-automated, the leftovers that could not be explained by hand were reproduced and taken apart, and two
-hypotheses were refuted. And with the means to automate, doing the last step by hand makes the weaker
-evidence the main record.
-
-**How to apply (macOS, measured on iTerm2 and kitty):**
-- **Do not touch the user's windows: open a new one and measure there.** kitty enables remote
-  control for that launch only: `kitty -o allow_remote_control=yes --listen-on unix:<sock> …`, then
-  `kitten @ resize-os-window --unit cells`, `get-text --extent all` (scrollback included),
-  `send-text`, and `ls` (`platform_window_id`). A unix socket path is limited to about 104 bytes and
-  kitty resolves a relative one against its temporary directory — put it directly under a short
-  temporary directory. `send-text` decodes backslashes, so double any `\` in what you send.
-- iTerm2 through AppleScript: `create window with default profile command`, a session's
-  `columns`/`rows` (settable), `contents` (scrollback included) and `write text … newline no`. A
-  window's `id` was the number `screencapture -l` takes. iTerm2 splits a command itself, so a nested
-  `sh -c '…'` does not survive — hand it a launcher file.
-- **Do not close an iTerm2 window whose process still runs.** A confirmation dialog appears and holds
-  every later AppleScript call and screenshot (it stayed on the user's iTerm2). Record the pid in the
-  launcher, stop the process, then close with a bounded timeout.
-- Capture per window with `screencapture -x -o -l <window number>` (a full-screen capture shows
-  other apps).
-- Synthesize a mouse drag with CGEvent (run with `swift`). Before pressing, bring the target window
-  forward and check that the topmost window at that point (layers 0–19; the Dock keeps a transparent
-  full-screen window at 20) is the target; if not, do not press and do not retry. Restore the pointer
-  afterwards. Before running, tell the user how many minutes not to touch anything and wait for a yes.
-- **Measure the built binary the same way.** Start it with an isolated config (no MCP, a model name
-  that is never called and marks the footer), type commands through the terminal so it prints
-  numbered lines and markers, then read the screen's text back and count. The binary's echo of typed
-  input is not history.
-- Filtering results with grep hides lines such as a failed capture. Look at failures unfiltered.
-
-## Check a port of a generated parser against the generator's own output — reading the grammar is not enough
+### Check a port of a generated parser against the generator's own output — reading the grammar is not enough
 
 **Symptom:** mermaid's state diagram grammar (jison) was ported to Go rule by rule (mermaid-render,
 2026-09). An independent review of the specification generated the real parser from the same
@@ -1818,25 +2222,7 @@ reading misses. A port's optimisation (a per-line prefilter) silently narrows a 
 - Count "both refuse" as agreement (where each refuses may differ).
 - Before giving a rule a per-line prefilter, make sure the rule cannot cross a line end.
 
-## After adding a check, rerun every earlier mutant — corruption tests get caught by the new check first
-
-**Symptom:** A render-time check "a state's own part stays inside its node" was added
-(mermaid-render, 2026-09). Corruption tests that used to guard other checks ("states overlap", "a
-titled state is too small") were now refused by the new check first, so deleting the original
-checks left every test green. Only rerunning the whole mutant set showed it (4 of about 50).
-
-**Why:** A corruption test only asks that some check refuses. As checks are added, the corruption
-is refused before the check it aimed at, and that check's guard vanishes without a sound.
-
-**How to apply:**
-- After adding a check, rerun the feature's mutants. For each uncaught one, reshape the corruption
-  so only its target can see it (slide sideways on the same line, move the part and its node
-  together, add one item on the scope's side only).
-- Having the corruption test log the refusing check's message shows which check fired first.
-- When one guard exists in two places (an upstream refusal and a downstream defence), test the
-  downstream one directly with a hand-built input.
-
-## A port that matches the original's output can still differ in running time — port iteration by how it walks, not by what it returns
+### A port that matches the original's output can still differ in running time — port iteration by how it walks, not by what it returns
 
 **Symptom:** The dates (dayjs), placement (ganttDb) and ticks (d3) of mermaid's gantt charts were
 ported to Go and checked against the real code under node on tens of thousands of inputs, with no
@@ -1859,7 +2245,7 @@ once in a browser becomes an unbounded loop when a library takes arbitrary input
 - Bound the original's own linear walks (day by day, week by week) in the port and refuse beyond
   the bound — as a resource limit, not an error, with the limit written in the specification.
 
-## A part that matches the real part can still disagree inside the real pipeline — compare the whole pipeline
+### A part that matches the real part can still disagree inside the real pipeline — compare the whole pipeline
 
 **Symptom:** A Go check refusing mermaid label emphasis (`*x*`, `_x_`) was compared with the real
 marked 16 on 90,000 strings: no miss (mermaid-render, 2026-09). The pre-release review compared
@@ -1885,67 +2271,7 @@ does not know the rewrites never makes the inputs that only exist after them.
 - Run each form an earlier stage can produce (written back, masked, boundaries re-read) through
   the check as a form of its own.
 
-## Check what is drawn, not the room kept for it — the passes after a layout make states the layout's data does not describe
-
-**Symptom:** A box-drawing renderer for terminals (mermaid-render, 2026-09) checked every render on
-its grid, and still the pre-release independent review found four ways wrong art passed. Three came
-from passes that move things after the layout:
-
-- a leaf node moved to straighten its link landed inside a frame it was not in;
-- a link moved but its label stayed where the line had been;
-- a widened frame shared a border with its neighbour.
-
-After the fixes, the second review found `Y│` — a one-cell label standing beside its line on 21% of
-random flowcharts. A label's room was kept two cells wide, the text was centred in it, and the line
-ran through the right-hand cell. The check asked whether the room touched the line, not the text.
-
-**Why:** The checks were written against the layout's data (boxes, paths, label rectangles). Later
-passes rewrite that data, and what covers what is not in it. The reader sees drawn characters, not
-rectangles.
-
-**How to apply:**
-- Write checks in the unit the reader sees. For box drawing: per cell, what is drawn there and
-  whose it is. For a label: whether the cells of its drawn text lie on its own line, not its
-  rectangle.
-- When you add a pass that moves or widens something after the layout, add a drawing-time check
-  for every wrong state it can make: no node in a frame it is not in, no frames touching, nothing
-  off the grid. Prevention inside the pass is not enough.
-- Refuse anything off the grid before drawing it: writing past the grid either clips or panics.
-
-## A rate floor does not catch a mutant that costs 1% — pin each rule with a direct test
-
-**Symptom:** Breaking the label-placement rules of a box-drawing renderer one at a time left its
-random-diagram rate test green (1,200 diagrams, floor 97%; mermaid-render, 2026-09). Ten mutants
-changed which diagrams drew by up to 1% (41 of 4,000). The drawing-time checks kept refusing wrong
-art, so nothing was ever drawn wrong; fewer diagrams simply drew.
-
-**Why:** A floor has slack, and a loss inside it shows in no single run. The better the drawing-time
-checks refuse wrong output, the more a broken rule shows only as "draws a little less".
-
-**How to apply:**
-- Test a routine that has rules (how candidates are made, what excludes them, how one is chosen)
-  directly, with small hand-built inputs, one input per rule whose result that rule changes.
-- Keep rate tests as smoke detection for a collapse. Do not rely on a floor to hold a rule.
-- A mutant whose only effect is "the rate drops a little" is not equivalent. It marks a missing
-  direct test.
-
-## The first item of a list built by map iteration changes from run to run — error messages are output too
-
-**Symptom:** A box-drawing renderer checked its line cells in map order and returned the first fault
-(mermaid-render, 2026-09). For 3 of 61 refused inputs the error message differed between runs. The
-drawn art was deterministic, so no test noticed.
-
-**Why:** Go's map iteration order changes every run. With two or more faults, which one comes first
-changes too.
-
-**How to apply:**
-- When you pick one item from a list to show, sort the list into a fixed order first (reading order:
-  row, then column).
-- Determinism tests should compare error messages, not only the drawn result. To catch a mutant
-  that removes the sort, pull the sorting into a function and test it directly: an input refused
-  for a single fault never exercises the order.
-
-## The reference's manual is not the reference's behaviour — a tool that claims compatibility tests against the real thing
+### The reference's manual is not the reference's behaviour — a tool that claims compatibility tests against the real thing
 
 **Symptom:** from the GNU coreutils manual's "-k has no effect if the main duration is 0", the GNU difference table
 said "-k does not start at a forwarded signal either". Run against GNU `timeout` 9.7 under podman with the same
@@ -1965,68 +2291,7 @@ inputs, GNU did start it (as this implementation does). The same comparison foun
   guards nothing against regression, do not re-run it just to satisfy a preset criterion; record that the
   criterion's premise broke.
 
-## Run the examples you write on the day you write them — a manual's own example was silently returning zero
-
-**Symptom:** An MCP server's manual gave a pivot example: "count the hosts that carry the same
-certificate, by its fingerprint". The fingerprint the tool printed was SHA-256; the upstream
-filter matches SHA-1 only. Upstream answered 0 with no error, so following the example
-produced a false negative, "no other host has this certificate". Every test was green; the
-independent verification found it (lookup CLI+MCP for IP exposure, 2026-10).
-
-**Why:** Examples are assembled from the documentation's vocabulary, and their author reads
-them as things that should work. When upstream answers a non-match with a silent zero, a wrong
-example wears the face of a valid negative answer. Unit tests never execute the prose of an
-example.
-
-**How to apply:**
-- Run every example in user-facing docs (`get_usage`, the README) **once against the real API**
-  on the day it is written, and make pivot examples fixed tests in the e2e suite.
-- Put the very value a filter matches (here `sha1`) in the tool's output, and state in the docs
-  which value the filter matches.
-- Refuse, before sending, a value shape known to match nothing (a SHA-256's length). A refusal
-  that says why guides the caller; a silent zero misleads it.
-
-## A bats assertion written as `! cmd`, made inside a function called with `||`, or a mid-test `[[ … ]]` on bash 3.2, never fails the test
-
-**Symptom:** A bats test was meant to forbid piping a download into a shell:
-`! grep -Eq '\|\s*sh\b' Dockerfile`. A mutation that added `curl … | sh` to the Dockerfile left
-the test green (cclaude v0.6.0, 2026-10-25). A helper used as `check_stage … || { echo …; return 1; }`
-had the same hole, caught before it ran: only its last line would have counted.
-The next day, two tests of a temporary directory's cleanup passed against a copy with the cleanup
-code deleted (cclaude v0.7.0, 2026-10-26). A mid-test `[[ "${lines[0]}" == "context=${TMPDIR}/"* ]]`
-was in fact false, and the test still passed.
-
-**Why:** bats fails a test through errexit. Bash does not apply errexit to a command negated
-with `!`, nor to any command inside a function whose call is the left side of `||` or `&&` — the
-function returns the status of its last command, and earlier failed checks are forgotten.
-On macOS's `/bin/bash` (3.2.57), a false `[[ … ]]` does not trigger errexit either, and bats's
-`#!/usr/bin/env bash` picks that bash unless another one is installed. Measured on macOS 27:
-`/bin/bash -c 'set -e; [[ a == b ]]; echo survived'` prints `survived`. A `[[ … ]]` on a test's
-last line still counts, because its status becomes the test's result. Separately, macOS `mktemp -d`
-ignores `TMPDIR` and creates the directory under `_CS_DARWIN_USER_TEMP_DIR` (`/var/folders/…/T`)
-(`man mktemp`, and measured), so a test that points `TMPDIR` at its own directory and checks that it
-stays empty checks nothing.
-macOS `mktemp` also fills in only trailing X's: `mktemp …/ccc-config-XXXXXX.toml` returned the
-literal name `ccc-config-XXXXXX.toml` every time, so every test shared one file (measured). Once the
-mid-test checks counted, one test failed, skipped its cleanup, and every later test failed on that
-leftover file with "File exists". The same rewrite also found an expected value that had been false
-since an early release.
-
-**How to apply:**
-- Write mid-test checks with `[ … ]`, or fail explicitly: `[[ … ]] || { echo …; return 1; }`.
-- Assert absence with `run cmd; [ "$status" -eq 1 ]`. `[[ ! … ]]` is a test expression, not a
-  negated command, but on bash 3.2 it only counts on a test's last line.
-- To check a path the code under test created, do not assume you chose where it lands: have the
-  process that received it (a stub, say) record the path, and check `[ ! -e "$path" ]`.
-- Put test files in `$BATS_TEST_TMPDIR` (per test, removed by bats), not in a `mktemp` template.
-- Wrap output checks in helpers that `return 1` when false (`output_has`, say) and use them on the
-  last line too, so a line added later cannot silently disable a check.
-- A helper meant to be called with `||` must make its last expression carry every check:
-  `[ "$status" -ne 0 ] && [[ … ]] && [[ … ]]`.
-- Prove a guard test can fail: run it once against a mutated copy of what it guards (a scratch
-  directory, never the working tree).
-
-## Test the comparator itself — when it equates too much, the whole suite passes
+### Test the comparator itself — when it equates too much, the whole suite passes
 
 **Symptom:** an in-house TOML parser was checked against the conformance suite
 (toml-test, 681 documents for 1.1.0). Offset date-times were compared as the
@@ -2056,7 +2321,7 @@ document for is not checked by a full pass.
 - Pin the number of tests (for example, 681 for 1.1.0), so that a shorter list
   cannot pass silently.
 
-## Vendor an external conformance suite as data, and verify both the fetch and the copy
+### Vendor an external conformance suite as data, and verify both the fetch and the copy
 
 **Symptom:** under a policy of shipping no third-party code, the official TOML
 conformance suite was wanted. It is data (about 1,000 documents and expected
@@ -2082,133 +2347,7 @@ author's own distribution.
 - Update by replacing the whole directory, verified the same way, in a commit
   of its own.
 
-## Do not mix the test's clock with the code's — past the fixed date, the test silently checks nothing
-
-**Symptom:** The tests of a TUI dialog notice (gem-agent and lagent, 2026-11-04) injected a fake clock into the
-model and advanced it from a fixed date (12:00 UTC that day). One case, checking that a key counts even inside the
-grace window that drops keys arriving right after a dialog opens, set the dialog's opening time from the fake clock.
-The grace check, though, read the real clock (`time.Since`). Once the real time passed the fixed date by a few
-seconds, the key was no longer inside the grace window, and the test passed whether the code was right or wrong. A
-pre-release independent review showed it by moving the fixed date back one day: the mutation "do not count keys in
-the grace window" then passed every test (written that morning, it had caught it when written).
-
-**Why:** When one decision mixes a clock the test moves with one it does not, the difference between them depends
-on when the test runs. Checked only right after writing, the difference is small and the test looks right.
-
-**How to apply:**
-- Take the two times a test compares from the same clock. Where the code reads the real clock, build the input it
-  compares from the real clock (`time.Now()`) too.
-- Do not use the fake clock's base date for a value the code compares against the real clock.
-- Mutate a time-dependent test's code on purpose and see it fail. Green on the day it was written does not mean it
-  is still checking next week.
-
-## After measuring in a synced folder, check later that what you removed has not come back
-
-**Symptom:** For a write measurement, a dedicated folder and files were created in a
-Dropbox synced folder and removed afterwards (the remove command succeeded). Later
-the folder and its files were there again (2026-11; observed once; the cause was not
-established — a sync conflict or a restore is inferred). The same steps in Google Drive
-and iCloud Drive left nothing.
-
-**Why:**
-- A removal in a synced folder does not end with the local operation: the item can come
-  back through the provider before it has taken the removal. A successful remove command
-  does not show that the place is clean.
-- The cleanup had already been reported as done, and the report had to be corrected.
-
-**How to apply:**
-- Measure in a dedicated empty folder, and after the cleanup check again, some time
-  later, before reporting it clean.
-- Tell the user that removed items may remain in the provider's web-side trash or
-  history, which cannot be checked from the machine.
-
-## A `\u` escape in agent-written source turns into the raw character — stop it with a test over the source text
-
-**Symptom:** In a test of making terminal output inert, a right-to-left override meant to be written as `\u202e` landed
-in the source as a raw U+202E (2026-11, a lookup tool for OpenCTI; twice, the second time even through a Python
-write). A sibling tool had recorded it three times. When the expected value turns raw too, the test passes with its
-meaning unchanged — vacuously.
-
-**Why:** The input to the writing tool is interpreted on the way, and the six characters `\u202e` become the character
-itself.
-
-**How to apply:**
-- Keep a test that refuses raw control characters, bidirectional controls, a BOM and the replacement character in every
-  source file — not only `.go` but `.md`, `.py`, `.graphql`, `.sh`. It also stops a "Trojan Source" change.
-- When writing an escape, assemble the backslash (`chr(92) + "u202e"` in Python) instead of typing `\u` directly.
-- When the test fails, replace the raw character with the assembled escape; the meaning is the same, so nothing else
-  breaks.
-
-**Further cases (2026-11, a mail-parsing library, five times):** an RTF `\u12354` written inside a Go raw string turned
-its first `\u1235` into the character U+1235, leaving the `4` behind. A shell heredoc mangled it the same way. The
-result was not a control character, so the check let it through and the test's input itself had changed (it failed
-against the expected value, which is how it was noticed). Another was a soft hyphen (U+00AD), missing from a list of
-bidirectional controls.
-- Hold the refusal as a Unicode class, not a list (in Go, `unicode.Is(unicode.Cf, r)` plus C0, C1 and U+FFFD, and NBSP,
-  which reads as a space). A list misses the next character.
-- A character that is not a control passes any such check. When writing `\u` followed by four or more hex-looking
-  characters, print the line back after writing it.
-
-## Go fuzzing with seeds of tens of KB stalls for seconds minimizing each new input — cap `-fuzzminimizetime`
-
-**Symptom:** a 60-second fuzz run of a compound-file (MS-CFB) reader made 39,850 executions, its progress lines
-alternating between 0/sec and hundreds of thousands per second (Go 1.27.3, macOS, 2026-11). Each stretch of about
-15 seconds at 0/sec ended with "new interesting" going up by one. With `-fuzzminimizetime 1x`, 30 seconds made
-11.88 million executions and found 152 new inputs. Neither run failed.
-
-**Why:** a newly found input is minimized before it is kept, and minimizing does not count as executions. With seeds of
-tens of KB (built compound files), one minimization takes seconds to tens of seconds. It looks stuck but is not (a slow
-input was suspected; the stalls disappearing once minimizing was capped settled it).
-
-**How to apply:**
-- Fuzz with large seeds using `-fuzzminimizetime 1x` (or a short time), and put it in the Makefile's `fuzz` target.
-- When the execution count is low or 0/sec persists, rerun with minimizing capped first; only if it still stalls,
-  suspect a slow input.
-- With minimizing capped, a failing input stays large. To investigate a failure, rerun with minimizing on.
-
-## Don't put a `strings.Builder` held by value in elements of a slice that append grows — the next write after growth panics
-
-**Symptom:** A compressed-RTF reader pushed a struct holding a `strings.Builder` by value onto a slice for each open
-`\field` group. A 60-second fuzz run hit the panic "strings: illegal use of non-zero Builder copied by value"
-(2026-11, Go 1.27.3). It reproduced with 40 nested `\field` groups where each outer field gets one character from
-`\uN` before the next opens. A crafted .msg could stop the consumer's process.
-
-**Why:** When append reallocates, elements are copied by value. A `strings.Builder` remembers its own address and
-panics when written after being copied (nothing happens if it was never written, so only inputs that write to the
-outer field first trigger it).
-
-**How to apply:**
-- Don't give slice elements or structs passed by value a `strings.Builder` (or any noCopy type). Use `[]byte`, or
-  make the elements pointers.
-- Build the regression test from an input that writes before the copy. An input where the copy happens before any
-  write does not fail (the first regression test written here passed on the unfixed code for that reason). Check
-  that the test fails on the code before the fix.
-
-## Reaching a LAN peer from `swift test` is not evidence that the application can — the Local Network permission belongs to whatever launched the process
-
-**Symptom:** A macOS application gained a route to virtual machines through a proxy on the LAN. The real-node check
-ran from `swift test` and went as far as a received frame and sent input, against a container and a VM. The
-documents said "verified on a real node". When the user opened the built application from Finder, the first
-connection failed at once. The unified log held `unsatisfied (Local network prohibited)` (macOS 27.2, 2026-11).
-
-**Why:** The Local Network permission attaches to the "responsible application" that launched a process. A child of
-`swift test` runs on the terminal's (or editor's) permission; the application itself is launched by LaunchServices
-and needs its own. The test was checking one layer outside the one the user uses.
-
-**How to apply:**
-- Do not write "verified" for anything that reaches a peer on the LAN until the built application, started with
-  `open`, has done it.
-- Where a human step such as a confirmation screen is in the way, make a temporary build that approves the candidate
-  by itself and writes the outcome to standard error, and start it with
-  `open -n --stderr <file> -a <App> --args …`: that measures automatically under the application's own permission.
-  Do not ship that change (leave no entry in the product that skips confirmation).
-- The state without the permission can only be produced by the user switching it off in System Settings. If there is
-  a value to measure, build the means of measuring first and ask second (here the asking came first, the means
-  turned out insufficient, and the user was asked three times).
-- In zsh `log` is a builtin, and `log show …` ends without printing anything. Read the unified log with
-  `/usr/bin/log`.
-
-## Do not check an interoperating peer more strictly than the reference implementation does — servers that pad exist
+### Do not check an interoperating peer more strictly than the reference implementation does — servers that pad exist
 
 **Symptom:** A SPICE client library required a cursor's data length to equal the size it computed. One server
 implementation (it serves a terminal over SPICE) declares its 8×16 32-bit cursor as 640 bytes, 128 more than the
@@ -2233,131 +2372,3 @@ happened to send none, so the strict check had never been exercised.
   the peer's implementation, is the fast way.
 - In a test environment with one implementation of the peer, such a check has not been shown to pass. When a
   peer of another implementation becomes available, run it once as far as a displayed frame.
-
-## A loop that advances by rebuilding a time from its calendar fields stops on the night the clocks go back — advance by adding to the instant you have
-
-**What happened:** Code that splits a span at every local hour found the next hour with
-`time.Date(y, m, d, hour, 0, 0, 0, loc).Add(time.Hour)` (Go). On the night summer time ends and the 1 o'clock
-hour happens twice, `time.Date` resolves the repeated time to its **first** occurrence. Called from inside the
-second one, it returns "the first 01:00 plus an hour" — the second 01:00 it is already in — which equals the
-start, and the loop never advanced. An aggregation command looped forever over any range containing that night
-(reproduced with America/New_York on 2026-11-01; it cannot happen in Japan time, so it never showed on the
-development machine).
-The first fix ("add what is left of the hour to the current instant") stopped the hang, and verification then
-found the next case: **where the clocks change part-way through an hour** (Pacific/Chatham changes at 03:45) the
-next local hour is not sixty minutes away, and one piece spanned two local hours.
-
-**Why:** A function that builds a time from calendar fields rounds a repeated or non-existent local time one way
-or the other. The result is not guaranteed to be later than the instant you hold.
-
-**How to apply:**
-- A loop that advances through time **adds a positive duration to the current instant, and does not rebuild
-  from calendar fields**. Shape it so that having advanced can be checked inside the loop.
-- To split at local boundaries, walk the UTC quarter-hours and stop at the first that "begins a local hour" or
-  "carries a different UTC offset". Every offset in current use is a multiple of fifteen minutes, so every local
-  hour start and every clock change falls on one (historical local mean time is another matter).
-- Test **the night the clocks go back, the night they go forward, a zone that shifts by thirty minutes (Lord
-  Howe) and one that changes part-way through an hour (Chatham)** across a year, judging "every piece lies
-  inside one local hour" and "the lengths sum to the whole". An infinite loop stops the test run, so run it in
-  another goroutine and fail on a timeout.
-- A defect that cannot happen in the development machine's time zone is found only if the tests name other
-  zones.
-
-## "The output did not change" is the wrong yardstick when the old output came from a partial read — compare with what the whole record gives
-
-**What happened:** A work-time logger's commands each read a slice of the record (the window asked for, plus a
-fixed margin) and applied rules that judge a span by its neighbours. To make two commands agree, the read was
-extended with the one sample before it and the one after it. The design said the other commands' output would
-not change, and the tests pinned exactly that. A fuzz run in verification (600 random records, 7,200 runs)
-found 221 changed outputs. Every one of them equalled the result derived from the **whole** record: the old
-read had been wrong wherever a break longer than the margin cut it short, and the change had corrected it. The
-tests were pinning the old error.
-Two further defects came from the added samples themselves. A neighbour inserted with its real state became a
-sliver of a session at the head of the read; and when the read held nothing else, a neighbour inserted as a
-marker was reported as the current state.
-
-**Why:** "Unchanged from before" measures the distance from the previous implementation, not from the truth. For
-a function over a partial read, the truth is defined: it is the same function over everything, cut to the
-window.
-
-**How to apply:**
-- When a command reads part of a record, write the test as **"the output equals the derivation from the whole
-  record, cut to the window"**, over random records that include breaks longer than the read margin. Keep
-  "unchanged" only as a check on real data, and treat a difference there as a question, not a failure.
-- State in the design what a change to the read *is allowed to* change, and where. "Nothing changes" is a claim
-  to be measured before it is written.
-- A sample added only to give the rules a neighbour is a **marker**: give it the neutral state the gap already
-  implies, never let it stand alone as data, and test the read that contains nothing but the marker.
-- Keep every rule's reach (the longest span it can look across) inside the read margin by limiting the settings;
-  a setting longer than the margin makes the same day answer differently by window.
-
-## A table whose buckets are measured to the row's own completion sorts the slow rows by themselves — measure to the start
-
-**Symptom:** A usage report sorted model calls by "seconds since the previous call" to show how cache hits
-fall with time. The gap ran from the previous call's end to *this call's end*, because that is where the
-record is written. A pre-release reviewer recounted with the gap ending at the call's start: 139 of 199
-calls changed bucket. In the original table the 120–300 s row held 54 calls and 33 misses; 26 of those 33
-had been sent within 30 s of the previous answer, and for misses in the late rows the call itself was a
-median 94% of the gap. The documents read the late rows as "the cache had let go by then" — a cause the
-table could not show, since a miss is slow and a slow call lands in a late row whatever the cause.
-
-**Why:** The bucketing variable contained the outcome. A miss makes a call long; the call's length was part
-of the gap; so the outcome chose its own row. The code was correct against its definition, and an independent
-recount of that definition matched on every row — nothing but a second definition could show it.
-
-**How to apply:**
-- A bucket key must be fixed before the thing being measured happens. For a call: measure to its start, never
-  to the record written when it ends.
-- When asking a reviewer to recount, ask also for one alternative definition of each key and the number of
-  rows that move. Agreement on the author's definition says the code is right, not that the definition is.
-- Write under a distribution table what it shows and that it does not show why; move causal sentences out of
-  the README until something other than the table supports them.
-- In fixtures, give every event that should independently change a result its own timestamp. Two events at
-  the same instant cover for each other: 12 of 26 mutants survived tests whose fixtures did this, and 13 of 13
-  were killed once each start-moving record had a time of its own.
-
-## Before restructuring a large function, record what the whole thing does as a characterization — re-run the test binary as a child process and script the outside service
-
-**Symptom:** in a Go agent runtime, the one function that assembled a session had grown to about 1,900 lines and 255 branches. Tests could not call it, so they copied its flow or read its source and matched strings. Nothing could judge "nothing changed" before restructuring it — a restructure that, with the type checker's help, rewrote 758 references to locals.
-
-**Why:** a function that cannot be called forces copies and source matching on its tests, and a copy keeps agreeing with itself while the original changes. Reading and believing it right does not find the one of 758 rewrites whose meaning shifted. The judge has to be built before the restructure, from everything the function does that can be seen from outside.
-
-**How to apply:**
-- Make the characterization the first step: write it against the unchanged code and commit its output as the reference. Never rewrite the reference during the restructure; rewrite it only in a change meant to alter behaviour.
-- To run the start for real, re-run the test binary itself as a child: `TestMain` checks an environment variable and, in the child, executes the real command (`os.Executable()` with `-test.run=^$`). The start touches the environment, whether stdin is a terminal and package variables, so one run is one process. Rebuild the child's environment: drop variables with your own prefix, `HOME` and `LANG`, and point `HOME` at a temporary directory.
-- Add exactly one seam. Make the constructor of the outside service's client (here, the model) a package variable, and in the child only, replace it with a fake that answers from a script. The fake records what it was given: system prompt, tool declarations, messages. The order of the tool declarations is the request itself, so a restructure that moves a registration is caught here.
-- Compare stdout, stderr, the exit status, the transcripts, what the outside service received and the teardown order. Normalize only what changes between runs: temporary paths and their flattened forms, ids, times, random tags. A random tag after `_`, as in `tool_output_<hex>`, is not matched by `\b`. Leave machine-dependent lines out of the comparison. A startup note about a sandbox check that did not pass reported exit status 1 or 2 depending on the circumstances (measured); kept in, it fails every reference on another machine (found by the pre-release review).
-- Record the reference for a scenario added mid-restructure on the commit before the restructure too. Inside a submodule, do not use a worktree: export the tree with `git archive <commit> | tar -x` and run the test there.
-- For a TUI, run the same child as a TUI under a private tmux server, before and after, and compare the transcripts and screens of the same keystrokes.
-- Run it many times in a row before taking it as the reference (15 here).
-
-Result: in six steps the function became 67 lines, and every step matched the reference. A display-order defect found later was written with the same machinery as a test that fails on the unfixed code.
-
-Origin: restructuring the session assembly of an agent runtime (2026-11).
-
-## Feed lines to a child process's REPL one prompt at a time — written all at once, they arrive as one pasted input
-
-**Symptom:** a characterization wrote eight lines to the child's stdin at once. The plain REPL joined every buffered line into one message and ran none of the commands — what it is meant to do with a multi-line paste.
-
-**Why:** the line reader, having read one line, keeps reading while the buffer holds more, and joins them. A pipe hands over everything written at once.
-
-**How to apply:**
-- Watch the child's stderr and write the next line each time a prompt (`\n> `) appears. After the last line, wait for one more prompt, then close stdin.
-- Never let the watcher stall the child's writes. Send each signal to the bounded channel without blocking, dropping it if full. The child keeps writing after the feeder has finished, and a blocking send jams its stderr and the test never ends (found by the pre-release review).
-- Count prompts only in what was just written, plus the two bytes before it for a prompt split across writes. Recounting the whole output each time is quadratic in its size.
-
-Origin: the characterization tests of an agent runtime (2026-11).
-
-## A test that checks wiring by reading source passes without checking anything once the code moves to another file
-
-**Symptom:** in the restructure above, eight tests read the entry file's (`root.go`) source. Moving the code failed most of them. One — "never wrap `os.Stdin` in a second `bufio.Reader`" — kept passing just because the string was no longer in that file: once the thing it checked had moved, it checked nothing. Another test that kept a list of files to read had not been told about a file created later (found by the pre-release review).
-
-**Why:** a test that checks for an absence stays green when what it looks for leaves the range it reads.
-
-**How to apply:**
-- The AST test of "The single production call site is the weak point of injected features — pin the wiring with an AST test" reads every non-test file of the package, not a named file. A test that checks for a presence checks there is exactly one (and fails on zero).
-- If the files to read are a list, add a test that fails when the list misses one — for example, that every file handling the core type is on it.
-- Once the function can be called, replace the copies and the source matching with real calls. Here the test that copied the resume flow now calls the startup phase itself.
-
-Origin: restructuring the session assembly of an agent runtime (2026-11).
-

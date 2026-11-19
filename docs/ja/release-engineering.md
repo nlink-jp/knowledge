@@ -1,6 +1,187 @@
 # リリースエンジニアリング
 
-## fail-open な工程 + 表示するだけの検証器 = 緑のまま欠陥出荷
+## 署名・公証
+
+### tar.gz 配布でも darwin バイナリは notarize できる（temp-zip パターン）
+
+**事象:** Apple の notary service（`xcrun notarytool submit`）は zip / dmg / pkg
+コンテナしか受け付けず、tar.gz は直接送れない。
+
+**なぜ有効か:** notary ticket はバイナリの **CDHash（中身のハッシュ）をキーに Apple の
+サーバに保存される**。最終配布フォーマットが何であっても、実行時に macOS が CDHash で
+問い合わせて ticket を見つければ notarized として扱われる。
+
+**適用方法:** packaging の前に「temp で zip 化 → submit → zip 破棄」を挟む。
+
+```make
+dist-darwin: cross-build-darwin
+	@for arch in arm64 amd64; do \
+		cp dist/$(BINARY)-darwin-$$arch /tmp/$(BINARY) && \
+		(cd /tmp && zip -j /tmp/$(BINARY)-notary.zip $(BINARY)) && \
+		scripts/notarize-darwin.sh /tmp/$(BINARY)-notary.zip "$(NOTARY_PROFILE)"; \
+		rc=$$?; \
+		rm -f /tmp/$(BINARY) /tmp/$(BINARY)-notary.zip; \
+		test $$rc -eq 0; \
+	done
+	# この後は無修正の tar.gz / .deb / .rpm packaging でよい — バイナリは既に notarized
+```
+
+- `rm -f` で notarize 失敗時も temp を掃除し、`test $$rc -eq 0` で失敗を伝播する。
+- ticket は CDHash 紐付けなので、submit 後にファイル名を変えても zip を作り直しても有効。
+
+### notarytool 403 "required agreement missing/expired" は契約失効であってキー失効ではない
+
+**事象:** それまで通っていた notarization が突然一律失敗し、ラッパースクリプトは
+「Keychain profile not found」と報告した。
+
+**なぜ:** スクリプトが事前 probe（`notarytool history`）の**終了コードだけ**を見て失敗理由を
+決め打ちしていた。直接 `xcrun notarytool history --keychain-profile <profile>` を叩くと実際は
+`403 A required agreement is missing or has expired` — Apple Developer Program のライセンス契約が
+更新され、Account Holder が未同意だっただけで、キーもプロファイルも有効だった。
+
+**適用方法:**
+- ラッパーの失敗表示を鵜呑みにせず、必ず `notarytool history` を直接実行して実エラーを見る。
+- `403 ... agreement ...` なら developer.apple.com/account で更新契約に同意する
+  （App Store Connect の Agreements も確認）。数分で反映され、キー再登録は不要。
+- ラッパースクリプトは probe の stderr を捕捉して**実エラーを必ず表示**し、
+  403/agreement を検出したら契約再同意を案内するよう修正した（親切な誤診断は誤診断より悪い）。
+- `notarytool history` の事前 probe は flaky（成功直後に別 arch で偽 fail することがある）。
+  スクリプト経由で落ちたら `notarytool submit --wait` を直接叩いて迂回する。
+- notarytool の keychain profile は**マシンローカル**（保存先は data-protection
+  キーチェーン — 下の画面ロックの項を参照）。別マシンには同期されないので、
+  ビルドマシンごとに `store-credentials` が必要。
+
+### notarytool の資格情報は画面ロック中は読めない（消えたように見える）
+
+**事象:** 同一マシン・同一プロファイルで 8 本連続で通っていた notarize が、無人実行の
+途中から一律 `Error: No Keychain password item found for profile: <name>` で失敗し始めた
+（2026-08、GUI 10 本一括リリース中）。プロファイル消失・キーチェーン破損に見えるが、
+実際は**画面ロックがかかっただけ**だった。解除した瞬間に何の再登録もなく復旧した。
+
+**なぜ:** `notarytool store-credentials` は資格情報を **data-protection キーチェーン**に
+保存する（legacy な `security find-generic-password` では**ロック解除中でも見えない** —
+これで消失と誤診しやすい）。data-protection キーチェーンの項目はコンソールロック中は
+読み出し不可になるため、画面がロックされると notarytool は「item が無い」と報告する。
+`security show-keychain-info login.keychain-db` が正常応答するのも誤診を誘う
+（login.keychain-db 側は無関係）。
+
+**適用方法:**
+- このエラーを見たらまず `ioreg -n Root -d1 | grep IOConsoleLocked` — `Yes` なら
+  資格情報は無事で、**画面を解除するだけ**でよい。プロファイル再作成は不要。
+- 無人リリース（並列エージェント・長時間バッチ）は notarize が終わるまで画面ロックを
+  保留するか、途中でロックされたら止まった分だけ後で再開する設計にする
+  （tag 済み・release 未作成の状態からの再開は版数再利用にならない）。
+- 消失と断定して `store-credentials` をやり直す前に必ずロック状態を確認する —
+  再登録は不要な API キー操作であり、原因も誤って学習される。
+
+### クラウド同期フォルダ配下のバイナリは SIGKILL され得る（provenance xattr）
+
+**事象:** Dropbox 同期フォルダ配下の `~/bin` に Go バイナリを `cp` すると、起動即
+`zsh: killed`（SIGKILL）。同じバイナリが `dist/` 直下（同期外）では動く。
+
+**なぜ:** Dropbox の FileProvider extension は、sync フォルダにファイルが landing した時点で
+`com.apple.provenance` 等の xattr を付与する（**同一マシン内のローカル `cp` でも付く**）。
+`com.apple.provenance` は system-protected で `xattr -d` でも削除不可。弱い署名
+（ad-hoc / linker-signed）と provenance の組合せを Gatekeeper が SIGKILL する。
+この挙動は macOS のマイナーアップデートで強化され、「以前は動いていた構成」が突然壊れた。
+
+**適用方法:**
+- 同期フォルダ配下に置いた後に `codesign --force --sign - <binary>` で再署名すると通る
+  （provenance は残るが、署名が「このマシンが今 sign した」ものになる）。
+  同期先の**各マシンで**再署名が必要（署名は sync では再付与されない）。
+- `cp` は宛先に新規 inode を作るので xattr が新規付与されるが、Finder の同一ボリューム内
+  「移動」は rename（inode 保持）なので発火しない。`ditto` も可。素の `cp` を避ける。
+- `spctl --add` は最新 macOS で deprecated（"This operation is no longer supported"）。
+- **これは環境/配置の問題でコードバグではない**。子プロセスの即死
+  （`read response: EOF` / `broken pipe`）を見たら、まず `<binary> --version` の
+  exit code（137 = SIGKILL）と配置場所（同期フォルダ配下か）を確認する。
+- プロジェクトの Makefile に個人環境向けの `install:` target（`~/bin` 決め打ち cp +
+  codesign）を入れない。プロジェクトは `make build` → `dist/` まで。個人環境への配置は
+  dotfiles 側のスクリプトで吸収する。
+
+### GUI .app の署名は CLI と別パイプライン
+
+**事象:** CLI 用の署名/notarize スクリプトは単体 Mach-O 前提で、.app バンドルには流用できない。
+
+**要点**（正規手順は CONVENTIONS.md §Code Signing → GUI app signing）:
+- **WebView 系（Wails / Tauri）は entitlements 最小 2 つが必須**:
+  `com.apple.security.cs.allow-jit` + `com.apple.security.cs.allow-unsigned-executable-memory`。
+  無いと WKWebView の JS が Hardened Runtime に殺され、フロントエンドが**無言で真っ白**になる。
+- **ネイティブ Swift / AppKit は JIT entitlements 不要**。Hardened Runtime のみで動く。
+  localhost への HTTP も Info.plist の `NSAppTransportSecurity` 側で対応でき、entitlement 不要。
+- **`cp -r` は禁止、`ditto` を使う**: バンドル署名は xattr に格納されるため、`cp -r` は署名を
+  壊し「Code Signature Invalid」で起動即死する。配布 zip 化も `ditto -c -k --keepParent`。
+- **署名順序:** build → deep 署名（`--force --deep --options runtime --timestamp
+  --entitlements`）→ ditto → notarize（.app は temp zip 化して submit）→
+  `stapler staple`。バンドル形式は staple できるのでオフライン first-launch でもダイアログが
+  出ない。CLI 単体 Mach-O は staple 不可（オンライン check が走る）。
+- **Tauri は `tauri build` が env var（`APPLE_SIGNING_IDENTITY`）を見て bundler 内で署名**する。
+  Tauri 内蔵 notarize は独自の env（Apple ID + パスワード）を要求し notarytool の keychain
+  profile を使えないため、無効のままにして自前で xcrun notarytool を回すのが楽。
+  DMG ファイル名は Rust triplet arch（`aarch64`）で `uname -m`（`arm64`）と一致しない。
+  `package` target を `build` 依存にすると再ビルドで staple が剥がれる。
+- Swift Package Manager ベースの GUI は `.app` バンドル構造（`Contents/MacOS/` 等）を
+  Makefile で手動組み立てし、最後に codesign する。
+
+### `ditto -c -k` は拡張属性を `._` 項目として zip に入れる — `unzip` で展開すると `.app` の封が壊れる
+
+**事象:** GUI の配布 zip を `/usr/bin/ditto -c -k --keepParent X.app X.zip` で作っていた。公開中の 19 本のうち 18 本に
+`._CodeResources`・`._Info.plist`・`._AppIcon.icns` などの `._*` 項目が 9〜21 個入っていた（中身は
+`com.apple.provenance` などの拡張属性）。この zip をコマンドラインの `/usr/bin/unzip` で展開すると `.app` の中に
+`._` ファイルができ、`codesign --verify --deep --strict` も `spctl --assess` も「a sealed resource is missing or invalid」で
+失敗した。Finder・`ditto -x -k`・Homebrew の展開では `._` が拡張属性に戻されるので問題は出ない。署名・公証・staple・
+Gatekeeper の検査（`ditto -x -k` で展開して行っていた）はすべて合格しており、誰も気付かなかった
+（2026-09-27、macOS 27.0、実測）。
+
+**なぜ:** ditto は既定で、拡張属性とリソースフォークを AppleDouble（`._` 項目）として zip に書く（`man ditto` の
+`--norsrc`・`--noextattr`）。`.app` の封は拡張属性ではなくファイル（`_CodeSignature/`、staple された ticket、各 Mach-O の中の
+署名）にあるので、`._` は不要なうえ、`unzip` ではファイルとして封の中に入り込む。
+
+**適用方法:**
+- 配布 zip は `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip` で作る。19 本すべてのアプリを
+  この形で zip し直し、普通の `unzip` で展開して `codesign --verify --deep --strict`・`stapler validate`・
+  `source=Notarized Developer ID` が保たれることを確かめた（実測。1 本は公証から通しで実施）。
+- 「バンドルの署名は拡張属性にある」という説明は `.app` には当てはまらない。この組織の規約もそう書いていて、
+  それが `ditto -c -k` を勧める理由になっていた。
+- リリース検査は、公開する zip に `._*` と `__MACOSX/` が無いことを確かめる（組織では `verify-app-zip.sh`、
+  作る側の行は check-org 検査 19）。展開の検査を `ditto -x -k` だけで行うと、この欠陥は見えない。
+- 同じ種類の問題は Linux の tar にもある（`COPYFILE_DISABLE=1` と `--no-xattrs`。build-and-packaging の項）。
+  Info-ZIP の `zip` で作った CLI の zip は、抜き取った 8 本とも `._` が 0 件だった。
+
+### dist/ のバイナリ再署名は、そこから起動中の常駐プロセスを殺す
+
+**事象:** `make build` が `dist/<binary>` を上書き + `codesign --force` で再署名した結果、
+そのバイナリから起動していた常駐 daemon が macOS に kill され、データ記録が 30 分以上
+無言で欠落した。
+
+**なぜ:** 実行中バイナリのコード署名が変わると macOS がプロセスを落とす。LaunchAgent 未登録
+だと `KeepAlive` による自動復帰も効かない。
+
+**適用方法:**
+- 常駐 daemon は `dist/` からではなく **`.app` 同梱パス**（`Contents/Resources/<binary>`）から
+  起動させる。`make build` の影響を受けず、LaunchAgent の `KeepAlive` で復帰する。
+- ビルドを伴う作業の前後で daemon の status（最終サンプル時刻等）を確認する。
+  長い欠落は自分のビルドが落とした可能性を疑う。
+
+### Hardened Runtime で署名した CLI は、子プロセスへ `DYLD_*` を渡さない
+
+**事象:** Developer ID + Hardened Runtime で署名した timeout を通してコマンドを起動すると、`DYLD_LIBRARY_PATH` だけが
+子の環境から消えていた（他の変数は届く。macOS 27 で実測）。macOS 標準の `/usr/bin/env`・`nice`・`nohup` も、
+同じく `DYLD_*` を渡さなかった（実測）。
+
+**なぜ:** macOS は制限付き（Hardened Runtime・SIP 保護）のプロセスの環境から `DYLD_*` を取り除き、その環境が子へ
+受け継がれる（振る舞いは実測。仕組みの一次資料は未確認）。entitlement
+`com.apple.security.cs.allow-dyld-environment-variables` を付ければ通るが、そのプロセス自身への
+`DYLD_INSERT_LIBRARIES` も許すことになる。
+
+**適用方法:**
+- 子を起動する署名済みの CLI（ラッパー・スーパーバイザ）では、`DYLD_*` が子へ届かないことを README の限界に書く。
+- entitlement を付けるかは、注入面の拡大と引き換えに判断する（timeout は付けず、macOS 標準のラッパーと同じにした）。
+- 環境の受け渡しに関わる振る舞いは、配布ビルド（署名済み）で確かめる。
+
+## 配布物の検証
+
+### fail-open な工程 + 表示するだけの検証器 = 緑のまま欠陥出荷
 
 **事象:** notarize スクリプトは「資格情報の無い協力者でもビルドできるように」
 プロファイル疎通失敗時に警告を出して**未 notarize のまま正常終了**する設計
@@ -70,128 +251,7 @@ macOS の署名・notarization、リリースアーカイブ、Homebrew tap 配�
 
 ---
 
-## tar.gz 配布でも darwin バイナリは notarize できる（temp-zip パターン）
-
-**事象:** Apple の notary service（`xcrun notarytool submit`）は zip / dmg / pkg
-コンテナしか受け付けず、tar.gz は直接送れない。
-
-**なぜ有効か:** notary ticket はバイナリの **CDHash（中身のハッシュ）をキーに Apple の
-サーバに保存される**。最終配布フォーマットが何であっても、実行時に macOS が CDHash で
-問い合わせて ticket を見つければ notarized として扱われる。
-
-**適用方法:** packaging の前に「temp で zip 化 → submit → zip 破棄」を挟む。
-
-```make
-dist-darwin: cross-build-darwin
-	@for arch in arm64 amd64; do \
-		cp dist/$(BINARY)-darwin-$$arch /tmp/$(BINARY) && \
-		(cd /tmp && zip -j /tmp/$(BINARY)-notary.zip $(BINARY)) && \
-		scripts/notarize-darwin.sh /tmp/$(BINARY)-notary.zip "$(NOTARY_PROFILE)"; \
-		rc=$$?; \
-		rm -f /tmp/$(BINARY) /tmp/$(BINARY)-notary.zip; \
-		test $$rc -eq 0; \
-	done
-	# この後は無修正の tar.gz / .deb / .rpm packaging でよい — バイナリは既に notarized
-```
-
-- `rm -f` で notarize 失敗時も temp を掃除し、`test $$rc -eq 0` で失敗を伝播する。
-- ticket は CDHash 紐付けなので、submit 後にファイル名を変えても zip を作り直しても有効。
-
-## notarytool 403 "required agreement missing/expired" は契約失効であってキー失効ではない
-
-**事象:** それまで通っていた notarization が突然一律失敗し、ラッパースクリプトは
-「Keychain profile not found」と報告した。
-
-**なぜ:** スクリプトが事前 probe（`notarytool history`）の**終了コードだけ**を見て失敗理由を
-決め打ちしていた。直接 `xcrun notarytool history --keychain-profile <profile>` を叩くと実際は
-`403 A required agreement is missing or has expired` — Apple Developer Program のライセンス契約が
-更新され、Account Holder が未同意だっただけで、キーもプロファイルも有効だった。
-
-**適用方法:**
-- ラッパーの失敗表示を鵜呑みにせず、必ず `notarytool history` を直接実行して実エラーを見る。
-- `403 ... agreement ...` なら developer.apple.com/account で更新契約に同意する
-  （App Store Connect の Agreements も確認）。数分で反映され、キー再登録は不要。
-- ラッパースクリプトは probe の stderr を捕捉して**実エラーを必ず表示**し、
-  403/agreement を検出したら契約再同意を案内するよう修正した（親切な誤診断は誤診断より悪い）。
-- `notarytool history` の事前 probe は flaky（成功直後に別 arch で偽 fail することがある）。
-  スクリプト経由で落ちたら `notarytool submit --wait` を直接叩いて迂回する。
-- notarytool の keychain profile は**マシンローカル**（保存先は data-protection
-  キーチェーン — 下の画面ロックの項を参照）。別マシンには同期されないので、
-  ビルドマシンごとに `store-credentials` が必要。
-
-## notarytool の資格情報は画面ロック中は読めない（消えたように見える）
-
-**事象:** 同一マシン・同一プロファイルで 8 本連続で通っていた notarize が、無人実行の
-途中から一律 `Error: No Keychain password item found for profile: <name>` で失敗し始めた
-（2026-08、GUI 10 本一括リリース中）。プロファイル消失・キーチェーン破損に見えるが、
-実際は**画面ロックがかかっただけ**だった。解除した瞬間に何の再登録もなく復旧した。
-
-**なぜ:** `notarytool store-credentials` は資格情報を **data-protection キーチェーン**に
-保存する（legacy な `security find-generic-password` では**ロック解除中でも見えない** —
-これで消失と誤診しやすい）。data-protection キーチェーンの項目はコンソールロック中は
-読み出し不可になるため、画面がロックされると notarytool は「item が無い」と報告する。
-`security show-keychain-info login.keychain-db` が正常応答するのも誤診を誘う
-（login.keychain-db 側は無関係）。
-
-**適用方法:**
-- このエラーを見たらまず `ioreg -n Root -d1 | grep IOConsoleLocked` — `Yes` なら
-  資格情報は無事で、**画面を解除するだけ**でよい。プロファイル再作成は不要。
-- 無人リリース（並列エージェント・長時間バッチ）は notarize が終わるまで画面ロックを
-  保留するか、途中でロックされたら止まった分だけ後で再開する設計にする
-  （tag 済み・release 未作成の状態からの再開は版数再利用にならない）。
-- 消失と断定して `store-credentials` をやり直す前に必ずロック状態を確認する —
-  再登録は不要な API キー操作であり、原因も誤って学習される。
-
-## クラウド同期フォルダ配下のバイナリは SIGKILL され得る（provenance xattr）
-
-**事象:** Dropbox 同期フォルダ配下の `~/bin` に Go バイナリを `cp` すると、起動即
-`zsh: killed`（SIGKILL）。同じバイナリが `dist/` 直下（同期外）では動く。
-
-**なぜ:** Dropbox の FileProvider extension は、sync フォルダにファイルが landing した時点で
-`com.apple.provenance` 等の xattr を付与する（**同一マシン内のローカル `cp` でも付く**）。
-`com.apple.provenance` は system-protected で `xattr -d` でも削除不可。弱い署名
-（ad-hoc / linker-signed）と provenance の組合せを Gatekeeper が SIGKILL する。
-この挙動は macOS のマイナーアップデートで強化され、「以前は動いていた構成」が突然壊れた。
-
-**適用方法:**
-- 同期フォルダ配下に置いた後に `codesign --force --sign - <binary>` で再署名すると通る
-  （provenance は残るが、署名が「このマシンが今 sign した」ものになる）。
-  同期先の**各マシンで**再署名が必要（署名は sync では再付与されない）。
-- `cp` は宛先に新規 inode を作るので xattr が新規付与されるが、Finder の同一ボリューム内
-  「移動」は rename（inode 保持）なので発火しない。`ditto` も可。素の `cp` を避ける。
-- `spctl --add` は最新 macOS で deprecated（"This operation is no longer supported"）。
-- **これは環境/配置の問題でコードバグではない**。子プロセスの即死
-  （`read response: EOF` / `broken pipe`）を見たら、まず `<binary> --version` の
-  exit code（137 = SIGKILL）と配置場所（同期フォルダ配下か）を確認する。
-- プロジェクトの Makefile に個人環境向けの `install:` target（`~/bin` 決め打ち cp +
-  codesign）を入れない。プロジェクトは `make build` → `dist/` まで。個人環境への配置は
-  dotfiles 側のスクリプトで吸収する。
-
-## GUI .app の署名は CLI と別パイプライン
-
-**事象:** CLI 用の署名/notarize スクリプトは単体 Mach-O 前提で、.app バンドルには流用できない。
-
-**要点**（正規手順は CONVENTIONS.md §Code Signing → GUI app signing）:
-- **WebView 系（Wails / Tauri）は entitlements 最小 2 つが必須**:
-  `com.apple.security.cs.allow-jit` + `com.apple.security.cs.allow-unsigned-executable-memory`。
-  無いと WKWebView の JS が Hardened Runtime に殺され、フロントエンドが**無言で真っ白**になる。
-- **ネイティブ Swift / AppKit は JIT entitlements 不要**。Hardened Runtime のみで動く。
-  localhost への HTTP も Info.plist の `NSAppTransportSecurity` 側で対応でき、entitlement 不要。
-- **`cp -r` は禁止、`ditto` を使う**: バンドル署名は xattr に格納されるため、`cp -r` は署名を
-  壊し「Code Signature Invalid」で起動即死する。配布 zip 化も `ditto -c -k --keepParent`。
-- **署名順序:** build → deep 署名（`--force --deep --options runtime --timestamp
-  --entitlements`）→ ditto → notarize（.app は temp zip 化して submit）→
-  `stapler staple`。バンドル形式は staple できるのでオフライン first-launch でもダイアログが
-  出ない。CLI 単体 Mach-O は staple 不可（オンライン check が走る）。
-- **Tauri は `tauri build` が env var（`APPLE_SIGNING_IDENTITY`）を見て bundler 内で署名**する。
-  Tauri 内蔵 notarize は独自の env（Apple ID + パスワード）を要求し notarytool の keychain
-  profile を使えないため、無効のままにして自前で xcrun notarytool を回すのが楽。
-  DMG ファイル名は Rust triplet arch（`aarch64`）で `uname -m`（`arm64`）と一致しない。
-  `package` target を `build` 依存にすると再ビルドで staple が剥がれる。
-- Swift Package Manager ベースの GUI は `.app` バンドル構造（`Contents/MacOS/` 等）を
-  Makefile で手動組み立てし、最後に codesign する。
-
-## リリースアーカイブは「公開物を実ダウンロード」して検証する
+### リリースアーカイブは「公開物を実ダウンロード」して検証する
 
 **事象:** ビルドログとローカル dist が正しくても、公開資産の中身が意図通りとは限らない。
 全 org 監査（52 リポ / 171 アーカイブ）で、ある zip の README/LICENSE 欠落を検出した。
@@ -220,7 +280,7 @@ dist-darwin: cross-build-darwin
 - **`git tag`（lightweight）は `git describe`（annotated 限定）から見えない**。Makefile の
   版数導出は `git describe --tags`（lightweight 込み）を使う。
 
-## リリース zip 内の実行ファイルは canonical 名にする
+### リリース zip 内の実行ファイルは canonical 名にする
 
 **事象:** `zip -j` は渡したファイルの basename をそのままエントリ名にするため、per-arch
 成果物（`tool-darwin-arm64`）を直接固めると zip 内のバイナリに arch サフィックスが残り、
@@ -240,7 +300,7 @@ rm -rf $(STAGE) ; \
 - 単一 Mach-O の `cp` は署名を保持する（.app バンドルと違い ditto 不要）。
 - notarization は CDHash 紐付けでファイル名に依存しないため、rename しても通る。
 
-## CLI は `--version` フラグに応答必須（brew test が叩く）
+### CLI は `--version` フラグに応答必須（brew test が叩く）
 
 **事象:** `version` サブコマンドしか持たないツールは、共有 formula テンプレートの
 `assert_match version.to_s, shell_output("#{bin}/<name> --version")` により `brew test` が
@@ -253,7 +313,7 @@ rm -rf $(STAGE) ; \
 - 回帰テストでは **`rootCmd.Version` をテスト内で代入しない** — 代入するとフラグが生えて
   壊れたバイナリでも通ってしまう。本番 init での結線（`rootCmd.Version != ""`）を検査する。
 
-## アップロード前にビルド済みバイナリの `--version` を確認する
+### アップロード前にビルド済みバイナリの `--version` を確認する
 
 **事象:** `VERSION ?= dev` のハードコードのまま `make build-all` を実行し、全リリース
 バイナリのバージョンが `dev` になった状態でアップロードしてしまった。
@@ -264,7 +324,74 @@ rm -rf $(STAGE) ; \
 - `make build-all` 直後に `dist/<binary>-darwin-arm64 --version` を実行し、期待する
   バージョン文字列と一致してからアップロードする。リリースチェックリストに含める。
 
-## 一度公開したバージョン番号を再利用しない（fix-forward）
+### GUI の初版がアプリアイコン無しで出た — リリース検査は、公開する zip の中のアイコンを見る
+
+**事象:** 新しいメニューバーアプリ（Swift、`.app` を Makefile で組み立てる）の初版を、アプリアイコン無しで公開した。
+`make verify-release` は公証の印・staple・Gatekeeper・リンクした SDK・版数をすべて確かめて合格し、独立検証も
+指摘しなかった。利用者がインストールした後に気付いた（2026-09-27）。
+
+**なぜ:** 足場を作ったとき、アイコンの生成と `CFBundleIconFile` を入れていなかった。組織の文書の GUI の例には
+アイコンのコピーがあるが、それを確かめる検査がどこにも無い。署名と公証はアイコンが無くても通る。
+メニューバー常駐アプリは Dock に出ないので、開発中にアイコンを見る場面がほとんど無い。
+
+**適用方法:**
+- 足場の段階でアイコンを入れる。元画像は描画スクリプトで作り（net-meter と同じ `scripts/gen-icon.swift` →
+  `assets/AppIcon-1024.png` → `make-icns.sh`）、組み立ては元画像が無ければ失敗させる（警告で続けない）。
+- `verify-release` で、**利用者がダウンロードする zip の中**にアイコンがあることを確かめる。この組織では共通の
+  スクリプト（`.github` の `templates/verify-app-zip.sh`。zip の AppleDouble も拒否する — 次の項目）を各 GUI リポジトリにそのまま置いて呼ぶ。判定は、
+  最上位の `.app` がちょうど 1 つ・`Info.plist` の `CFBundleIconFile`・`Contents/Resources/<そのファイル>` が項目名の
+  **完全一致**で存在・中身が icns（先頭 4 バイト）。部分一致だと、zip に混ざる AppleDouble の `._AppIcon.icns` を
+  アイコンと取り違える（公開中の 18 本の zip に実際に入っていた）。
+- 既存リポジトリを直すだけでは、新しく作るリポジトリに届かない（今回の欠落は新しいリポジトリで起きた）。
+  組織の健全性検査（check-org 検査 18）が、`.app` を作る Makefile の `verify-release` に呼び出しが無ければ落とす。
+- 検査は、通るべき状態と落ちるべき状態の両方で演習する（`scripts/exercise-app-zip-gate.sh`: 作り物の zip 12 状態と、
+  公開中の zip 19 本）。
+
+### 同梱物のあるパッケージは「サイズ」で真っ先に嘘がばれる
+
+**事象:** GUI アプリに CLI バイナリを同梱するリリースで、`make clean` 直後に
+`make package` を実行したところ、**同梱が黙ってスキップされたまま notarize まで通過**した。
+zip が 1.2MB（正常なら約 10MB）だったことで、アップロード前の検証で気づいた。
+
+**なぜ:** 同梱処理が `[ -x "$CLI_BIN" ]` のような存在チェックで、無ければ警告を出して
+続行する作りだった。`make clean` は素の名前のバイナリを消し、`package` が依存する
+`build-all` はプラットフォーム接尾辞付きの名前しか作らないため、参照先が存在しなかった。
+署名も notarize も「中身が欠けていること」は検出しない。
+
+**適用方法:**
+- **アップロード前に必ずアーカイブを展開し、中身を数える**。同梱物の有無、実行ファイルの
+  `--version`、署名（`spctl --assess`）を実物に対して確認する。
+- 同梱物のサイズは最も安価な健全性指標。桁が変わったら疑う。
+- 依存ステップが「無ければ警告して続行」なら、**リリース経路では失敗させる**方が安全。
+  開発時の利便性のための緩さが、そのままリリース事故になる。
+
+### 別アセットの配布物は、作ることと確かめることを make package と verify-release に入れる — 手順書に書いただけでは毎回飛ぶ
+
+**事象:** MCP サーバーの同梱スキルを、バイナリとは別のリリースアセットで配る決定をした（2026-07）。
+`make package-skill` はあったが、リリースの手順にも `make package` にも組み込まれていなかった。
+実際に付いたのは 2 回だけで、その後の 17 回のリリースにはバイナリしか無かった。リリースから
+スキルを入れた利用者は、サーバーが受け付けなくなった引数を教える古いスキルを使い続けた
+（2026-11 の issue で発覚）。
+
+**なぜ:** バイナリの zip は `verify-release` が必須にしていたが、スキルの zip を必須にする仕組みは
+無かった。文章でしか求めていない手順は、急いでいるリリースで最初に飛ぶ。
+
+**適用方法:**
+- 別アセットは `make package` の前提に入れて、バイナリと一緒に作る。
+- `verify-release` の前提に、それを確かめるターゲットを置き、次の場合に失敗させる。
+  - その版のファイルが無い。
+  - 中身が `git ls-files` の管理下のファイルと一致しない（余計なファイルがある、足りない）。
+    zip の一覧を比べる。
+  - 中身が作業ツリーと違う。展開して `cmp` で比べる。
+  - 版が `-dirty`。未コミットの内容がタグの名前で出ていく。
+- `make install-skill` のような開発者向けの導入も、作った zip を展開して入れる。ソースの木を
+  写すと、パッケージの欠陥が開発者の手元で表に出ない。
+- 手元の検査では、上げたかどうかは確かめられない。AGENTS.md に「バイナリと一緒に上げる」と書き、
+  残る穴として認めておく。
+
+## 版数・公開・手順
+
+### 一度公開したバージョン番号を再利用しない（fix-forward）
 
 **事象:** GitHub Release が存在するタグを削除して貼り直すと、リリースが Draft に戻り
 "Latest" 指定も失われ、手動復旧が必要になった。
@@ -278,7 +405,7 @@ rm -rf $(STAGE) ; \
 - タグを消す前に必ず `gh release list` でリリースの有無を確認する。リリースが無いタグに
   限り貼り直してよい。
 
-## prebuilt-binary Homebrew tap の作法と検証
+### prebuilt-binary Homebrew tap の作法と検証
 
 **事象:** ソースビルドすると Developer ID 署名が剥がれる。tap は署名+notarize 済み
 リリース zip をそのまま入れる prebuilt 方式にする。
@@ -315,7 +442,7 @@ rm -rf $(STAGE) ; \
   **`--appdir` は uninstall には渡せない**（receipt から解決される）。
 - 後片付けは uninstall → untap の順（installed 成果物が残っていると untap が拒否される）。
 
-## tap に push しても、利用者の `brew upgrade` は古い版のままのことがある — 案内は `brew update` から
+### tap に push しても、利用者の `brew upgrade` は古い版のままのことがある — 案内は `brew update` から
 
 **事象:** 自前の tap に cask の新しい版（0.1.0 → 0.1.1）を push した直後、利用者が `brew upgrade --cask <name>` を
 実行すると「Not upgrading <name>, the latest version is already installed」と出た。Homebrew がこの Mac に持つ tap の
@@ -334,88 +461,7 @@ rm -rf $(STAGE) ; \
 - 公開側が正しいかは、tap のリポジトリの内容と、公開した zip の sha256（ダウンロードして計算）で確かめる。
   利用者の Mac の写しが古いことは公開の欠陥ではない。
 
-## GUI の初版がアプリアイコン無しで出た — リリース検査は、公開する zip の中のアイコンを見る
-
-**事象:** 新しいメニューバーアプリ（Swift、`.app` を Makefile で組み立てる）の初版を、アプリアイコン無しで公開した。
-`make verify-release` は公証の印・staple・Gatekeeper・リンクした SDK・版数をすべて確かめて合格し、独立検証も
-指摘しなかった。利用者がインストールした後に気付いた（2026-09-27）。
-
-**なぜ:** 足場を作ったとき、アイコンの生成と `CFBundleIconFile` を入れていなかった。組織の文書の GUI の例には
-アイコンのコピーがあるが、それを確かめる検査がどこにも無い。署名と公証はアイコンが無くても通る。
-メニューバー常駐アプリは Dock に出ないので、開発中にアイコンを見る場面がほとんど無い。
-
-**適用方法:**
-- 足場の段階でアイコンを入れる。元画像は描画スクリプトで作り（net-meter と同じ `scripts/gen-icon.swift` →
-  `assets/AppIcon-1024.png` → `make-icns.sh`）、組み立ては元画像が無ければ失敗させる（警告で続けない）。
-- `verify-release` で、**利用者がダウンロードする zip の中**にアイコンがあることを確かめる。この組織では共通の
-  スクリプト（`.github` の `templates/verify-app-zip.sh`。zip の AppleDouble も拒否する — 次の項目）を各 GUI リポジトリにそのまま置いて呼ぶ。判定は、
-  最上位の `.app` がちょうど 1 つ・`Info.plist` の `CFBundleIconFile`・`Contents/Resources/<そのファイル>` が項目名の
-  **完全一致**で存在・中身が icns（先頭 4 バイト）。部分一致だと、zip に混ざる AppleDouble の `._AppIcon.icns` を
-  アイコンと取り違える（公開中の 18 本の zip に実際に入っていた）。
-- 既存リポジトリを直すだけでは、新しく作るリポジトリに届かない（今回の欠落は新しいリポジトリで起きた）。
-  組織の健全性検査（check-org 検査 18）が、`.app` を作る Makefile の `verify-release` に呼び出しが無ければ落とす。
-- 検査は、通るべき状態と落ちるべき状態の両方で演習する（`scripts/exercise-app-zip-gate.sh`: 作り物の zip 12 状態と、
-  公開中の zip 19 本）。
-
-## `ditto -c -k` は拡張属性を `._` 項目として zip に入れる — `unzip` で展開すると `.app` の封が壊れる
-
-**事象:** GUI の配布 zip を `/usr/bin/ditto -c -k --keepParent X.app X.zip` で作っていた。公開中の 19 本のうち 18 本に
-`._CodeResources`・`._Info.plist`・`._AppIcon.icns` などの `._*` 項目が 9〜21 個入っていた（中身は
-`com.apple.provenance` などの拡張属性）。この zip をコマンドラインの `/usr/bin/unzip` で展開すると `.app` の中に
-`._` ファイルができ、`codesign --verify --deep --strict` も `spctl --assess` も「a sealed resource is missing or invalid」で
-失敗した。Finder・`ditto -x -k`・Homebrew の展開では `._` が拡張属性に戻されるので問題は出ない。署名・公証・staple・
-Gatekeeper の検査（`ditto -x -k` で展開して行っていた）はすべて合格しており、誰も気付かなかった
-（2026-09-27、macOS 27.0、実測）。
-
-**なぜ:** ditto は既定で、拡張属性とリソースフォークを AppleDouble（`._` 項目）として zip に書く（`man ditto` の
-`--norsrc`・`--noextattr`）。`.app` の封は拡張属性ではなくファイル（`_CodeSignature/`、staple された ticket、各 Mach-O の中の
-署名）にあるので、`._` は不要なうえ、`unzip` ではファイルとして封の中に入り込む。
-
-**適用方法:**
-- 配布 zip は `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip` で作る。19 本すべてのアプリを
-  この形で zip し直し、普通の `unzip` で展開して `codesign --verify --deep --strict`・`stapler validate`・
-  `source=Notarized Developer ID` が保たれることを確かめた（実測。1 本は公証から通しで実施）。
-- 「バンドルの署名は拡張属性にある」という説明は `.app` には当てはまらない。この組織の規約もそう書いていて、
-  それが `ditto -c -k` を勧める理由になっていた。
-- リリース検査は、公開する zip に `._*` と `__MACOSX/` が無いことを確かめる（組織では `verify-app-zip.sh`、
-  作る側の行は check-org 検査 19）。展開の検査を `ditto -x -k` だけで行うと、この欠陥は見えない。
-- 同じ種類の問題は Linux の tar にもある（`COPYFILE_DISABLE=1` と `--no-xattrs`。build-and-packaging の項）。
-  Info-ZIP の `zip` で作った CLI の zip は、抜き取った 8 本とも `._` が 0 件だった。
-
-## dist/ のバイナリ再署名は、そこから起動中の常駐プロセスを殺す
-
-**事象:** `make build` が `dist/<binary>` を上書き + `codesign --force` で再署名した結果、
-そのバイナリから起動していた常駐 daemon が macOS に kill され、データ記録が 30 分以上
-無言で欠落した。
-
-**なぜ:** 実行中バイナリのコード署名が変わると macOS がプロセスを落とす。LaunchAgent 未登録
-だと `KeepAlive` による自動復帰も効かない。
-
-**適用方法:**
-- 常駐 daemon は `dist/` からではなく **`.app` 同梱パス**（`Contents/Resources/<binary>`）から
-  起動させる。`make build` の影響を受けず、LaunchAgent の `KeepAlive` で復帰する。
-- ビルドを伴う作業の前後で daemon の status（最終サンプル時刻等）を確認する。
-  長い欠落は自分のビルドが落とした可能性を疑う。
-
-## 同梱物のあるパッケージは「サイズ」で真っ先に嘘がばれる
-
-**事象:** GUI アプリに CLI バイナリを同梱するリリースで、`make clean` 直後に
-`make package` を実行したところ、**同梱が黙ってスキップされたまま notarize まで通過**した。
-zip が 1.2MB（正常なら約 10MB）だったことで、アップロード前の検証で気づいた。
-
-**なぜ:** 同梱処理が `[ -x "$CLI_BIN" ]` のような存在チェックで、無ければ警告を出して
-続行する作りだった。`make clean` は素の名前のバイナリを消し、`package` が依存する
-`build-all` はプラットフォーム接尾辞付きの名前しか作らないため、参照先が存在しなかった。
-署名も notarize も「中身が欠けていること」は検出しない。
-
-**適用方法:**
-- **アップロード前に必ずアーカイブを展開し、中身を数える**。同梱物の有無、実行ファイルの
-  `--version`、署名（`spctl --assess`）を実物に対して確認する。
-- 同梱物のサイズは最も安価な健全性指標。桁が変わったら疑う。
-- 依存ステップが「無ければ警告して続行」なら、**リリース経路では失敗させる**方が安全。
-  開発時の利便性のための緩さが、そのままリリース事故になる。
-
-## 同梱するバイナリの版数文字列は明示的に固定する
+### 同梱するバイナリの版数文字列は明示的に固定する
 
 **事象:** タグ後に Makefile の1行だけ直したところ、`git describe` が
 `v0.1.0-1-g<sha>` を返し、**同梱バイナリの版数表示がリリース版でない文字列**になった。
@@ -427,7 +473,7 @@ zip が 1.2MB（正常なら約 10MB）だったことで、アップロード�
 コンパイル対象に差分が無いことを `git diff --stat <tag>..HEAD` で確認したうえで、
 リリース版の文字列を名乗らせる。
 
-## scaffold 時に書いた状態記述は、リリースが更新してくれない
+### scaffold 時に書いた状態記述は、リリースが更新してくれない
 
 **事象:** 「プレリリース」「未リリース」と書かれた README を持つツールが 3 本見つかった。
 いずれも実際にはリリース済みで、うち 1 本は **4 回リリースし、Homebrew tap にも載り、
@@ -451,8 +497,7 @@ zip が 1.2MB（正常なら約 10MB）だったことで、アップロード�
   `未リリース|プレリリース|not yet released` が含まれる」は grep + `gh release list` で
   判定でき、組織横断チェックに足せる
 
-
-## LICENSE への追記は分類を壊し、通知の分離は配布物への同梱と対で行う
+### LICENSE への追記は分類を壊し、通知の分離は配布物への同梱と対で行う
 
 **事象:** org の 5 リポが GitHub 上で「Other」ライセンスと表示されていた。中身は 5 つとも
 MIT で、LICENSE の末尾に第三者帰属が追記されていたためテンプレート一致が壊れていただけ
@@ -482,7 +527,7 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   参考にし、正しさは条件（配布物に入るか）で判定する。
 - 帰属文は貼り付けで増える。**本文に他プロジェクト名が残っていないか**を確認する。
 
-## リリース中に別エージェントがビルドした: まず凍結し、公開物の出所を証明する — 比較のための再ビルドはしない
+### リリース中に別エージェントがビルドした: まず凍結し、公開物の出所を証明する — 比較のための再ビルドはしない
 
 **事象:** あるセッションが gem-agent をリリースしている最中（2026-09-13）、別のエージェントが
 同じ作業コピー（と同居リポジトリ）で `make build` を実行し、ad-hoc 署名の `dist/<name>` を
@@ -519,23 +564,51 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   そのものが防壁（`make clean && make package`、`verify-release` のマーカー鮮度ゲート）で、
   `go version -m` と notary ログが事後にそれを証明する監査。
 
-## Hardened Runtime で署名した CLI は、子プロセスへ `DYLD_*` を渡さない
+### 多数のリポジトリを続けてリリースするスクリプトは、各リポの手順を確かめ、各段を再実行できる形にする
 
-**事象:** Developer ID + Hardened Runtime で署名した timeout を通してコマンドを起動すると、`DYLD_LIBRARY_PATH` だけが
-子の環境から消えていた（他の変数は届く。macOS 27 で実測）。macOS 標準の `/usr/bin/env`・`nice`・`nohup` も、
-同じく `DYLD_*` を渡さなかった（実測）。
+**事象:** 同じ変更を入れた 24 リポジトリを、1 本のスクリプトで順にリリースした（2026-11）。止まったのは 3 回。
+(1) main の push の直後にタグを push したら、`! [remote rejected] … (missing necessary objects)` で
+拒否された。main は届いていて、タグだけが届いていなかった。(2) lite-rag はリリース用の成果物を
+`make package` ではなく `make dist` で作るリポジトリで、`No rule to make target 'package'` で止まった。
+(3) zsh で `for a in $assets` と書いたため、3 つのファイル名が 1 つの名前として扱われ、
+アップロードが失敗した（shell-scripting の「zsh の変数展開は bash と別物」の型）。
 
-**なぜ:** macOS は制限付き（Hardened Runtime・SIP 保護）のプロセスの環境から `DYLD_*` を取り除き、その環境が子へ
-受け継がれる（振る舞いは実測。仕組みの一次資料は未確認）。entitlement
-`com.apple.security.cs.allow-dyld-environment-variables` を付ければ通るが、そのプロセス自身への
-`DYLD_INSERT_LIBRARIES` も許すことになる。
+**なぜ:** リリースの手順はリポジトリごとに少しずつ違う。そして一括処理は、途中で止まったところから
+やり直せなければ、止まるたびに手で状態を確かめることになる。GitHub がタグの参照を受け付けるのは、
+直前の push のオブジェクトが行き渡ってからで、タイミングによっては拒否される。
 
 **適用方法:**
-- 子を起動する署名済みの CLI（ラッパー・スーパーバイザ）では、`DYLD_*` が子へ届かないことを README の限界に書く。
-- entitlement を付けるかは、注入面の拡大と引き換えに判断する（timeout は付けず、macOS 標準のラッパーと同じにした）。
-- 環境の受け渡しに関わる振る舞いは、配布ビルド（署名済み）で確かめる。
+- 流す前に、各リポの Makefile にスクリプトが呼ぶターゲット（`package` / `verify-release` / `brew`）が
+  あるかを機械的に確かめる。無いものは別の手順に回す。
+- 各段を冪等にする: 既にあるタグは打たない、タグの push は数回再試行する、既にあるリリースは作らない。
+  止まったら、その段から再開できる。
+- 最初の失敗で止め、どのリポのどの段かを 1 行で出す。成功は各リポで「DONE」と出す。
+- スクリプトは bash で書いて bash で実行する（zsh で単語分割に頼らない）。
+- 同じ tap など共有の書き込み先を使う処理（`make brew`）は並行させない。
 
-## govulncheck で判定すべきは、成果物をビルドしたツールチェインである
+### 「アンカー A から最初の B まで」のスクリプト編集は、B がその節の中にあることを確かめる — そしてリリースのコマンドを空のファイルで走らせない
+
+**事象:** 変更履歴の未リリース部分をスクリプトで書き直していた（「Unreleased の見出しから最初の Documentation の
+見出しまでを置き換える」）。未リリース部分には Documentation の見出しが無かった。ファイル中の最初のそれは、
+既にリリース済みの 1 つ前の版のもので、編集はその版の見出しと 2 つの節を消した。木はその状態でコミットされ、
+タグが打たれ、push された。分かったのは 1 手後で、変更履歴からリリースの本文を切り出すスクリプトが、前の版の
+見出しを見つけられずに失敗したときだった。そのスクリプトは別の行で、次のコマンドにつながっていなかったので、
+次のコマンドは本文が空のリリースを作った。
+
+**なぜ:** 2 つの文字列アンカーの間の範囲は、2 つ目のアンカーが意図した範囲の中で一意である分しか狭くならない。
+「A の後の最初の出現」は、黙って次の節に届く。差分の行数はそれを示さない — 編集は、想定と同じくらいの行を消し、
+足していた。そして複数行のシェルの呼び出しは、行をつながない限り、失敗した行の後も続く。
+
+**適用方法:**
+- 範囲の編集は、同じ階層の次の見出しで終えるか、書き込む前に、2 つのアンカーの間に見出しが無いことを確かめる。
+  変更履歴を編集した後は、版の見出しを一覧してタグと比べる。
+- リリースの本文はファイルに生成し、空でないことを確かめ（`test -s`）、その確認にリリースのコマンドをつなぐ。
+- 公開したタグは、指していたものを保つ。何が起きたかを述べるコミットで前に向かって直し、リリースの本文は
+  タグの打ち直しではなく編集で直す。
+
+## 依存の脆弱性
+
+### govulncheck で判定すべきは、成果物をビルドしたツールチェインである
 
 **事象:** ホストを Go 1.27 に上げた後、wails v2.12.0 の `wails build` が無改変のツリーで
 `internal error: package "os" without types was imported from ...` で失敗した。Makefile で `GOTOOLCHAIN=go1.26.4`
@@ -558,53 +631,7 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
 - アップロード前に、**すべての**プラットフォームの成果物で `go version <binary>` を読む。クロスビルド用の
   コンテナはホストのビルドと別のパッチにいることがある。
 
-## 多数のリポジトリを続けてリリースするスクリプトは、各リポの手順を確かめ、各段を再実行できる形にする
-
-**事象:** 同じ変更を入れた 24 リポジトリを、1 本のスクリプトで順にリリースした（2026-11）。止まったのは 3 回。
-(1) main の push の直後にタグを push したら、`! [remote rejected] … (missing necessary objects)` で
-拒否された。main は届いていて、タグだけが届いていなかった。(2) lite-rag はリリース用の成果物を
-`make package` ではなく `make dist` で作るリポジトリで、`No rule to make target 'package'` で止まった。
-(3) zsh で `for a in $assets` と書いたため、3 つのファイル名が 1 つの名前として扱われ、
-アップロードが失敗した（shell-scripting の「zsh の変数展開は bash と別物」の型）。
-
-**なぜ:** リリースの手順はリポジトリごとに少しずつ違う。そして一括処理は、途中で止まったところから
-やり直せなければ、止まるたびに手で状態を確かめることになる。GitHub がタグの参照を受け付けるのは、
-直前の push のオブジェクトが行き渡ってからで、タイミングによっては拒否される。
-
-**適用方法:**
-- 流す前に、各リポの Makefile にスクリプトが呼ぶターゲット（`package` / `verify-release` / `brew`）が
-  あるかを機械的に確かめる。無いものは別の手順に回す。
-- 各段を冪等にする: 既にあるタグは打たない、タグの push は数回再試行する、既にあるリリースは作らない。
-  止まったら、その段から再開できる。
-- 最初の失敗で止め、どのリポのどの段かを 1 行で出す。成功は各リポで「DONE」と出す。
-- スクリプトは bash で書いて bash で実行する（zsh で単語分割に頼らない）。
-- 同じ tap など共有の書き込み先を使う処理（`make brew`）は並行させない。
-
-## 別アセットの配布物は、作ることと確かめることを make package と verify-release に入れる — 手順書に書いただけでは毎回飛ぶ
-
-**事象:** MCP サーバーの同梱スキルを、バイナリとは別のリリースアセットで配る決定をした（2026-07）。
-`make package-skill` はあったが、リリースの手順にも `make package` にも組み込まれていなかった。
-実際に付いたのは 2 回だけで、その後の 17 回のリリースにはバイナリしか無かった。リリースから
-スキルを入れた利用者は、サーバーが受け付けなくなった引数を教える古いスキルを使い続けた
-（2026-11 の issue で発覚）。
-
-**なぜ:** バイナリの zip は `verify-release` が必須にしていたが、スキルの zip を必須にする仕組みは
-無かった。文章でしか求めていない手順は、急いでいるリリースで最初に飛ぶ。
-
-**適用方法:**
-- 別アセットは `make package` の前提に入れて、バイナリと一緒に作る。
-- `verify-release` の前提に、それを確かめるターゲットを置き、次の場合に失敗させる。
-  - その版のファイルが無い。
-  - 中身が `git ls-files` の管理下のファイルと一致しない（余計なファイルがある、足りない）。
-    zip の一覧を比べる。
-  - 中身が作業ツリーと違う。展開して `cmp` で比べる。
-  - 版が `-dirty`。未コミットの内容がタグの名前で出ていく。
-- `make install-skill` のような開発者向けの導入も、作った zip を展開して入れる。ソースの木を
-  写すと、パッケージの欠陥が開発者の手元で表に出ない。
-- 手元の検査では、上げたかどうかは確かめられない。AGENTS.md に「バイナリと一緒に上げる」と書き、
-  残る穴として認めておく。
-
-## 脆弱性スキャナの「到達する」は静的な呼び出しグラフである — 何が露出していたかを書く前に、どの実装が動いているかを実測し、スキャンをパッケージの前提にする
+### 脆弱性スキャナの「到達する」は静的な呼び出しグラフである — 何が露出していたかを書く前に、どの実装が動いているかを実測し、スキャンをパッケージの前提にする
 
 **事象:** あるリリースが、`golang.org/x/net` の HTTP/2 の勧告 5 件を抱えたまま出ていた。`govulncheck` は
 「コードが影響を受ける」と報告し、ツールの API への接続を通る経路を示していた。修正リリースの文面は、最初
@@ -630,7 +657,7 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   データベースが動くので、リリース時には許容でき、コミットのたびでは雑音になる。
 - それでもモジュールは更新する。影響を受けるコードをビルドから外すほうが、使っていないと論じるより安い。
 
-## x/net の HTTP/2 の勧告を直すのがモジュールかツールチェーンかは、x/net の版と、誰がトランスポートを作ったかで変わる — そして横断の検査は、ソースの木ではなく公開したバイナリを見る
+### x/net の HTTP/2 の勧告を直すのがモジュールかツールチェーンかは、x/net の版と、誰がトランスポートを作ったかで変わる — そして横断の検査は、ソースの木ではなく公開したバイナリを見る
 
 **事象:** あるツールの HTTP/2 の勧告が「ツールチェーン側の話」だと分かったあと（前の項）、同じ SDK を使う別の
 7 ツールにも同じ勧告が見つかった。同じ結論は成り立たなかった（2026-11、81 リポジトリの横断検査）。各ツールと
@@ -692,23 +719,3 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   ホストと共有していると、同じ名前の場所にホストのバイナリがすでにあり、make は別 OS 用のそのファイルを
   「最新のツール」と見なす。ファイルターゲットにしておくと、検証もできる: そのパスに身代わりをマウント
   すれば、インストールは走らない。
-
-## 「アンカー A から最初の B まで」のスクリプト編集は、B がその節の中にあることを確かめる — そしてリリースのコマンドを空のファイルで走らせない
-
-**事象:** 変更履歴の未リリース部分をスクリプトで書き直していた（「Unreleased の見出しから最初の Documentation の
-見出しまでを置き換える」）。未リリース部分には Documentation の見出しが無かった。ファイル中の最初のそれは、
-既にリリース済みの 1 つ前の版のもので、編集はその版の見出しと 2 つの節を消した。木はその状態でコミットされ、
-タグが打たれ、push された。分かったのは 1 手後で、変更履歴からリリースの本文を切り出すスクリプトが、前の版の
-見出しを見つけられずに失敗したときだった。そのスクリプトは別の行で、次のコマンドにつながっていなかったので、
-次のコマンドは本文が空のリリースを作った。
-
-**なぜ:** 2 つの文字列アンカーの間の範囲は、2 つ目のアンカーが意図した範囲の中で一意である分しか狭くならない。
-「A の後の最初の出現」は、黙って次の節に届く。差分の行数はそれを示さない — 編集は、想定と同じくらいの行を消し、
-足していた。そして複数行のシェルの呼び出しは、行をつながない限り、失敗した行の後も続く。
-
-**適用方法:**
-- 範囲の編集は、同じ階層の次の見出しで終えるか、書き込む前に、2 つのアンカーの間に見出しが無いことを確かめる。
-  変更履歴を編集した後は、版の見出しを一覧してタグと比べる。
-- リリースの本文はファイルに生成し、空でないことを確かめ（`test -s`）、その確認にリリースのコマンドをつなぐ。
-- 公開したタグは、指していたものを保つ。何が起きたかを述べるコミットで前に向かって直し、リリースの本文は
-  タグの打ち直しではなく編集で直す。

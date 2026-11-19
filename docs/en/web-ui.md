@@ -5,7 +5,9 @@ report generation. Each entry follows **symptom → why → how to apply**.
 
 ---
 
-## Thin visual elements need an extended hit area for hover
+## CSS & layout
+
+### Thin visual elements need an extended hit area for hover
 
 **Symptom:** A 2 px bar with `pointer-events: none` never showed its hover
 tooltip.
@@ -22,7 +24,7 @@ tooltip.
 4. Signal affordance with `cursor: help`.
 5. Give tooltip `::after` elements enough `z-index` to overlay rows below.
 
-## In row-transformed virtual tables, cell z-index only works within the row
+### In row-transformed virtual tables, cell z-index only works within the row
 
 **Symptom:** In a virtualized table (rows positioned with
 `transform: translateY()`), no amount of `z-index` on an auto-growing cell editor
@@ -41,7 +43,7 @@ transparent-background issue; it's actually paint order.
 - Debugging lesson: "elements below show through" is not necessarily
   transparency — a later sibling stacking context painting on top looks the same.
 
-## Undefined CSS variables fail silently and break UI
+### Undefined CSS variables fail silently and break UI
 
 **Symptom:** New styles referenced `var(--accent-primary)` which no theme defined.
 It happened to look fine in dark theme, but in light theme "the button disappears
@@ -58,7 +60,7 @@ after clicking".
   right" is common).
 - Prefer existing theme tokens over inventing new variables.
 
-## CSS notes for self-contained HTML reports
+### CSS notes for self-contained HTML reports
 
 **Symptom:** Generating a CDN-free single-file HTML report took 7 layout-bug
 iterations. Recurring issues:

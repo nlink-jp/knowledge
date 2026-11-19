@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-11-19 (every file now has sections)
+
+The eight files that had no sections, and wrote every entry as `##`, now
+have sections, with entries as `###` as AGENTS.md's entry format asks. Every
+file in `docs/` now has the same shape. No text changed — each file was
+checked line by line against its previous version, and ja and en against
+each other; each entry keeps its order inside its section.
+
+- **testing** (88 entries): Real data, E2E & real boundaries · Test tooling &
+  runs · Test design · Measurement, observation & evidence · GUI, terminals &
+  drawing · Gates & verifying the verifiers · Porting & compatibility.
+- **release-engineering** (28): Signing & notarization · Verifying what is
+  shipped · Versions, publishing & procedure · Dependency vulnerabilities.
+- **embedded** (29): M5Stack & peripherals · Build, flashing & tools · BLE ·
+  ESP32 resources & crypto.
+- **shell-scripting** (18): Shell dialects · Syntax & exit-status pitfalls ·
+  Operational scripts & checks · git pitfalls.
+- **containers-and-infra** (16): Podman & containers · Virtual machines ·
+  macOS system (launchd, volumes) · Operations (logs, SSH, ports, config).
+- **build-and-packaging** (11): Cross-compiling & cgo · Pinning & patching
+  dependencies · Build environment & artifacts.
+- **graphics-and-fonts** (6): Fonts · Typesetting.
+- **web-ui** (4): CSS & layout.
+
 ## 2026-11-19 (four more files: entries back under their sections)
 
 Same defect as llm-integration earlier the same day: entries appended at

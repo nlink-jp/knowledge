@@ -5,7 +5,9 @@ M5Stack device development lessons. Each entry follows
 
 ---
 
-## Migrating from legacy M5Stack libraries to M5Unified
+## M5Stack & peripherals
+
+### Migrating from legacy M5Stack libraries to M5Unified
 
 **Symptom:** The legacy libraries (M5Stack.h / M5Core2.h) are incompatible with
 ESP32 board package v3.x (missing `rom/miniz.h`). M5Unified is the successor.
@@ -34,7 +36,7 @@ ESP32 board package v3.x (missing `rom/miniz.h`). M5Unified is the successor.
   RTC writes apply the offset twice. Always fetch NTP as UTC via
   `configTime(0,0,...)` and apply the offset at display time only.
 
-## M5 GPS Module v2.1 (AT6668) defaults to 115200 baud
+### M5 GPS Module v2.1 (AT6668) defaults to 115200 baud
 
 **Symptom:** Most online material assumes the older AT6558 (9600 baud).
 Connecting the v2.1 AT6668 at 9600 yields binary-looking garbage (= the
@@ -49,7 +51,7 @@ baud-mismatch tell).
   `TinyGPSCustom` on GSV field 3. Multi-constellation uses the GN prefix, with
   GSV split per GP/BD/GL.
 
-## The M5Module-GNSS library cannot coexist with M5Unified
+### The M5Module-GNSS library cannot coexist with M5Unified
 
 **Symptom:** M5Module-GNSS (official) embeds the Bosch BMI270 API, which
 symbol-clashes with M5Unified's IMU driver and hangs `M5.begin()`. It also uses
@@ -60,7 +62,79 @@ driver.
 (BMI270); read BMM150 via BMI270's AUX register passthrough over Wire; use
 BMP280 with its standalone library.
 
-## With the ESP32 Arduino core, `--output-dir` writes build output with absolute paths into the sketch folder
+### On macOS, flash and read an M5Stack BASIC v2.7 at 230400 baud
+
+**Symptom:** The Arduino `m5stack_core` board definition's default upload speed
+is its first menu entry, 1500000 baud. With the BASIC v2.7's USB serial chip
+(WCH CH9102F, `1a86:55d4`, macOS's own driver, through a Thunderbolt hub),
+esptool stopped part-way at 921600 baud with `The chip stopped responding` and
+at 460800 baud with `Invalid head of packet`. At 230400 baud a 4 MB read and a
+firmware write both completed with matching hashes (measured 2026-09-24 with
+esptool 5.2.0, on this one setup).
+
+**How to apply:**
+- State the speed in the Makefile, e.g.
+  `arduino-cli upload --board-options UploadSpeed=230400`, instead of relying on
+  the default. Raise it only after measuring.
+- Before overwriting a device's firmware, take a copy with `esptool read-flash`.
+  Read the partition table first with `read-flash 0x8000 0xC00` (decode it with
+  `gen_esp32part.py`) and copy only the range in use — the first 4 MB for the
+  standard 4 MB layout — which is much faster. The copy includes NVS, which can
+  hold Wi-Fi settings; handle it accordingly.
+
+### The M5Stack BASIC's backlight does not dim at 44.1 kHz PWM — use 1 kHz, 14 bits and a 2.2 power curve
+
+**Symptom:** Lowering the brightness with M5Unified/M5GFX's
+`M5.Display.setBrightness()` on a BASIC v2.7, 1 % (2 of 255) was still bright
+enough to read and 50 % was quite bright: there was no dark end.
+
+**Why:** On this board M5GFX drives the backlight pin (GPIO32) at 44.1 kHz with
+9 bits and no offset (`_set_pwm_backlight(GPIO_NUM_32, 7, 44100)`). Moved to
+1 kHz and 14 bits, the same channel reached a dark end. Pulse width is not the
+explanation (1 % is a 0.18 µs pulse at 44.1 kHz; one count at 1 kHz is 0.06 µs,
+and that looked dim). A likely cause, not measured: each pulse lights the
+backlight a little longer than its width, and at 44 times the pulse rate that
+extra adds up.
+
+**How to apply:**
+- Right after `M5.begin()`, move the channel M5GFX attached with
+  `ledcChangeFrequency(32, 1000, 14)` (Arduino-ESP32 3.x public API: no second
+  channel, no change to M5GFX). Write it with `ledcWrite(32, duty)` from then on,
+  and never call `M5.Display.setBrightness()` again: it writes 9-bit duties.
+- Use a duty of `(percent/100)^2.2` of full (16383), rounded (1 % is one
+  count). On the device (2026-09-25, one unit, one person's judgement)
+  1 % was barely visible, the steps looked about even, and there was no flicker
+  and no sound.
+- A curve alone at 44.1 kHz does not help: below 1 % there is one step left.
+  Suspect the frequency first.
+- Check the board (`M5.getBoard()`) and `ledcChangeFrequency`'s return value,
+  and fall back to M5GFX's linear mapping when either fails. A channel that could
+  not be moved stays 9-bit, so `setBrightness()` is right in that case only
+  (`ledcChangeFrequency` returns 0 on failure and leaves the resolution alone —
+  arduino-esp32 3.3.8 source).
+- For a desk display, **25–75 %** on this curve was the usable range
+  (2026-10-05, m5-system-panel's five levels; one unit, one person's judgement):
+  10 % was too dark even in a dark room and 100 % too bright. Levels at
+  25 / 40 / 55 / 65 / 75 % were judged "all right, evenly spaced". Do not make
+  full on the top level.
+
+### With M5Unified's defaults the BASIC's speaker pops at boot — set `internal_spk = false` when no sound is used
+
+**Symptom:** Firmware that never plays sound sometimes made the M5Stack BASIC's speaker pop at boot (power-on, and the
+restart after flashing). With `internal_spk = false` in `M5.config()` passed to `M5.begin(config)`, five power cycles
+made no pop (2026-09-27, M5Unified 0.2.14, one unit, judged by ear by the maintainer).
+
+**Why:** With the speaker enabled (the default) on the BASIC, M5Unified drives the speaker pin (GPIO25) low in
+`begin()` (the `board_M5Stack` speaker set-up in M5Unified.cpp; read in the source). A step on a pin that was floating
+reaching the amplifier input is the likely mechanism (inferred).
+
+**How to apply:**
+- Firmware without sound: `auto c = M5.config(); c.internal_spk = false; M5.begin(c);`.
+- For something that happens "sometimes", count after the fix (e.g. five power cycles).
+
+## Build, flashing & tools
+
+### With the ESP32 Arduino core, `--output-dir` writes build output with absolute paths into the sketch folder
 
 **Symptom:** Building a sketch for the esp32:esp32 core (measured on 3.3.8) with
 `arduino-cli compile --output-dir <dir>` also creates `<sketch>/build/<fqbn>/`,
@@ -84,7 +158,7 @@ the copy is made by the core's hooks, not by arduino-cli.
   Stop it being created rather than hiding it in `.gitignore` (which also keeps
   to the convention that `dist/` is the only place for build output).
 
-## To pass a string macro through arduino-cli's `--build-property`, wrap the whole flag in single quotes
+### To pass a string macro through arduino-cli's `--build-property`, wrap the whole flag in single quotes
 
 **Symptom:** Embedding a version in the firmware,
 - `compiler.cpp.extra_flags=-DFW_VERSION=\"v1\"` reaches gcc with the
@@ -121,27 +195,7 @@ arduino-cli 1.5.1).
     matched zero lines (2026-09-27, esp32 core 3.3.8, measured). Keep one longer string that contains the version
     (a boot banner, say) for this.
 
-## On macOS, flash and read an M5Stack BASIC v2.7 at 230400 baud
-
-**Symptom:** The Arduino `m5stack_core` board definition's default upload speed
-is its first menu entry, 1500000 baud. With the BASIC v2.7's USB serial chip
-(WCH CH9102F, `1a86:55d4`, macOS's own driver, through a Thunderbolt hub),
-esptool stopped part-way at 921600 baud with `The chip stopped responding` and
-at 460800 baud with `Invalid head of packet`. At 230400 baud a 4 MB read and a
-firmware write both completed with matching hashes (measured 2026-09-24 with
-esptool 5.2.0, on this one setup).
-
-**How to apply:**
-- State the speed in the Makefile, e.g.
-  `arduino-cli upload --board-options UploadSpeed=230400`, instead of relying on
-  the default. Raise it only after measuring.
-- Before overwriting a device's firmware, take a copy with `esptool read-flash`.
-  Read the partition table first with `read-flash 0x8000 0xC00` (decode it with
-  `gen_esp32part.py`) and copy only the range in use — the first 4 MB for the
-  standard 4 MB layout — which is much faster. The copy includes NVS, which can
-  hold Wi-Fi settings; handle it accordingly.
-
-## esptool 5 needs Python 3.10 or later — pip with macOS's bundled Python installs 4.x
+### esptool 5 needs Python 3.10 or later — pip with macOS's bundled Python installs 4.x
 
 **Symptom:** A user-facing flashing guide nearly said `python3 -m pip install esptool`. On macOS 27.0,
 `/usr/bin/python3` is 3.9.6 (measured). PyPI's metadata gives `requires_python` `>=3.10` for esptool 5.0.0 onwards
@@ -156,7 +210,34 @@ written with 5.x commands (hyphenated names such as `write-flash`) then does not
   2026-09-27). With pip, use a virtual environment on Python 3.10 or later.
 - Add a step that checks `esptool version` reports 5.x, and state the major version the guide assumes.
 
-## To be a BLE keyboard (HID over GATT) on macOS, make the HID reads require encryption
+### Templates in an `.ino` file are broken by the Arduino preprocessor
+
+**Symptom:** A template function returning an array's length, written in a test sketch's `.ino`, failed to compile
+with `'N' was not declared in this scope` (2026-09-26, arduino-cli 1.5.1, esp32 core 3.3.8, measured).
+
+**Why:** The Arduino build generates forward declarations for the functions in `.ino` files; templates are not handled
+correctly by it (inferred from the error and from a macro compiling where the template did not).
+
+**How to apply:** No templates in `.ino` files. Use a macro such as
+`#define COUNT(a) (sizeof(a) / sizeof((a)[0]))`, or put templates in `.cpp`/`.h` files.
+
+### `arduino-cli monitor` exits as soon as its stdin closes — a capture tool keeps stdin open
+
+**Symptom:** Started from a script to read on-device test results, `arduino-cli monitor -p <port> --config
+baudrate=115200 --quiet` exited at once with no output (also with `< /dev/null`). The first attempt had worked, so it
+looked like timing (2026-09-26, arduino-cli 1.5.1, measured).
+
+**Why:** The monitor exits when its input reaches EOF (as observed; the source was not read). A closed parent stdin or
+`/dev/null` is EOF immediately.
+
+**How to apply:**
+- Start it with stdin as an open pipe (in Python, `stdin=subprocess.PIPE`), read for a fixed time, then terminate it.
+- Opening the port reboots the ESP32 (the ROM's boot messages come first, garbled at another baud rate). A test that
+  repeats its result at an interval can be read whenever the port is opened.
+
+## BLE
+
+### To be a BLE keyboard (HID over GATT) on macOS, make the HID reads require encryption
 
 **Symptom:** An ESP32 HID keyboard (the BLE library bundled with Arduino-ESP32
 3.3.8), paired with Passkey Entry. On macOS 27.0 the pairing succeeded and the
@@ -181,7 +262,7 @@ drops the device from its auto-connect list. Read it with
 - Once the HID device existed, a reboot of the device was followed by an
   automatic reconnection and re-encryption within 1–2 s.
 
-## macOS sets the link of a BLE HID device itself — writes to the peripheral go faster when it notifies while receiving
+### macOS sets the link of a BLE HID device itself — writes to the peripheral go faster when it notifies while receiving
 
 **Symptom:** Sending data from an app with write-without-response to an ESP32
 that macOS 27.0 held as a BLE keyboard gave about 0.28 KB/s.
@@ -209,7 +290,7 @@ nothing to send.
   measure with a device that asks for nothing. A change of parameters that goes
   unnoticed makes the results unexplainable (it happened in the first attempt).
 
-## A CoreBluetooth app can use a custom service of a BLE device the system holds as a keyboard
+### A CoreBluetooth app can use a custom service of a BLE device the system holds as a keyboard
 
 **Symptom:** macOS itself holds the device's BLE connection as an HID keyboard;
 an app needed to read and write a custom GATT service on the same device.
@@ -226,7 +307,7 @@ system's link and read and wrote the MITM-encrypted custom characteristics (42 o
   only the Bluetooth permission. That permission is per app, so run the code as
   an .app, not as a bare CLI binary.
 
-## A bonded Mac remembers the GATT layout — Bluedroid did not send Service Changed
+### A bonded Mac remembers the GATT layout — Bluedroid did not send Service Changed
 
 **Symptom:** A firmware update added a notify property to a custom
 characteristic; the bonded Mac still saw the old layout (read only).
@@ -256,7 +337,7 @@ Since the device's stack never sent it, what macOS would do with one is unknown.
   on its second boot. Removal completes asynchronously; wait for the list to
   empty.
 
-## With Arduino-ESP32 and BLE only, release the Classic controller memory first
+### With Arduino-ESP32 and BLE only, release the Classic controller memory first
 
 **Symptom:** On an ESP32 without PSRAM (M5Stack BASIC v2.7), BLE HID, a custom
 service and screen drawing together leave little heap.
@@ -272,7 +353,7 @@ and BLE).
 - Holding a full-screen compressed image (67 KB) in RAM still took free heap
   down to 22,748 B. Decode large payloads as they arrive.
 
-## The Arduino-ESP32 BLE library's `notify()` sends to every connected peer, without checking encryption
+### The Arduino-ESP32 BLE library's `notify()` sends to every connected peer, without checking encryption
 
 **Symptom:** With a BLE keyboard (HID over GATT) that sends input reports with
 `notify()`, a button pressed while an unpaired peer is connected can send the
@@ -291,7 +372,7 @@ the stack itself holds them back on an unencrypted link was not checked.
   event for the bonded address until it disconnects. The library restarts
   advertising only after a disconnect, so there is one connection at a time.
 
-## The Arduino-ESP32 BLE library stores every CCCD write in NVS, whoever wrote it
+### The Arduino-ESP32 BLE library stores every CCCD write in NVS, whoever wrote it
 
 **Symptom:** A peer that never pairs still adds NVS entries by writing a
 subscription (CCCD).
@@ -314,7 +395,7 @@ calls it.
   them open did not hold on macOS).
 - When erasing a bond, always call `deleteAllPersistedValues()` too.
 
-## Bluedroid deletes the bond of a peer whose pairing or encryption fails
+### Bluedroid deletes the bond of a peer whose pairing or encryption fails
 
 **Symptom:** Even on a bonded device, a failed pairing or encryption with a
 peer can remove that peer's bond.
@@ -336,7 +417,7 @@ make the device drop the bond (an inference).
   never called (next entry; measured on the device). Refuse as the next entry
   says.
 
-## The Arduino-ESP32 BLE library stores a written value before `onWrite`, and always accepts the write
+### The Arduino-ESP32 BLE library stores a written value before `onWrite`, and always accepts the write
 
 **Symptom:** After an invalid value is written to a readable and writable
 characteristic, a read returns the written value even though the device refused
@@ -352,7 +433,7 @@ cannot return an ATT error.
 - For a readable and writable characteristic, have the main loop set the value
   back to the stored content after each write, before reporting the outcome.
 
-## Writes without response from macOS to an ESP32 (Bluedroid) are lost at lengths that leave a 1-byte last fragment
+### Writes without response from macOS to an ESP32 (Bluedroid) are lost at lengths that leave a 1-byte last fragment
 
 **Symptom:** Sending data from CoreBluetooth on macOS 27 to an ESP32 held as a
 BLE keyboard (Arduino-ESP32 3.3.8, Bluedroid) with writes without response,
@@ -377,7 +458,7 @@ it was not established.
 - It looks like "it stalls sometimes", so recognising a length rule takes time:
   log the length of the stalled write, and confirm by sending each length once.
 
-## When a BLE device notifies its status, hold back on a full transmit queue, and keep going for a while after receiving
+### When a BLE device notifies its status, hold back on a full transmit queue, and keep going for a while after receiving
 
 **Symptom:** With an ESP32 notifying its status every 15 ms while receiving,
 macOS dropped the link every 1.5–2.5 minutes (reason 0x13 on the device). Once
@@ -406,7 +487,7 @@ that was fixed, transfers fell to about 0.2 KB/s.
 - Have the host read the status after 1.5 s without a notification, so a held
   back notification costs nothing.
 
-## A BLE keyboard's PnP ID: macOS takes a new one on reconnection and keys the keyboard type by it
+### A BLE keyboard's PnP ID: macOS takes a new one on reconnection and keys the keyboard type by it
 
 **Symptom:** On an ESP32 BLE keyboard (Arduino-ESP32 3.3.8's bundled BLE
 library), the PnP ID was changed from a placeholder to real values. Flashed with
@@ -443,43 +524,7 @@ Keyboard Setup Assistant.
   the GATT layout may still be kept from pairing: treat changing them as needing
   a new pairing.
 
-## The M5Stack BASIC's backlight does not dim at 44.1 kHz PWM — use 1 kHz, 14 bits and a 2.2 power curve
-
-**Symptom:** Lowering the brightness with M5Unified/M5GFX's
-`M5.Display.setBrightness()` on a BASIC v2.7, 1 % (2 of 255) was still bright
-enough to read and 50 % was quite bright: there was no dark end.
-
-**Why:** On this board M5GFX drives the backlight pin (GPIO32) at 44.1 kHz with
-9 bits and no offset (`_set_pwm_backlight(GPIO_NUM_32, 7, 44100)`). Moved to
-1 kHz and 14 bits, the same channel reached a dark end. Pulse width is not the
-explanation (1 % is a 0.18 µs pulse at 44.1 kHz; one count at 1 kHz is 0.06 µs,
-and that looked dim). A likely cause, not measured: each pulse lights the
-backlight a little longer than its width, and at 44 times the pulse rate that
-extra adds up.
-
-**How to apply:**
-- Right after `M5.begin()`, move the channel M5GFX attached with
-  `ledcChangeFrequency(32, 1000, 14)` (Arduino-ESP32 3.x public API: no second
-  channel, no change to M5GFX). Write it with `ledcWrite(32, duty)` from then on,
-  and never call `M5.Display.setBrightness()` again: it writes 9-bit duties.
-- Use a duty of `(percent/100)^2.2` of full (16383), rounded (1 % is one
-  count). On the device (2026-09-25, one unit, one person's judgement)
-  1 % was barely visible, the steps looked about even, and there was no flicker
-  and no sound.
-- A curve alone at 44.1 kHz does not help: below 1 % there is one step left.
-  Suspect the frequency first.
-- Check the board (`M5.getBoard()`) and `ledcChangeFrequency`'s return value,
-  and fall back to M5GFX's linear mapping when either fails. A channel that could
-  not be moved stays 9-bit, so `setBrightness()` is right in that case only
-  (`ledcChangeFrequency` returns 0 on failure and leaves the resolution alone —
-  arduino-esp32 3.3.8 source).
-- For a desk display, **25–75 %** on this curve was the usable range
-  (2026-10-05, m5-system-panel's five levels; one unit, one person's judgement):
-  10 % was too dark even in a dark room and 100 % too bright. Levels at
-  25 / 40 / 55 / 65 / 75 % were judged "all right, evenly spaced". Do not make
-  full on the top level.
-
-## The Arduino-ESP32 BLE library asks every connecting central to pair, by default
+### The Arduino-ESP32 BLE library asks every connecting central to pair, by default
 
 **Symptom:** A peripheral built with Arduino-ESP32 3.3.8's BLE library (passkey
 display, MITM, Secure Connections) put a passkey prompt on any Mac that merely
@@ -513,7 +558,7 @@ security-request event, and a passkey notify outside the pairing window).
 - Before trusting a design that rests on a callback, log every GAP security
   event with `setCustomGapHandler` and see the callback actually fire.
 
-## Before building a BLE HID peripheral: what the specs require in each state
+### Before building a BLE HID peripheral: what the specs require in each state
 
 **Symptom:** Pairing, refusal, reconnection and post-disconnect behaviour built
 up by trial on the device ended up unlike any ordinary Bluetooth device (listed
@@ -555,7 +600,9 @@ these requirements (confirmed in the documents themselves):
   Bluetooth settings even without a discoverable flag; a bonded BLE HID device
   that is advertising is reconnected at once after Disconnect.
 
-## On an ESP32, Wi-Fi, mDNS and TCP alone fill 90 % of the default app partition — BASIC v2.7 carries 16 MB
+## ESP32 resources & crypto
+
+### On an ESP32, Wi-Fi, mDNS and TCP alone fill 90 % of the default app partition — BASIC v2.7 carries 16 MB
 
 **Symptom:** A probe sketch for M5Stack BASIC v2.7 with only a Wi-Fi join, an mDNS service and a TCP listener
 (no cryptography, no screen pages) used 88 % (1,156,815 bytes) of the default 1,310,720-byte app partition
@@ -574,7 +621,7 @@ the same unit).
 - Read the size from the unit with `esptool flash-id`, not from the model's spec sheet (read-only, but opening the
   port resets the ESP32).
 
-## The ESP32 RNG is a true RNG only while the radio is on — generate keys after Wi-Fi starts
+### The ESP32 RNG is a true RNG only while the radio is on — generate keys after Wi-Fi starts
 
 **Symptom:** A design that generates a key and a one-time password on an M5 (ESP32) at setup needed to know when
 `esp_random()` may be called.
@@ -589,7 +636,7 @@ pseudo-random only (read in the documentation; the quality of the output was not
 - A device that never enables the radio follows the documented procedure (`bootloader_random_enable()`, and
   `bootloader_random_disable()` before using ADC, I2S or the radio).
 
-## arduino-esp32 3.3.8's mbedTLS has no ChaCha20-Poly1305 — check sdkconfig and the symbols before choosing primitives
+### arduino-esp32 3.3.8's mbedTLS has no ChaCha20-Poly1305 — check sdkconfig and the symbols before choosing primitives
 
 **Symptom:** A design for an ESP32 (M5Stack BASIC) and a Mac companion specified ChaCha20-Poly1305, which the
 arduino-esp32 3.3.8 prebuilt libraries do not provide: `tools/esp32-libs/3.3.8/sdkconfig` has
@@ -609,7 +656,7 @@ In the same release `CONFIG_MBEDTLS_GCM_C`, `CONFIG_MBEDTLS_HARDWARE_AES` and `C
 - Check the primitives against NIST CAVP and RFC known answers in an on-device test sketch; a matching header name is
   not evidence that the code is there.
 
-## The ESP32 loop task has 8 KB of stack by default — overflowing it shows as "Double exception"; measure the low-water mark
+### The ESP32 loop task has 8 KB of stack by default — overflowing it shows as "Double exception"; measure the low-water mark
 
 **Symptom:** A library that decrypts and parses each line with a few KB of stack buffers crash-looped in an on-device
 test sketch with `Guru Meditation Error: Core 1 panic'ed (Double exception)`; the backtrace pointed at an mbedTLS
@@ -625,42 +672,3 @@ where the stack was used up, so it only reads as "Double exception".
   `Arduino.h` overriding the weak `getArduinoLoopTaskStackSize`). At 16 KB the minimum left was about 5 KB (measured).
 - Do not enlarge by guesswork: print `uxTaskGetStackHighWaterMark` at each stage of a test and measure.
 - Keep large structures (a recorder of a few KB, say) `static` or global, not local.
-
-## Templates in an `.ino` file are broken by the Arduino preprocessor
-
-**Symptom:** A template function returning an array's length, written in a test sketch's `.ino`, failed to compile
-with `'N' was not declared in this scope` (2026-09-26, arduino-cli 1.5.1, esp32 core 3.3.8, measured).
-
-**Why:** The Arduino build generates forward declarations for the functions in `.ino` files; templates are not handled
-correctly by it (inferred from the error and from a macro compiling where the template did not).
-
-**How to apply:** No templates in `.ino` files. Use a macro such as
-`#define COUNT(a) (sizeof(a) / sizeof((a)[0]))`, or put templates in `.cpp`/`.h` files.
-
-## With M5Unified's defaults the BASIC's speaker pops at boot — set `internal_spk = false` when no sound is used
-
-**Symptom:** Firmware that never plays sound sometimes made the M5Stack BASIC's speaker pop at boot (power-on, and the
-restart after flashing). With `internal_spk = false` in `M5.config()` passed to `M5.begin(config)`, five power cycles
-made no pop (2026-09-27, M5Unified 0.2.14, one unit, judged by ear by the maintainer).
-
-**Why:** With the speaker enabled (the default) on the BASIC, M5Unified drives the speaker pin (GPIO25) low in
-`begin()` (the `board_M5Stack` speaker set-up in M5Unified.cpp; read in the source). A step on a pin that was floating
-reaching the amplifier input is the likely mechanism (inferred).
-
-**How to apply:**
-- Firmware without sound: `auto c = M5.config(); c.internal_spk = false; M5.begin(c);`.
-- For something that happens "sometimes", count after the fix (e.g. five power cycles).
-
-## `arduino-cli monitor` exits as soon as its stdin closes — a capture tool keeps stdin open
-
-**Symptom:** Started from a script to read on-device test results, `arduino-cli monitor -p <port> --config
-baudrate=115200 --quiet` exited at once with no output (also with `< /dev/null`). The first attempt had worked, so it
-looked like timing (2026-09-26, arduino-cli 1.5.1, measured).
-
-**Why:** The monitor exits when its input reaches EOF (as observed; the source was not read). A closed parent stdin or
-`/dev/null` is EOF immediately.
-
-**How to apply:**
-- Start it with stdin as an open pipe (in Python, `stdin=subprocess.PIPE`), read for a fixed time, then terminate it.
-- Opening the port reboots the ESP32 (the ROM's boot messages come first, garbled at another baud rate). A test that
-  repeats its result at an interval can be read whenever the port is opened.

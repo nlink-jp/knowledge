@@ -1,6 +1,216 @@
 # Release Engineering
 
-## A fail-open step plus a verifier that only displays = a defective release with green checks
+## Signing & notarization
+
+### darwin binaries can be notarized even for tar.gz distributions (temp-zip pattern)
+
+**Symptom:** Apple's notary service (`xcrun notarytool submit`) only accepts
+zip / dmg / pkg containers — tar.gz cannot be submitted directly.
+
+**Why it works:** The notary ticket is stored on Apple's servers **keyed by the
+binary's CDHash** (a hash of the content). Whatever the final distribution format,
+macOS looks up the ticket by CDHash at launch time.
+
+**How to apply:** Insert "zip to a temp file → submit → discard the zip" before
+packaging.
+
+```make
+dist-darwin: cross-build-darwin
+	@for arch in arm64 amd64; do \
+		cp dist/$(BINARY)-darwin-$$arch /tmp/$(BINARY) && \
+		(cd /tmp && zip -j /tmp/$(BINARY)-notary.zip $(BINARY)) && \
+		scripts/notarize-darwin.sh /tmp/$(BINARY)-notary.zip "$(NOTARY_PROFILE)"; \
+		rc=$$?; \
+		rm -f /tmp/$(BINARY) /tmp/$(BINARY)-notary.zip; \
+		test $$rc -eq 0; \
+	done
+	# Packaging (tar.gz / .deb / .rpm) needs no changes — the binary is already notarized
+```
+
+- `rm -f` cleans temp files even on notarization failure; `test $$rc -eq 0`
+  propagates the failure.
+- The ticket is CDHash-keyed, so renaming the file or rebuilding the zip after
+  submission is fine.
+
+### notarytool 403 "required agreement missing/expired" is an agreement issue, not key expiry
+
+**Symptom:** Previously working notarization suddenly fails across the board, and
+the wrapper script reports "Keychain profile not found".
+
+**Why:** The script pre-probed with `notarytool history` and inferred the failure
+reason from the **exit code alone**. Running
+`xcrun notarytool history --keychain-profile <profile>` directly revealed
+`403 A required agreement is missing or has expired` — the Apple Developer Program
+license agreement had been updated and the Account Holder had not yet accepted it.
+Keys and profiles were perfectly valid.
+
+**How to apply:**
+- Never trust the wrapper's diagnosis; run `notarytool history` directly to see
+  the real error.
+- On `403 ... agreement ...`, accept the updated agreement at
+  developer.apple.com/account (also check App Store Connect Agreements). It takes
+  effect within minutes; no key re-registration needed.
+- Fix wrappers to capture and **always display the probe's actual error**, and to
+  point at agreement re-acceptance when 403/agreement is detected — a helpful
+  misdiagnosis is worse than none.
+- The `notarytool history` pre-probe is flaky (it can falsely fail for one arch
+  right after succeeding for another). If the script path fails, bypass it with
+  `notarytool submit --wait` directly.
+- notarytool keychain profiles are **machine-local** (stored in the
+  data-protection keychain — see the screen-lock entry below). They do not sync
+  to other machines; each build machine needs its own `store-credentials`.
+
+### notarytool credentials are unreadable while the screen is locked (they look deleted)
+
+**Symptom:** Notarization that had just succeeded 8 times in a row on the same
+machine and profile started failing uniformly with
+`Error: No Keychain password item found for profile: <name>` partway through an
+unattended run (2026-08, during a 10-app GUI release batch). It looks like a
+deleted profile or a corrupted keychain — but the screen had simply locked.
+The moment it was unlocked, everything worked again with no re-registration.
+
+**Why:** `notarytool store-credentials` stores the credential in the
+**data-protection keychain** (invisible to the legacy
+`security find-generic-password` **even while unlocked** — which is what makes
+"it was deleted" such an easy misdiagnosis). Data-protection keychain items
+become unreadable while the console is locked, so a locked screen makes
+notarytool report the item as missing. `security show-keychain-info
+login.keychain-db` answering normally adds to the misdirection (login.keychain-db
+is not involved).
+
+**How to apply:**
+- On this error, first check `ioreg -n Root -d1 | grep IOConsoleLocked` — if
+  `Yes`, the credential is fine and **unlocking the screen is the whole fix**.
+  No profile re-creation needed.
+- Unattended releases (parallel agents, long batches) should either hold off
+  screen lock until notarization is done, or be designed to resume the stopped
+  portion later (resuming from a pushed tag with no GitHub release yet does not
+  reuse a version).
+- Never re-run `store-credentials` before checking the lock state — it is a
+  needless API-key operation and teaches the wrong root cause.
+
+### Binaries under cloud-synced folders can get SIGKILLed (provenance xattr)
+
+**Symptom:** Copying a Go binary into `~/bin` under a Dropbox-synced folder makes
+it die instantly with `zsh: killed` (SIGKILL). The same binary runs fine from
+`dist/` (outside the synced tree).
+
+**Why:** Dropbox's FileProvider extension attaches `com.apple.provenance` and
+related xattrs the moment a file lands in its sync folder — **even for a local
+`cp` on the same machine**. `com.apple.provenance` is system-protected and cannot
+be removed with `xattr -d`. Gatekeeper SIGKILLs the combination of a weak
+(ad-hoc / linker-signed) signature plus provenance. The behavior was tightened in
+a macOS minor update, breaking a setup that used to work.
+
+**How to apply:**
+- Re-sign after placement: `codesign --force --sign - <binary>` makes it pass
+  (provenance remains, but the signature is now "signed by this machine now").
+  Each synced machine must re-sign — signatures don't propagate through sync.
+- `cp` creates a new inode at the destination (fresh xattrs); Finder "move" on
+  the same volume is a rename (inode preserved) and doesn't trigger it. `ditto`
+  also works. Avoid bare `cp`.
+- `spctl --add` is deprecated on current macOS ("This operation is no longer
+  supported").
+- **This is an environment/placement problem, not a code bug.** When a child
+  process dies instantly (`read response: EOF` / `broken pipe`), first check the
+  binary's exit code (137 = SIGKILL) and whether it lives under a synced folder.
+- Don't add a personal-environment `install:` target (hardcoded `~/bin` cp +
+  codesign) to project Makefiles. Projects end at `make build` → `dist/`;
+  personal placement belongs in personal dotfiles.
+
+### GUI .app signing is a separate pipeline from CLI
+
+**Symptom:** CLI signing/notarization scripts assume a single Mach-O and cannot be
+reused for .app bundles.
+
+**Key points** (canonical procedure: CONVENTIONS.md §Code Signing → GUI app signing):
+- **WebView-based apps (Wails / Tauri) need two entitlements at minimum**:
+  `com.apple.security.cs.allow-jit` +
+  `com.apple.security.cs.allow-unsigned-executable-memory`. Without them the
+  Hardened Runtime kills WKWebView's JS and the frontend goes **silently blank**.
+- **Native Swift / AppKit apps need no JIT entitlements** — Hardened Runtime
+  alone works. HTTP to localhost is handled via `NSAppTransportSecurity` in
+  Info.plist, no entitlement needed.
+- **Never `cp -r`; use `ditto`**: bundle signatures live in xattrs. `cp -r` drops
+  them and the app dies at launch with "Code Signature Invalid". Distribution
+  zips are built with `ditto -c -k --keepParent`.
+- **Signing order:** build → deep sign (`--force --deep --options runtime
+  --timestamp --entitlements`) → ditto → notarize (wrap the .app in a temp zip
+  for submission) → `stapler staple`. Bundle formats can be stapled, so offline
+  first launch shows no dialog. Bare CLI Mach-Os cannot be stapled (online check
+  applies).
+- **Tauri signs inside `tauri build`** via the `APPLE_SIGNING_IDENTITY` env var.
+  Tauri's built-in notarization wants its own env credentials and cannot use
+  notarytool keychain profiles — leave it disabled and run xcrun notarytool
+  yourself. DMG filenames use Rust triplet arch (`aarch64`), not `uname -m`
+  (`arm64`). Making `package` depend on `build` re-builds and strips the staple.
+- Swift Package Manager GUIs assemble the `.app` bundle structure
+  (`Contents/MacOS/` etc.) manually in the Makefile, then codesign last.
+
+### `ditto -c -k` stores extended attributes as `._` entries — unpacked with `unzip`, they break an `.app`'s seal
+
+**Symptom:** GUI release zips were made with `/usr/bin/ditto -c -k --keepParent X.app X.zip`. 18 of the 19 published
+ones carried 9 to 21 `._*` entries — `._CodeResources`, `._Info.plist`, `._AppIcon.icns` and so on, holding extended
+attributes such as `com.apple.provenance`. Unpacked with command-line `/usr/bin/unzip`, they land inside the `.app` as
+files, and both `codesign --verify --deep --strict` and `spctl --assess` failed with "a sealed resource is missing or
+invalid". Finder, `ditto -x -k` and Homebrew merge `._` entries back into attributes, so nothing showed there. The
+signing, notarization, staple and Gatekeeper checks (run on a `ditto -x -k` copy) all passed, and nobody noticed
+(2026-09-27, macOS 27.0, measured).
+
+**Why:** ditto writes extended attributes and resource forks into the zip as AppleDouble (`._`) entries by default
+(`--norsrc` and `--noextattr` in `man ditto`). An `.app`'s seal is files, not attributes (`_CodeSignature/`, the
+stapled ticket, the signature inside each Mach-O), so the entries are useless — and under `unzip` they become files
+inside the sealed bundle.
+
+**How to apply:**
+- Make release zips with `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip`. All 19 apps were
+  re-zipped this way, unpacked with a plain `unzip`, and kept `codesign --verify --deep --strict`, `stapler validate`
+  and `source=Notarized Developer ID` (measured; one of them end to end from notarization).
+- "Bundle signatures are stored in extended attributes" does not hold for an `.app`. This organization's conventions
+  said so, and it was the reason they recommended `ditto -c -k`.
+- Have the release gate check that the published zip has no `._*` and nothing under `__MACOSX/` (here:
+  `verify-app-zip.sh`, and check-org check 19 for the line that makes the zip). A gate that only unpacks with
+  `ditto -x -k` cannot see this defect.
+- Linux tarballs have the same class of problem (`COPYFILE_DISABLE=1` and `--no-xattrs`; see build-and-packaging).
+  CLI zips made with Info-ZIP `zip` had no `._` entries in all 8 sampled.
+
+### Re-signing a dist/ binary kills daemons running from it
+
+**Symptom:** `make build` overwrote and re-signed `dist/<binary>`, and the
+resident daemon launched from that binary was killed by macOS — data recording
+silently stopped for over 30 minutes.
+
+**Why:** macOS kills a running process when its binary's code signature changes.
+Without a LaunchAgent registration, `KeepAlive` cannot restart it either.
+
+**How to apply:**
+- Launch resident daemons from the **.app-bundled path**
+  (`Contents/Resources/<binary>`), not from `dist/`. It is unaffected by
+  `make build` and recovers via the LaunchAgent's `KeepAlive`.
+- Around any build work, check the daemon's status (last-sample time). A long gap
+  may be your own build's doing.
+
+### A CLI signed with the Hardened Runtime does not pass `DYLD_*` to its children
+
+**Symptom:** a command started through timeout, signed with Developer ID and the Hardened Runtime, lost
+`DYLD_LIBRARY_PATH` from its environment (other variables arrived; measured on macOS 27). macOS's own
+`/usr/bin/env`, `nice` and `nohup` did not pass `DYLD_*` either (measured).
+
+**Why:** macOS removes `DYLD_*` from the environment of a restricted process (Hardened Runtime, SIP-protected), and
+children inherit that environment (behaviour measured; no primary source for the mechanism yet). The entitlement
+`com.apple.security.cs.allow-dyld-environment-variables` lets them through, but also lets `DYLD_INSERT_LIBRARIES`
+into the process itself.
+
+**How to apply:**
+- A signed CLI that starts children (a wrapper, a supervisor) documents in its README limits that `DYLD_*` does not
+  reach them.
+- Decide on the entitlement against the wider injection surface it opens (timeout does without it, behaving like
+  macOS's own wrappers).
+- Check environment-passing behaviour on the shipped (signed) build.
+
+## Verifying what is shipped
+
+### A fail-open step plus a verifier that only displays = a defective release with green checks
 
 **Symptom:** The notarize script deliberately fails open (warn and exit
 0 un-notarised) so contributors without credentials can still build.
@@ -87,152 +297,7 @@ the "why" behind them and the traps that don't fit into rules.
 
 ---
 
-## darwin binaries can be notarized even for tar.gz distributions (temp-zip pattern)
-
-**Symptom:** Apple's notary service (`xcrun notarytool submit`) only accepts
-zip / dmg / pkg containers — tar.gz cannot be submitted directly.
-
-**Why it works:** The notary ticket is stored on Apple's servers **keyed by the
-binary's CDHash** (a hash of the content). Whatever the final distribution format,
-macOS looks up the ticket by CDHash at launch time.
-
-**How to apply:** Insert "zip to a temp file → submit → discard the zip" before
-packaging.
-
-```make
-dist-darwin: cross-build-darwin
-	@for arch in arm64 amd64; do \
-		cp dist/$(BINARY)-darwin-$$arch /tmp/$(BINARY) && \
-		(cd /tmp && zip -j /tmp/$(BINARY)-notary.zip $(BINARY)) && \
-		scripts/notarize-darwin.sh /tmp/$(BINARY)-notary.zip "$(NOTARY_PROFILE)"; \
-		rc=$$?; \
-		rm -f /tmp/$(BINARY) /tmp/$(BINARY)-notary.zip; \
-		test $$rc -eq 0; \
-	done
-	# Packaging (tar.gz / .deb / .rpm) needs no changes — the binary is already notarized
-```
-
-- `rm -f` cleans temp files even on notarization failure; `test $$rc -eq 0`
-  propagates the failure.
-- The ticket is CDHash-keyed, so renaming the file or rebuilding the zip after
-  submission is fine.
-
-## notarytool 403 "required agreement missing/expired" is an agreement issue, not key expiry
-
-**Symptom:** Previously working notarization suddenly fails across the board, and
-the wrapper script reports "Keychain profile not found".
-
-**Why:** The script pre-probed with `notarytool history` and inferred the failure
-reason from the **exit code alone**. Running
-`xcrun notarytool history --keychain-profile <profile>` directly revealed
-`403 A required agreement is missing or has expired` — the Apple Developer Program
-license agreement had been updated and the Account Holder had not yet accepted it.
-Keys and profiles were perfectly valid.
-
-**How to apply:**
-- Never trust the wrapper's diagnosis; run `notarytool history` directly to see
-  the real error.
-- On `403 ... agreement ...`, accept the updated agreement at
-  developer.apple.com/account (also check App Store Connect Agreements). It takes
-  effect within minutes; no key re-registration needed.
-- Fix wrappers to capture and **always display the probe's actual error**, and to
-  point at agreement re-acceptance when 403/agreement is detected — a helpful
-  misdiagnosis is worse than none.
-- The `notarytool history` pre-probe is flaky (it can falsely fail for one arch
-  right after succeeding for another). If the script path fails, bypass it with
-  `notarytool submit --wait` directly.
-- notarytool keychain profiles are **machine-local** (stored in the
-  data-protection keychain — see the screen-lock entry below). They do not sync
-  to other machines; each build machine needs its own `store-credentials`.
-
-## notarytool credentials are unreadable while the screen is locked (they look deleted)
-
-**Symptom:** Notarization that had just succeeded 8 times in a row on the same
-machine and profile started failing uniformly with
-`Error: No Keychain password item found for profile: <name>` partway through an
-unattended run (2026-08, during a 10-app GUI release batch). It looks like a
-deleted profile or a corrupted keychain — but the screen had simply locked.
-The moment it was unlocked, everything worked again with no re-registration.
-
-**Why:** `notarytool store-credentials` stores the credential in the
-**data-protection keychain** (invisible to the legacy
-`security find-generic-password` **even while unlocked** — which is what makes
-"it was deleted" such an easy misdiagnosis). Data-protection keychain items
-become unreadable while the console is locked, so a locked screen makes
-notarytool report the item as missing. `security show-keychain-info
-login.keychain-db` answering normally adds to the misdirection (login.keychain-db
-is not involved).
-
-**How to apply:**
-- On this error, first check `ioreg -n Root -d1 | grep IOConsoleLocked` — if
-  `Yes`, the credential is fine and **unlocking the screen is the whole fix**.
-  No profile re-creation needed.
-- Unattended releases (parallel agents, long batches) should either hold off
-  screen lock until notarization is done, or be designed to resume the stopped
-  portion later (resuming from a pushed tag with no GitHub release yet does not
-  reuse a version).
-- Never re-run `store-credentials` before checking the lock state — it is a
-  needless API-key operation and teaches the wrong root cause.
-
-## Binaries under cloud-synced folders can get SIGKILLed (provenance xattr)
-
-**Symptom:** Copying a Go binary into `~/bin` under a Dropbox-synced folder makes
-it die instantly with `zsh: killed` (SIGKILL). The same binary runs fine from
-`dist/` (outside the synced tree).
-
-**Why:** Dropbox's FileProvider extension attaches `com.apple.provenance` and
-related xattrs the moment a file lands in its sync folder — **even for a local
-`cp` on the same machine**. `com.apple.provenance` is system-protected and cannot
-be removed with `xattr -d`. Gatekeeper SIGKILLs the combination of a weak
-(ad-hoc / linker-signed) signature plus provenance. The behavior was tightened in
-a macOS minor update, breaking a setup that used to work.
-
-**How to apply:**
-- Re-sign after placement: `codesign --force --sign - <binary>` makes it pass
-  (provenance remains, but the signature is now "signed by this machine now").
-  Each synced machine must re-sign — signatures don't propagate through sync.
-- `cp` creates a new inode at the destination (fresh xattrs); Finder "move" on
-  the same volume is a rename (inode preserved) and doesn't trigger it. `ditto`
-  also works. Avoid bare `cp`.
-- `spctl --add` is deprecated on current macOS ("This operation is no longer
-  supported").
-- **This is an environment/placement problem, not a code bug.** When a child
-  process dies instantly (`read response: EOF` / `broken pipe`), first check the
-  binary's exit code (137 = SIGKILL) and whether it lives under a synced folder.
-- Don't add a personal-environment `install:` target (hardcoded `~/bin` cp +
-  codesign) to project Makefiles. Projects end at `make build` → `dist/`;
-  personal placement belongs in personal dotfiles.
-
-## GUI .app signing is a separate pipeline from CLI
-
-**Symptom:** CLI signing/notarization scripts assume a single Mach-O and cannot be
-reused for .app bundles.
-
-**Key points** (canonical procedure: CONVENTIONS.md §Code Signing → GUI app signing):
-- **WebView-based apps (Wails / Tauri) need two entitlements at minimum**:
-  `com.apple.security.cs.allow-jit` +
-  `com.apple.security.cs.allow-unsigned-executable-memory`. Without them the
-  Hardened Runtime kills WKWebView's JS and the frontend goes **silently blank**.
-- **Native Swift / AppKit apps need no JIT entitlements** — Hardened Runtime
-  alone works. HTTP to localhost is handled via `NSAppTransportSecurity` in
-  Info.plist, no entitlement needed.
-- **Never `cp -r`; use `ditto`**: bundle signatures live in xattrs. `cp -r` drops
-  them and the app dies at launch with "Code Signature Invalid". Distribution
-  zips are built with `ditto -c -k --keepParent`.
-- **Signing order:** build → deep sign (`--force --deep --options runtime
-  --timestamp --entitlements`) → ditto → notarize (wrap the .app in a temp zip
-  for submission) → `stapler staple`. Bundle formats can be stapled, so offline
-  first launch shows no dialog. Bare CLI Mach-Os cannot be stapled (online check
-  applies).
-- **Tauri signs inside `tauri build`** via the `APPLE_SIGNING_IDENTITY` env var.
-  Tauri's built-in notarization wants its own env credentials and cannot use
-  notarytool keychain profiles — leave it disabled and run xcrun notarytool
-  yourself. DMG filenames use Rust triplet arch (`aarch64`), not `uname -m`
-  (`arm64`). Making `package` depend on `build` re-builds and strips the staple.
-- Swift Package Manager GUIs assemble the `.app` bundle structure
-  (`Contents/MacOS/` etc.) manually in the Makefile, then codesign last.
-
-## Verify release archives by downloading the published assets
+### Verify release archives by downloading the published assets
 
 **Symptom:** Build logs and local dist can look right while the published asset is
 wrong. An org-wide audit (52 repos / 171 archives) caught a zip missing
@@ -267,7 +332,7 @@ README/LICENSE.
 - **Lightweight tags are invisible to `git describe`** (annotated-only by
   default). Derive versions with `git describe --tags` (includes lightweight).
 
-## Executables inside release zips use the canonical name
+### Executables inside release zips use the canonical name
 
 **Symptom:** `zip -j` uses the basename of the input file as the entry name, so
 zipping per-arch artifacts (`tool-darwin-arm64`) directly ships binaries with arch
@@ -289,7 +354,7 @@ rm -rf $(STAGE) ; \
 - Notarization is CDHash-keyed and filename-independent, so renaming keeps it
   valid.
 
-## CLIs must answer the `--version` flag (brew test invokes it)
+### CLIs must answer the `--version` flag (brew test invokes it)
 
 **Symptom:** Tools with only a `version` subcommand fail `brew test` with
 "unknown flag" because the shared formula template asserts on
@@ -304,7 +369,7 @@ once.
   grows the flag artificially and a broken binary still passes. Assert on the
   production init wiring (`rootCmd.Version != ""`).
 
-## Run the built binary's `--version` before uploading
+### Run the built binary's `--version` before uploading
 
 **Symptom:** With `VERSION ?= dev` hardcoded, `make build-all` produced release
 binaries all reporting `dev`, which were uploaded as-is.
@@ -315,7 +380,80 @@ binaries all reporting `dev`, which were uploaded as-is.
 - Right after `make build-all`, run `dist/<binary>-darwin-arm64 --version` and
   confirm the expected string before uploading. Put it on the release checklist.
 
-## Never reuse a published version number (fix-forward)
+### A GUI's first release shipped without an app icon — the release gate checks the icon inside the published zip
+
+**Symptom:** A new menu-bar app (Swift, `.app` assembled by the Makefile) was published without an app icon.
+`make verify-release` checked the notarization marker, the staple, Gatekeeper, the linked SDK and the version, and
+passed; an independent review did not flag it either. The user noticed after installing it (2026-09-27).
+
+**Why:** The scaffold never added the icon generation or `CFBundleIconFile`. The organization's GUI example copies an
+icon, but nothing checks for one. Signing and notarization pass without an icon. A menu-bar app never shows in the
+Dock, so there is hardly a moment during development when the icon is seen.
+
+**How to apply:**
+- Add the icon at scaffold time. Draw the source with a script (as net-meter does: `scripts/gen-icon.swift` →
+  `assets/AppIcon-1024.png` → `make-icns.sh`), and make the build fail when the source is missing (not a warning).
+- In `verify-release`, check the icon in **the zip users download**. This organization vendors one script
+  (`templates/verify-app-zip.sh` in `.github`, which also refuses AppleDouble entries — next entry) verbatim into every GUI repository and calls it. It requires exactly
+  one top-level `.app`, a `CFBundleIconFile` in its `Info.plist`, `Contents/Resources/<that file>` as a **whole
+  entry name**, and icns content (the first four bytes). A substring match takes an AppleDouble `._AppIcon.icns` in
+  the zip for the icon (18 published zips actually carry one).
+- Fixing the existing repositories does not reach the ones created later (this omission happened in a new one). The
+  organization health check (check-org check 18) fails an `.app`-building Makefile whose `verify-release` lacks the
+  call.
+- Exercise the check with states that must pass as well as states that must fail
+  (`scripts/exercise-app-zip-gate.sh`: twelve built zips, plus the 19 published ones).
+
+### For a package with a bundled payload, size gives the lie away first
+
+**Symptom:** a release that bundles a CLI binary inside a GUI app was built with
+`make package` straight after `make clean`. The bundling step was **silently
+skipped and the result still passed notarization**. The zip was 1.2 MB where a
+correct one is about 10 MB, which is how pre-upload verification caught it.
+
+**Why:** the bundling step guarded on `[ -x "$CLI_BIN" ]` and merely warned when
+the file was absent. `make clean` had removed the plainly-named binary, and the
+`build-all` target that `package` depends on only produces
+platform-suffixed names. Neither signing nor notarization detects missing
+*contents*.
+
+**How to apply:**
+- **Always extract the archive and inspect it before uploading**: the payload is
+  present, the executable answers `--version`, and the signature checks out
+  (`spctl --assess`) — on the real artifact, not the build tree.
+- Payload size is the cheapest sanity signal there is. An order-of-magnitude
+  change deserves suspicion.
+- If a dependency step "warns and continues" when something is missing, make it
+  **fail on the release path**. Convenience during development becomes a
+  shipping accident unchanged.
+
+### Make a separate release asset part of make package and verify-release — a step written only in the checklist gets skipped every time
+
+**Symptom:** An MCP server's bundled skill was to ship as a release asset separate from the binary
+(2026-07). `make package-skill` existed but was part of neither the release steps nor `make package`. The
+skill reached a release twice; the seventeen releases after carried the binary only. Users who installed the
+skill from a release kept one that taught an argument the server no longer accepted (found by an issue,
+2026-11).
+
+**Why:** `verify-release` required the binary zip; nothing required the skill zip. A step that only prose
+asks for is the first one skipped in a hurried release.
+
+**How to apply:**
+- Make the asset a prerequisite of `make package`, so it is built with the binary.
+- Put a target that checks it among `verify-release`'s prerequisites. It fails when:
+  - this version's file is missing;
+  - its contents differ from the files `git ls-files` tracks (an extra file, a missing one) — compare the
+    zip's listing;
+  - its contents differ from the working tree — unpack it and `cmp`;
+  - the version is `-dirty`, which would ship uncommitted content under the tag's name.
+- Make developer installs (`make install-skill`) unpack the built zip too. Copying the source tree hides a
+  packaging defect from the developer.
+- A local check cannot see whether the asset was uploaded. Say "upload it with the binaries" in AGENTS.md,
+  and accept that as the remaining gap.
+
+## Versions, publishing & procedure
+
+### Never reuse a published version number (fix-forward)
 
 **Symptom:** Deleting and re-pushing a tag that has a GitHub Release reverts the
 release to Draft and drops the "Latest" designation, requiring manual recovery.
@@ -329,7 +467,7 @@ version number destroys the version's value as an identifier.
 - Before deleting any tag, check `gh release list`. Only tags without releases
   may be re-pointed.
 
-## Prebuilt-binary Homebrew tap practices and verification
+### Prebuilt-binary Homebrew tap practices and verification
 
 **Symptom:** Building from source strips the Developer ID signature. The tap
 installs signed+notarized release zips as-is (prebuilt).
@@ -373,7 +511,7 @@ installs signed+notarized release zips as-is (prebuilt).
 - Cleanup order: uninstall → untap (untap refuses while artifacts remain
   installed).
 
-## After a push to the tap, a user's `brew upgrade` can still see the old version — tell them `brew update` first
+### After a push to the tap, a user's `brew upgrade` can still see the old version — tell them `brew update` first
 
 **Symptom:** Right after a new cask version (0.1.0 → 0.1.1) was pushed to our own tap, a user's
 `brew upgrade --cask <name>` said "Not upgrading <name>, the latest version is already installed". Homebrew's copy of
@@ -393,97 +531,7 @@ checked.
 - Check the published side with the tap repository's content and the sha256 of the published zip (downloaded and
   hashed). A stale copy on a user's Mac is not a publishing defect.
 
-## A GUI's first release shipped without an app icon — the release gate checks the icon inside the published zip
-
-**Symptom:** A new menu-bar app (Swift, `.app` assembled by the Makefile) was published without an app icon.
-`make verify-release` checked the notarization marker, the staple, Gatekeeper, the linked SDK and the version, and
-passed; an independent review did not flag it either. The user noticed after installing it (2026-09-27).
-
-**Why:** The scaffold never added the icon generation or `CFBundleIconFile`. The organization's GUI example copies an
-icon, but nothing checks for one. Signing and notarization pass without an icon. A menu-bar app never shows in the
-Dock, so there is hardly a moment during development when the icon is seen.
-
-**How to apply:**
-- Add the icon at scaffold time. Draw the source with a script (as net-meter does: `scripts/gen-icon.swift` →
-  `assets/AppIcon-1024.png` → `make-icns.sh`), and make the build fail when the source is missing (not a warning).
-- In `verify-release`, check the icon in **the zip users download**. This organization vendors one script
-  (`templates/verify-app-zip.sh` in `.github`, which also refuses AppleDouble entries — next entry) verbatim into every GUI repository and calls it. It requires exactly
-  one top-level `.app`, a `CFBundleIconFile` in its `Info.plist`, `Contents/Resources/<that file>` as a **whole
-  entry name**, and icns content (the first four bytes). A substring match takes an AppleDouble `._AppIcon.icns` in
-  the zip for the icon (18 published zips actually carry one).
-- Fixing the existing repositories does not reach the ones created later (this omission happened in a new one). The
-  organization health check (check-org check 18) fails an `.app`-building Makefile whose `verify-release` lacks the
-  call.
-- Exercise the check with states that must pass as well as states that must fail
-  (`scripts/exercise-app-zip-gate.sh`: twelve built zips, plus the 19 published ones).
-
-## `ditto -c -k` stores extended attributes as `._` entries — unpacked with `unzip`, they break an `.app`'s seal
-
-**Symptom:** GUI release zips were made with `/usr/bin/ditto -c -k --keepParent X.app X.zip`. 18 of the 19 published
-ones carried 9 to 21 `._*` entries — `._CodeResources`, `._Info.plist`, `._AppIcon.icns` and so on, holding extended
-attributes such as `com.apple.provenance`. Unpacked with command-line `/usr/bin/unzip`, they land inside the `.app` as
-files, and both `codesign --verify --deep --strict` and `spctl --assess` failed with "a sealed resource is missing or
-invalid". Finder, `ditto -x -k` and Homebrew merge `._` entries back into attributes, so nothing showed there. The
-signing, notarization, staple and Gatekeeper checks (run on a `ditto -x -k` copy) all passed, and nobody noticed
-(2026-09-27, macOS 27.0, measured).
-
-**Why:** ditto writes extended attributes and resource forks into the zip as AppleDouble (`._`) entries by default
-(`--norsrc` and `--noextattr` in `man ditto`). An `.app`'s seal is files, not attributes (`_CodeSignature/`, the
-stapled ticket, the signature inside each Mach-O), so the entries are useless — and under `unzip` they become files
-inside the sealed bundle.
-
-**How to apply:**
-- Make release zips with `/usr/bin/ditto --norsrc --noextattr -c -k --keepParent X.app X.zip`. All 19 apps were
-  re-zipped this way, unpacked with a plain `unzip`, and kept `codesign --verify --deep --strict`, `stapler validate`
-  and `source=Notarized Developer ID` (measured; one of them end to end from notarization).
-- "Bundle signatures are stored in extended attributes" does not hold for an `.app`. This organization's conventions
-  said so, and it was the reason they recommended `ditto -c -k`.
-- Have the release gate check that the published zip has no `._*` and nothing under `__MACOSX/` (here:
-  `verify-app-zip.sh`, and check-org check 19 for the line that makes the zip). A gate that only unpacks with
-  `ditto -x -k` cannot see this defect.
-- Linux tarballs have the same class of problem (`COPYFILE_DISABLE=1` and `--no-xattrs`; see build-and-packaging).
-  CLI zips made with Info-ZIP `zip` had no `._` entries in all 8 sampled.
-
-## Re-signing a dist/ binary kills daemons running from it
-
-**Symptom:** `make build` overwrote and re-signed `dist/<binary>`, and the
-resident daemon launched from that binary was killed by macOS — data recording
-silently stopped for over 30 minutes.
-
-**Why:** macOS kills a running process when its binary's code signature changes.
-Without a LaunchAgent registration, `KeepAlive` cannot restart it either.
-
-**How to apply:**
-- Launch resident daemons from the **.app-bundled path**
-  (`Contents/Resources/<binary>`), not from `dist/`. It is unaffected by
-  `make build` and recovers via the LaunchAgent's `KeepAlive`.
-- Around any build work, check the daemon's status (last-sample time). A long gap
-  may be your own build's doing.
-
-## For a package with a bundled payload, size gives the lie away first
-
-**Symptom:** a release that bundles a CLI binary inside a GUI app was built with
-`make package` straight after `make clean`. The bundling step was **silently
-skipped and the result still passed notarization**. The zip was 1.2 MB where a
-correct one is about 10 MB, which is how pre-upload verification caught it.
-
-**Why:** the bundling step guarded on `[ -x "$CLI_BIN" ]` and merely warned when
-the file was absent. `make clean` had removed the plainly-named binary, and the
-`build-all` target that `package` depends on only produces
-platform-suffixed names. Neither signing nor notarization detects missing
-*contents*.
-
-**How to apply:**
-- **Always extract the archive and inspect it before uploading**: the payload is
-  present, the executable answers `--version`, and the signature checks out
-  (`spctl --assess`) — on the real artifact, not the build tree.
-- Payload size is the cheapest sanity signal there is. An order-of-magnitude
-  change deserves suspicion.
-- If a dependency step "warns and continues" when something is missing, make it
-  **fail on the release path**. Convenience during development becomes a
-  shipping accident unchanged.
-
-## Pin the version string explicitly when building something to bundle
+### Pin the version string explicitly when building something to bundle
 
 **Symptom:** a single Makefile line changed after tagging, and `git describe`
 started returning `v0.1.0-1-g<sha>`, so the **bundled binary reported a
@@ -496,7 +544,7 @@ tag changes the string — even one that touches nothing compiled.
 (`make build VERSION=vX.Y.Z`), after confirming with
 `git diff --stat <tag>..HEAD` that nothing compiled actually changed.
 
-## A status written at scaffold time is not updated by releasing
+### A status written at scaffold time is not updated by releasing
 
 **What happened:** three tools were found whose READMEs said "pre-release" or
 "not yet released". All three had shipped. One had **shipped four times, had a
@@ -523,8 +571,7 @@ measurement had disproved.
   matches `not yet released|pre-release`" is a grep plus a `gh release list`, and
   belongs in whatever org-wide check you already run.
 
-
-## Appending to LICENSE breaks its classification, and splitting the notice out must ship with the artifact
+### Appending to LICENSE breaks its classification, and splitting the notice out must ship with the artifact
 
 **Symptom:** Five repositories showed up as "Other" licensed on GitHub. All five
 were MIT; a third-party attribution appended to the end of LICENSE was all it
@@ -561,7 +608,7 @@ artifact.**
 - Attribution text spreads by copy-paste. Check the body does not still name
   another project.
 
-## A second agent's build during a release: freeze, then prove the published asset's origin — never rebuild to compare
+### A second agent's build during a release: freeze, then prove the published asset's origin — never rebuild to compare
 
 **Symptom:** While one session was releasing gem-agent (2026-09-13), another
 agent ran `make build` in the same working copy (and in a sibling repository),
@@ -604,48 +651,7 @@ be settled from the published asset and from records nobody edits.
   make package`, `verify-release`'s marker-freshness gate); `go version -m`
   and the notary log are the audit that proves it afterwards.
 
-## A CLI signed with the Hardened Runtime does not pass `DYLD_*` to its children
-
-**Symptom:** a command started through timeout, signed with Developer ID and the Hardened Runtime, lost
-`DYLD_LIBRARY_PATH` from its environment (other variables arrived; measured on macOS 27). macOS's own
-`/usr/bin/env`, `nice` and `nohup` did not pass `DYLD_*` either (measured).
-
-**Why:** macOS removes `DYLD_*` from the environment of a restricted process (Hardened Runtime, SIP-protected), and
-children inherit that environment (behaviour measured; no primary source for the mechanism yet). The entitlement
-`com.apple.security.cs.allow-dyld-environment-variables` lets them through, but also lets `DYLD_INSERT_LIBRARIES`
-into the process itself.
-
-**How to apply:**
-- A signed CLI that starts children (a wrapper, a supervisor) documents in its README limits that `DYLD_*` does not
-  reach them.
-- Decide on the entitlement against the wider injection surface it opens (timeout does without it, behaving like
-  macOS's own wrappers).
-- Check environment-passing behaviour on the shipped (signed) build.
-
-## The toolchain that builds the artifact is the one govulncheck must judge
-
-**Symptom:** after the host moved to Go 1.27, `wails build` (wails v2.12.0) failed on an unchanged tree with
-`internal error: package "os" without types was imported from ...`. Pinning `GOTOOLCHAIN=go1.26.4` in the Makefile
-fixed the build — and `govulncheck ./...`, run from the shell under go1.27.3, reported nothing reachable. Under the
-pinned toolchain it reported ten standard-library vulnerabilities in `net/http`, `crypto/tls` and `crypto/x509`,
-fixed by go1.26.9 / 1.26.10. Separately, a Go CLI's Linux and Windows binaries came from a container image pinned to
-`golang:1.26.2` while its darwin binary used the host's go1.27.3 (2026-10-25, measured).
-
-**Why:** the wails CLI embeds `golang.org/x/tools` v0.30.0, whose static analysis cannot read Go 1.27 export data —
-the same failure golangci-lint shows after a Go update. A tool built with an older x/tools breaks on the next Go
-minor; the usual escape is to pin the build to the previous minor. But source-mode govulncheck judges the standard
-library of the toolchain *it* runs under, so a pinned toolchain or a pinned container image ships a standard library
-nothing has checked.
-
-**How to apply:**
-- When a build must stay on an older Go minor, pin the **newest patch** of it (`GOTOOLCHAIN ?= go1.26.10`,
-  `golang:1.26.10`), say why in the Makefile, and bump it with each security release.
-- Run govulncheck under the same toolchain: `GOTOOLCHAIN=<pin> govulncheck ./...`, or `govulncheck -mode=binary`
-  on the built artifact.
-- Before upload, read `go version <binary>` for **every** platform's artifact. A cross-build container can sit on a
-  different patch from the host build.
-
-## A script that releases many repositories in a row checks each one's steps and can resume any step
+### A script that releases many repositories in a row checks each one's steps and can resume any step
 
 **Symptom:** 24 repositories carrying the same change were released by one script, in order
 (2026-11). It stopped three times. (1) A tag pushed right after main was rejected with
@@ -668,31 +674,55 @@ objects of the push just before it have propagated; timing decides whether it is
 - Write the script for bash and run it with bash; do not rely on word splitting in zsh.
 - Do not run steps that write to a shared destination, such as the tap (`make brew`), in parallel.
 
-## Make a separate release asset part of make package and verify-release — a step written only in the checklist gets skipped every time
+### A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
 
-**Symptom:** An MCP server's bundled skill was to ship as a release asset separate from the binary
-(2026-07). `make package-skill` existed but was part of neither the release steps nor `make package`. The
-skill reached a release twice; the seventeen releases after carried the binary only. Users who installed the
-skill from a release kept one that taught an argument the server no longer accepted (found by an issue,
-2026-11).
+**Symptom:** While rewriting the unreleased part of a changelog by script ("replace from the Unreleased
+heading up to the first Documentation heading"), the unreleased part had no Documentation heading. The first
+one in the file belonged to the previous, already released version, so the edit deleted that version's
+heading and two of its sections. The tree was committed, tagged and pushed in that state. It surfaced one
+step later, when the script that cuts the release notes out of the changelog failed to find the previous
+version's heading — and because that script was a separate line, not chained, the next command created the
+release with an empty body.
 
-**Why:** `verify-release` required the binary zip; nothing required the skill zip. A step that only prose
-asks for is the first one skipped in a hurried release.
+**Why:** A range between two text anchors is only as narrow as the second anchor is unique within the
+intended span; "the first occurrence after A" silently reaches into the next section. Diff statistics do not
+show it — the edit both removed and added about as many lines as expected. And a multi-line shell call keeps
+going after a failed line unless the lines are joined.
 
 **How to apply:**
-- Make the asset a prerequisite of `make package`, so it is built with the binary.
-- Put a target that checks it among `verify-release`'s prerequisites. It fails when:
-  - this version's file is missing;
-  - its contents differ from the files `git ls-files` tracks (an extra file, a missing one) — compare the
-    zip's listing;
-  - its contents differ from the working tree — unpack it and `cmp`;
-  - the version is `-dirty`, which would ship uncommitted content under the tag's name.
-- Make developer installs (`make install-skill`) unpack the built zip too. Copying the source tree hides a
-  packaging defect from the developer.
-- A local check cannot see whether the asset was uploaded. Say "upload it with the binaries" in AGENTS.md,
-  and accept that as the remaining gap.
+- End a range edit at the next heading of the same level, or assert that no heading lies between the two
+  anchors before writing. After a changelog edit, list its version headings and compare with the tags.
+- Generate release notes into a file, test that it is non-empty (`test -s`), and chain the release command to
+  that test.
+- A published tag keeps what it pointed at: repair forward with a commit that says what happened, and fix
+  the release body with an edit, not by re-tagging.
 
-## A vulnerability scanner's "reachable" is a static call graph — measure which copy of the code runs before writing what was exposed, and make the scan a prerequisite of the package
+## Dependency vulnerabilities
+
+### The toolchain that builds the artifact is the one govulncheck must judge
+
+**Symptom:** after the host moved to Go 1.27, `wails build` (wails v2.12.0) failed on an unchanged tree with
+`internal error: package "os" without types was imported from ...`. Pinning `GOTOOLCHAIN=go1.26.4` in the Makefile
+fixed the build — and `govulncheck ./...`, run from the shell under go1.27.3, reported nothing reachable. Under the
+pinned toolchain it reported ten standard-library vulnerabilities in `net/http`, `crypto/tls` and `crypto/x509`,
+fixed by go1.26.9 / 1.26.10. Separately, a Go CLI's Linux and Windows binaries came from a container image pinned to
+`golang:1.26.2` while its darwin binary used the host's go1.27.3 (2026-10-25, measured).
+
+**Why:** the wails CLI embeds `golang.org/x/tools` v0.30.0, whose static analysis cannot read Go 1.27 export data —
+the same failure golangci-lint shows after a Go update. A tool built with an older x/tools breaks on the next Go
+minor; the usual escape is to pin the build to the previous minor. But source-mode govulncheck judges the standard
+library of the toolchain *it* runs under, so a pinned toolchain or a pinned container image ships a standard library
+nothing has checked.
+
+**How to apply:**
+- When a build must stay on an older Go minor, pin the **newest patch** of it (`GOTOOLCHAIN ?= go1.26.10`,
+  `golang:1.26.10`), say why in the Makefile, and bump it with each security release.
+- Run govulncheck under the same toolchain: `GOTOOLCHAIN=<pin> govulncheck ./...`, or `govulncheck -mode=binary`
+  on the built artifact.
+- Before upload, read `go version <binary>` for **every** platform's artifact. A cross-build container can sit on a
+  different patch from the host build.
+
+### A vulnerability scanner's "reachable" is a static call graph — measure which copy of the code runs before writing what was exposed, and make the scan a prerequisite of the package
 
 **Symptom:** A release went out with five HTTP/2 advisories in `golang.org/x/net` that `govulncheck` reports
 as "your code is affected", with traces through the tool's connection to its API. The fix release's notes
@@ -720,7 +750,7 @@ target is a step to remember, which is the kind that is skipped.
   its database moves under an unchanged tree, which is acceptable at a release and noise in a commit loop.
 - Update the module anyway. Removing the affected code from the build is cheaper than arguing it is unused.
 
-## Whether an x/net HTTP/2 advisory is fixed by the module or by the toolchain depends on the x/net version and on who built the transport — and a sweep judges the published binaries, not the source trees
+### Whether an x/net HTTP/2 advisory is fixed by the module or by the toolchain depends on the x/net version and on who built the transport — and a sweep judges the published binaries, not the source trees
 
 **Symptom:** After one tool's HTTP/2 advisories turned out to be the toolchain's (the entry above), the same
 advisories were found in seven more tools on the same SDK, and the same conclusion did not hold (2026-11, a sweep
@@ -781,26 +811,3 @@ runs under, which says nothing about a binary built months ago, or inside a cont
   repository-local GOPATH shared with the host already has the host's binary at that name, and make would
   take the wrong-OS file for an up-to-date tool. The file target is also what makes the gate provable: mount
   a stand-in at that path and no install runs.
-
-## A scripted edit "from anchor A to the first B" must prove B is inside the section — and a release command must not run on an empty file
-
-**Symptom:** While rewriting the unreleased part of a changelog by script ("replace from the Unreleased
-heading up to the first Documentation heading"), the unreleased part had no Documentation heading. The first
-one in the file belonged to the previous, already released version, so the edit deleted that version's
-heading and two of its sections. The tree was committed, tagged and pushed in that state. It surfaced one
-step later, when the script that cuts the release notes out of the changelog failed to find the previous
-version's heading — and because that script was a separate line, not chained, the next command created the
-release with an empty body.
-
-**Why:** A range between two text anchors is only as narrow as the second anchor is unique within the
-intended span; "the first occurrence after A" silently reaches into the next section. Diff statistics do not
-show it — the edit both removed and added about as many lines as expected. And a multi-line shell call keeps
-going after a failed line unless the lines are joined.
-
-**How to apply:**
-- End a range edit at the next heading of the same level, or assert that no heading lies between the two
-  anchors before writing. After a changelog edit, list its version headings and compare with the tags.
-- Generate release notes into a file, test that it is non-empty (`test -s`), and chain the release command to
-  that test.
-- A published tag keeps what it pointed at: repair forward with a commit that says what happened, and fix
-  the release body with an edit, not by re-tagging.

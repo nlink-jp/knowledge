@@ -6,7 +6,9 @@ CONVENTIONS.md §Build Conventions を参照。
 
 ---
 
-## CGO + 上流 prebuilt static library の Windows クロスコンパイルは UCRT + ranlib
+## クロスコンパイル・cgo
+
+### CGO + 上流 prebuilt static library の Windows クロスコンパイルは UCRT + ranlib
 
 **事象:** go-duckdb（prebuilt `libduckdb.a` 同梱）を Debian ベースのコンテナから Windows に
 クロスコンパイルすると、デフォルトの `gcc-mingw-w64-x86-64` では多段階の linker error が
@@ -36,41 +38,46 @@ build-windows:
 どの C Runtime（UCRT / MSVCRT）で作られているかを最初に確認する**（upstream の build
 手順や CI workflow に書いてあることが多い）。
 
-## .gitignore にバイナリ名を書かない — cmd/<name>/ ごと消える
+### C の安全策は、既定のままだと問題を見つけても失敗しない — 陽性対照は実際に動くビルド規則を読む
 
-**事象:** `.gitignore` にバイナリ名をそのまま書いた結果、`cmd/<name>/` ディレクトリも
-除外されて main.go が git 未追跡のままになり、コードロストが複数プロジェクトで発生した。
+**事象:** timeout の 5 層（警告・静的解析・`-fbounds-safety`・ASan/UBSan・入力の揺さぶり）を Apple clang 21 で実測した。
+- `clang --analyze -Werror` は指摘があっても rc=0。`-Xanalyzer -analyzer-werror` で初めて失敗する。
+- UBSan は既定で報告して続行し、rc=0。`-fno-sanitize-recover=all` が要る。
+- Apple の SDK は `_FORTIFY_SOURCE` を最大 2 として扱う（3 は効かない。`secure/_common.h` を読んで確認）。
+- Apple clang に libFuzzer（`-fsanitize=fuzzer`）は無い。
+- 層ごとの検出は重ならない。配列を越える `memcpy` は警告も静的解析も見逃し、ASan だけが捕まえた。長さ 3 の配列の
+  添字 3 は `-fbounds-safety` が実行時に止め、通常ビルドは黙って読んだ。
+- `-fbounds-safety` は、`main` の argv を `char *__null_terminated *__counted_by(argc)` で受ければ通り、`execvp` へ渡す
+  1 か所だけ `__unsafe_forge_null_terminated` が要る。ローカル配列を `const char *` の引数へ渡す書き方と、`SIG_IGN` を
+  関数ポインタの引数で渡す書き方は拒否される（`sa_handler` への直接代入、長さつきの `write` は通る）。
+- 陽性対照がフラグの変数だけを見ていると、ビルド規則からフラグが外れても通る。`$(MAKE) -n` で規則を読んでも、
+  `-f $(firstword $(MAKEFILE_LIST))` を付けないと、動いているのとは別の Makefile を読む。
+
+**適用方法:** 層ごとに失敗させるフラグを明示する。わざとバグを入れたファイルで、各層が診断の文言つきで失敗することを
+`make test` の最初に確かめる。フラグが規則に入っているかは、動いている Makefile の `make -n` の出力で確かめる。
+
+### cgo のバイナリの最小 macOS は `MACOSX_DEPLOYMENT_TARGET` で決める — CGO_CFLAGS／CGO_LDFLAGS だけでは Go のランタイムがビルド機の OS のまま
+
+**事象:** Core Text を cgo で呼ぶ MCP サーバ（report-studio-mcp）の最小 OS を 26.0 にしようとして、
+`CGO_CFLAGS` と `CGO_LDFLAGS` に `-mmacosx-version-min=26.0` を渡した。ビルド機は macOS 27.2。
+リンカは「より新しい macOS 向けに作られたオブジェクト」という警告を出した。Go のランタイムの cgo
+オブジェクトが、ビルド機の OS 向けのまま作られていた（実測、2026-11-03）。
+
+**なぜ:** フラグは自分のパッケージの C のコンパイルとリンクにしか届かない。Go のツールチェーンが
+ランタイムの cgo 部分を作るときは、環境変数 `MACOSX_DEPLOYMENT_TARGET` を読む（観測した振る舞いからの推測。
+ツールチェーンのソースは読んでいない）。
 
 **適用方法:**
-- ビルド出力は `dist/` に統一し、`.gitignore` には `dist/` のみ記載する。バイナリ名の
-  パターンは一切書かない。
-- ただし標準的な不要ファイルの除外は入れる: macOS junk（`.DS_Store` `._*` 等）+
-  エディタ残骸（`*.swp` `*~`）+ `.claude/`。「バイナリ名を書かない」と「標準 junk は書く」
-  は両立する。
+- Makefile で `export MACOSX_DEPLOYMENT_TARGET := <版>` とし、全体を作り直す。上の例では警告が 0 件になった。
+- 確かめるのは `vtool -show-build <バイナリ>` の `minos`。期待した版であることを、リリースのたびに見る。
+- この変数が効くのは、外部リンカが走るとき（いずれかのパッケージが `import "C"` するとき）だけ。
+  cgo を使わない同じビルドは `minos 13.0` を報告した（実測）。
+- Homebrew の formula の雛形は最小 macOS を宣言しない。古い OS では、入るのに起動しない。
+  README に最小 OS を書く。
 
-## リリースをローカルビルドにする判断（GitHub Actions 不使用）
+## 依存の固定とパッチ
 
-**事象:** リリースの CI/CD 化（GitHub Actions）を検討・提案される機会は繰り返しあるが、
-意図的にローカルマシンビルドを維持している。
-
-**なぜ（判断理由として記録）:**
-1. **macOS runner のコスト**: Actions の課金で macOS は Linux の 10 倍。個人 OSS の
-   リリース頻度でも無料枠を簡単に超える。
-2. **署名鍵の保管場所**: Developer ID 証明書と notary 用 API キーはローカル Keychain
-   のみに置きたい。GitHub Secrets に置くと漏洩時の blast radius が広く、鍵を CI runner に
-   渡す経路自体が攻撃面になる。Apple の規約上も signing identity は keyholder の
-   sole control が想定されている。
-
-**適用方法:**
-- `make package` 一発で cross-compile + codesign + notarize + zip まで完結させることで、
-  手作業ミスのリスクを下げる（CI の代替はスクリプト化）。
-- 善意の CI 化 PR（release workflow 追加等）には、動機を認めつつこの方針を説明して
-  丁寧に close する。「lint/test だけの CI」も例外を作ると判断がブレるため、
-  ローカルの `make check` で完結する方針を貫く。
-
----
-
-## vendored 依存はローリングタグではなく不変のバージョンタグに固定する
+### vendored 依存はローリングタグではなく不変のバージョンタグに固定する
 
 **事象:** sherpa-onnx を submodule 化して静的ビルドしようとしたところ、cmake が
 onnxruntime のアーカイブを取得する段で失敗した。ダウンロードした zip 自体は健全
@@ -102,7 +109,7 @@ $(ORT_ZIP):
 
 ---
 
-## 「バージョンを PIN する」は改竄対策にならないことがある — 露出を先に棚卸しする
+### 「バージョンを PIN する」は改竄対策にならないことがある — 露出を先に棚卸しする
 
 **事象:** 「サプライチェーン攻撃が怖いので submodule をリリースタグに PIN したい」という
 方針で作業を始めたが、実際に棚卸ししたところ**PIN しようとしていた場所は問題ではなく、
@@ -141,91 +148,7 @@ $(ORT_ZIP):
 （第三者ミラーが作者版と同じ中身を別バージョン名で配っていた）。しかもそれが既定だった。
 **既定で入るものは上流の作者から取る。** ハッシュ収集は棚卸しとしても効く。
 
-## リポジトリ内のモジュールキャッシュは、再帰的な書き換えに巻き込まれる — `go mod verify` で見つけ、`go clean -modcache` で作り直す
-
-**症状:** 文書しか変えていないのに `make test` が `no required module provides package github.com/spf13/cobra` で失敗した。
-`go.mod` には書いてあり、キャッシュにも実体がある（2026-09-22、scat）。
-
-**原因:** Makefile が `GOMODCACHE` をリポジトリ内の `.cache/go-mod` に向けていた（サンドボックス対策）。ワークスペースに
-再帰的な整形がかかった過去の事故で、その中の依存ソースまで書き換えられていた。`go mod verify` が
-`dir has been modified` と名指しした（`cobra`・`x/sys`）。`.cache/` は git 管理外なので、差分にも出ない。
-
-**どう適用するか:**
-- 説明のつかないモジュール解決の失敗は、まず `GOMODCACHE=<その場所> go mod verify`。
-- 作り直しは `GOMODCACHE=<その場所> go clean -modcache`。キャッシュは読み取り専用で作られるので `rm -rf`
-  （`make clean` の中身がそれでも）は `Directory not empty` で途中止まりになる。
-- キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
-
-
-## macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE=1` と `--no-xattrs` の両方が要る
-
-**事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
-`LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。
-ビルド・署名・公証は成功していたが、archiveの収録名を検査して初めて見つかった。
-
-**なぜ:** macOSのtarは拡張属性を2つの形でarchiveへ持ち込み、1つの設定は片方しか止めない。
-`COPYFILE_DISABLE=1` はAppleDoubleの補助エントリ（`._name`）を抑えるが、bsdtarは属性を
-pax headerとしても書く — `LIBARCHIVE.xattr.*` と `SCHILY.xattr.*` で、`tar -tzf` の一覧には出ず、
-GNU tarは展開時に未知のキーワードとして警告する。翌日、同じプロジェクトで実測した（2026-09-23）:
-`COPYFILE_DISABLE=1` の修正を出した後のarchiveにも `com.apple.provenance` が残り、
-作業ツリーが同期フォルダーの下にあるため `com.dropbox.attrs` も入っていた。
-stagingに通常ファイルだけを置いてもarchive内が同じとは限らず、直したはずの設定も証拠にならない。
-逆も成り立つ: `COPYFILE_DISABLE=1` なしの `--no-xattrs` はpax headerを落とすが、`._` エントリは書く。
-GNU tar 1.35で展開した結果（2026-09-23）: どちらもなし — 警告と余分な `._` ファイル。
-`COPYFILE_DISABLE=1` のみ — 警告。`--no-xattrs` のみ — 警告なし、余分な `._` ファイルあり。両方 — 正常。
-
-**適用方法:** `COPYFILE_DISABLE=1 tar --no-xattrs` でarchiveを作る — 2つの形を1つずつ止める
-（`--no-xattrs` はbsdtar・GNU tarのどちらも受け付ける）。そのうえで**設定ではなくarchiveを検査する**:
-リリースの関門でentry一覧を出し、配布契約（binary・README・license）と完全一致することを要求し、
-`._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、各entryの**pax header**に `LIBARCHIVE.xattr.` /
-`SCHILY.xattr.` で始まるキーが無いことを確かめる（Pythonの `tarfile` の `pax_headers`）。
-展開したストリームをgrepしてはいけない: ファイルの本文にも一致する。同梱したCHANGELOGがこの
-キーワードを書いていたため、きれいなarchiveがリリースの関門で拒否された（2026-09-23）。一覧は `tar --options 'tar:!mac-ext' -tzf` で出す: macOSのbsdtarは
-一覧表示のとき `._` エントリを対応するentryへ畳み込むため、素の `tar -tzf` はきれいな一覧を返し、
-その上の `._` 検査は決して落ちない。並べた一覧はCロケールで比べる（`LC_ALL=C sort`）。
-UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定の期待文字列は正しいarchiveを拒否する。
-関門は形ごとのfixture（`--no-xattrs` のみのものを含む）で実証し、fixtureは畳み込まない読み手
-（Pythonの `tarfile`）で先に読み返す。どの関門でも落ちない断定を書いたことが、最初の修正が
-効いたと信じられた理由である。署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。
-
-## C の安全策は、既定のままだと問題を見つけても失敗しない — 陽性対照は実際に動くビルド規則を読む
-
-**事象:** timeout の 5 層（警告・静的解析・`-fbounds-safety`・ASan/UBSan・入力の揺さぶり）を Apple clang 21 で実測した。
-- `clang --analyze -Werror` は指摘があっても rc=0。`-Xanalyzer -analyzer-werror` で初めて失敗する。
-- UBSan は既定で報告して続行し、rc=0。`-fno-sanitize-recover=all` が要る。
-- Apple の SDK は `_FORTIFY_SOURCE` を最大 2 として扱う（3 は効かない。`secure/_common.h` を読んで確認）。
-- Apple clang に libFuzzer（`-fsanitize=fuzzer`）は無い。
-- 層ごとの検出は重ならない。配列を越える `memcpy` は警告も静的解析も見逃し、ASan だけが捕まえた。長さ 3 の配列の
-  添字 3 は `-fbounds-safety` が実行時に止め、通常ビルドは黙って読んだ。
-- `-fbounds-safety` は、`main` の argv を `char *__null_terminated *__counted_by(argc)` で受ければ通り、`execvp` へ渡す
-  1 か所だけ `__unsafe_forge_null_terminated` が要る。ローカル配列を `const char *` の引数へ渡す書き方と、`SIG_IGN` を
-  関数ポインタの引数で渡す書き方は拒否される（`sa_handler` への直接代入、長さつきの `write` は通る）。
-- 陽性対照がフラグの変数だけを見ていると、ビルド規則からフラグが外れても通る。`$(MAKE) -n` で規則を読んでも、
-  `-f $(firstword $(MAKEFILE_LIST))` を付けないと、動いているのとは別の Makefile を読む。
-
-**適用方法:** 層ごとに失敗させるフラグを明示する。わざとバグを入れたファイルで、各層が診断の文言つきで失敗することを
-`make test` の最初に確かめる。フラグが規則に入っているかは、動いている Makefile の `make -n` の出力で確かめる。
-
-## cgo のバイナリの最小 macOS は `MACOSX_DEPLOYMENT_TARGET` で決める — CGO_CFLAGS／CGO_LDFLAGS だけでは Go のランタイムがビルド機の OS のまま
-
-**事象:** Core Text を cgo で呼ぶ MCP サーバ（report-studio-mcp）の最小 OS を 26.0 にしようとして、
-`CGO_CFLAGS` と `CGO_LDFLAGS` に `-mmacosx-version-min=26.0` を渡した。ビルド機は macOS 27.2。
-リンカは「より新しい macOS 向けに作られたオブジェクト」という警告を出した。Go のランタイムの cgo
-オブジェクトが、ビルド機の OS 向けのまま作られていた（実測、2026-11-03）。
-
-**なぜ:** フラグは自分のパッケージの C のコンパイルとリンクにしか届かない。Go のツールチェーンが
-ランタイムの cgo 部分を作るときは、環境変数 `MACOSX_DEPLOYMENT_TARGET` を読む（観測した振る舞いからの推測。
-ツールチェーンのソースは読んでいない）。
-
-**適用方法:**
-- Makefile で `export MACOSX_DEPLOYMENT_TARGET := <版>` とし、全体を作り直す。上の例では警告が 0 件になった。
-- 確かめるのは `vtool -show-build <バイナリ>` の `minos`。期待した版であることを、リリースのたびに見る。
-- この変数が効くのは、外部リンカが走るとき（いずれかのパッケージが `import "C"` するとき）だけ。
-  cgo を使わない同じビルドは `minos 13.0` を報告した（実測）。
-- Homebrew の formula の雛形は最小 macOS を宣言しない。古い OS では、入るのに起動しない。
-  README に最小 OS を書く。
-
-## vendored 依存へのローカルパッチは、適用・再ビルド・検査の 3 つを別々に確かめる — 入れ子の submodule では既定の仕組みがどれも足りない
+### vendored 依存へのローカルパッチは、適用・再ビルド・検査の 3 つを別々に確かめる — 入れ子の submodule では既定の仕組みがどれも足りない
 
 **事象:** 画像生成 CLI（image-forge）が同梱する C++ ライブラリの、さらに内側の submodule に
 1 関数のパッチを当てた。パッチをファイルとして持ち、ビルド前に当て、当たっていることを検査する
@@ -260,7 +183,7 @@ git のポインタを知らない。`git diff` は既定で作業ツリーと�
 - 検査が比べているものが名前と行数だけなら、そう書く。「手編集からはバイナリを作れない」と
   書いた文書は、検査の実装より強いことを言っていた。
 
-## 依存の不具合を「渡す設定」で避けたら、設定の届かない要素が残る — 条件を 1 つだけ満たす入力を作って測る
+### 依存の不具合を「渡す設定」で避けたら、設定の届かない要素が残る — 条件を 1 つだけ満たす入力を作って測る
 
 **事象:** 同じライブラリを更新したところ、ある重み形式（1 バイトの FP8）を持つモデルで GPU
 バックエンドが異常終了するようになった。ライブラリには「名前の規則に合うテンソルを読み込み時に
@@ -287,3 +210,85 @@ git のポインタを知らない。`git diff` は既定で作業ツリーと�
   コールバックの登録が要るライブラリは、登録しなければ黙っている。
 - 設定での回避が届かないと分かったら、原因の箇所を直す側（パッチ、上流への報告）に切り替える。
   届かない範囲を自分の側で列挙して拒否する案は、依存の除外リストの写しを持つことになる。
+
+## ビルドの環境と成果物
+
+### .gitignore にバイナリ名を書かない — cmd/<name>/ ごと消える
+
+**事象:** `.gitignore` にバイナリ名をそのまま書いた結果、`cmd/<name>/` ディレクトリも
+除外されて main.go が git 未追跡のままになり、コードロストが複数プロジェクトで発生した。
+
+**適用方法:**
+- ビルド出力は `dist/` に統一し、`.gitignore` には `dist/` のみ記載する。バイナリ名の
+  パターンは一切書かない。
+- ただし標準的な不要ファイルの除外は入れる: macOS junk（`.DS_Store` `._*` 等）+
+  エディタ残骸（`*.swp` `*~`）+ `.claude/`。「バイナリ名を書かない」と「標準 junk は書く」
+  は両立する。
+
+### リリースをローカルビルドにする判断（GitHub Actions 不使用）
+
+**事象:** リリースの CI/CD 化（GitHub Actions）を検討・提案される機会は繰り返しあるが、
+意図的にローカルマシンビルドを維持している。
+
+**なぜ（判断理由として記録）:**
+1. **macOS runner のコスト**: Actions の課金で macOS は Linux の 10 倍。個人 OSS の
+   リリース頻度でも無料枠を簡単に超える。
+2. **署名鍵の保管場所**: Developer ID 証明書と notary 用 API キーはローカル Keychain
+   のみに置きたい。GitHub Secrets に置くと漏洩時の blast radius が広く、鍵を CI runner に
+   渡す経路自体が攻撃面になる。Apple の規約上も signing identity は keyholder の
+   sole control が想定されている。
+
+**適用方法:**
+- `make package` 一発で cross-compile + codesign + notarize + zip まで完結させることで、
+  手作業ミスのリスクを下げる（CI の代替はスクリプト化）。
+- 善意の CI 化 PR（release workflow 追加等）には、動機を認めつつこの方針を説明して
+  丁寧に close する。「lint/test だけの CI」も例外を作ると判断がブレるため、
+  ローカルの `make check` で完結する方針を貫く。
+
+---
+
+### リポジトリ内のモジュールキャッシュは、再帰的な書き換えに巻き込まれる — `go mod verify` で見つけ、`go clean -modcache` で作り直す
+
+**症状:** 文書しか変えていないのに `make test` が `no required module provides package github.com/spf13/cobra` で失敗した。
+`go.mod` には書いてあり、キャッシュにも実体がある（2026-09-22、scat）。
+
+**原因:** Makefile が `GOMODCACHE` をリポジトリ内の `.cache/go-mod` に向けていた（サンドボックス対策）。ワークスペースに
+再帰的な整形がかかった過去の事故で、その中の依存ソースまで書き換えられていた。`go mod verify` が
+`dir has been modified` と名指しした（`cobra`・`x/sys`）。`.cache/` は git 管理外なので、差分にも出ない。
+
+**どう適用するか:**
+- 説明のつかないモジュール解決の失敗は、まず `GOMODCACHE=<その場所> go mod verify`。
+- 作り直しは `GOMODCACHE=<その場所> go clean -modcache`。キャッシュは読み取り専用で作られるので `rm -rf`
+  （`make clean` の中身がそれでも）は `Directory not empty` で途中止まりになる。
+- キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
+
+### macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE=1` と `--no-xattrs` の両方が要る
+
+**事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
+`LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。
+ビルド・署名・公証は成功していたが、archiveの収録名を検査して初めて見つかった。
+
+**なぜ:** macOSのtarは拡張属性を2つの形でarchiveへ持ち込み、1つの設定は片方しか止めない。
+`COPYFILE_DISABLE=1` はAppleDoubleの補助エントリ（`._name`）を抑えるが、bsdtarは属性を
+pax headerとしても書く — `LIBARCHIVE.xattr.*` と `SCHILY.xattr.*` で、`tar -tzf` の一覧には出ず、
+GNU tarは展開時に未知のキーワードとして警告する。翌日、同じプロジェクトで実測した（2026-09-23）:
+`COPYFILE_DISABLE=1` の修正を出した後のarchiveにも `com.apple.provenance` が残り、
+作業ツリーが同期フォルダーの下にあるため `com.dropbox.attrs` も入っていた。
+stagingに通常ファイルだけを置いてもarchive内が同じとは限らず、直したはずの設定も証拠にならない。
+逆も成り立つ: `COPYFILE_DISABLE=1` なしの `--no-xattrs` はpax headerを落とすが、`._` エントリは書く。
+GNU tar 1.35で展開した結果（2026-09-23）: どちらもなし — 警告と余分な `._` ファイル。
+`COPYFILE_DISABLE=1` のみ — 警告。`--no-xattrs` のみ — 警告なし、余分な `._` ファイルあり。両方 — 正常。
+
+**適用方法:** `COPYFILE_DISABLE=1 tar --no-xattrs` でarchiveを作る — 2つの形を1つずつ止める
+（`--no-xattrs` はbsdtar・GNU tarのどちらも受け付ける）。そのうえで**設定ではなくarchiveを検査する**:
+リリースの関門でentry一覧を出し、配布契約（binary・README・license）と完全一致することを要求し、
+`._*`・`PaxHeader`・`__MACOSX` のentryを拒否し、各entryの**pax header**に `LIBARCHIVE.xattr.` /
+`SCHILY.xattr.` で始まるキーが無いことを確かめる（Pythonの `tarfile` の `pax_headers`）。
+展開したストリームをgrepしてはいけない: ファイルの本文にも一致する。同梱したCHANGELOGがこの
+キーワードを書いていたため、きれいなarchiveがリリースの関門で拒否された（2026-09-23）。一覧は `tar --options 'tar:!mac-ext' -tzf` で出す: macOSのbsdtarは
+一覧表示のとき `._` エントリを対応するentryへ畳み込むため、素の `tar -tzf` はきれいな一覧を返し、
+その上の `._` 検査は決して落ちない。並べた一覧はCロケールで比べる（`LC_ALL=C sort`）。
+UTF-8ロケールでは `abuse-lookup` が `LICENSE` より前に並び、固定の期待文字列は正しいarchiveを拒否する。
+関門は形ごとのfixture（`--no-xattrs` のみのものを含む）で実証し、fixtureは畳み込まない読み手
+（Pythonの `tarfile`）で先に読み返す。どの関門でも落ちない断定を書いたことが、最初の修正が
+効いたと信じられた理由である。署名・公証とarchive内容の検証はそれぞれ必要であり、片方の成功で他方を代用しない。
