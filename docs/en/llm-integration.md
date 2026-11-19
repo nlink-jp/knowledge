@@ -25,6 +25,39 @@ breaking stdout-JSON + stderr-control pipelines.
   `types.Part.from_bytes(data=..., mime_type=...)` (nothing persists server-side,
   no cleanup needed).
 
+### An SDK update that compiles and passes every test can still change what a call does — run the old and the new against one local endpoint
+
+**Symptom:** A model provider's Go SDK was moved six minor versions forward in an agent runtime. One line of
+`go.mod` changed, the code compiled, and the whole test suite passed unchanged. The update nevertheless
+carried two changes in what one model call does. (1) A new default, listed under Features: when a response
+ends with a continuation token the SDK sends the same request again and reports the usage of all such
+requests added together — which would have broken the runtime's per-call usage record, its record of every
+re-send, and a compaction trigger that reads the prompt count as the conversation's size. It was found by
+reading the changelog. (2) A change listed under Bug Fixes: an error the endpoint sends *as a stream event* is
+now raised; the old version decoded it as an empty chunk, so a call came back as a success holding nothing,
+or holding half an answer with no sign of the cut. Reading for new defaults missed it; a reviewer found it by
+serving the same responses from one local endpoint to a tree on each version and comparing. The same probe
+found that the new version dereferences a null candidate in a stream chunk before the caller's own guard can
+see it — a panic inside the caller's loop.
+
+**Why:** A test suite pins the caller's code against the dependency it was written with. Behaviour that lives
+only in the dependency — what it does with a response shape the tests never serve — is pinned by nothing, so
+neither its loss nor its arrival fails a test. Changelogs sort by the author's view of the change (feature,
+fix), not by whether a caller's contract moves.
+
+**How to apply:**
+- For a dependency that sits between the product and a remote service, keep a local fake of the service and,
+  on update, run every response shape the product handles against the old and the new tree: a normal answer,
+  an error as status and as an in-band event, before and after output, a cut stream, a malformed chunk, and
+  whatever the new version adds. Diff the requests sent and the results returned.
+- Decline a new default that sends requests the product does not see, explicitly, on every call site, and
+  hold it with a control test that shows the default still does what you declined — otherwise the test goes
+  quiet when the dependency changes again.
+- Pin wanted behaviour that the dependency provides with an offline test of your own, even when you wrote no
+  code for it.
+- Put a recover at the boundary where a dependency's reader runs inside your loop if a panic there would
+  take a terminal UI down; report it as the call's error.
+
 ### Gemini 3 requires echoing back thoughtSignature
 
 **Symptom:** Switching the backend to Gemini 3 broke the tool-call loop on round
@@ -166,6 +199,39 @@ catalog price**, and those counts are unrecoverable unless they are persisted
   per region.
 - Per-request charges such as search grounding are invisible in token counts;
   record the call count separately.
+
+### Vertex's `totalTokenCount` is the sum of FOUR buckets — dropping `toolUsePromptTokenCount` breaks the checksum
+
+**Symptom:** An agent writes accounting records (prompt / output / thoughts /
+cached / total) into its transcripts and an aggregator checks them with
+`prompt + output + thoughts == total`. Two records on another machine failed
+the check (2026-09). Both were calls that used Google Search grounding / URL
+context, and `total` was larger by exactly the content the tool returned.
+
+**Why:** The genai SDK's `GenerateContentResponseUsageMetadata` defines
+`totalTokenCount` as the sum of prompt, candidates, **tool_use_prompt** and
+thoughts. `toolUsePromptTokenCount` is the results of built-in tool executions
+fed back to the model as input; on a main loop that uses no built-in tools it
+is always 0, so a three-bucket identity measured only on main-loop rounds
+appeared to hold. An n=1 conclusion from a probe that was not representative.
+
+**How to apply:**
+- When designing an accounting record, enumerate **every** field of the API's
+  metadata type and write the identity from the SDK's doc comment on `total`;
+  use measurement to confirm the definition, not to invent it.
+- Include a tool-using call in the checksum fixtures — on the main loop alone
+  this bucket is 0 and silent.
+- Downstream, decide from the API definition whether an unwritten bucket can
+  be **derived as the remainder**. When it is the only unwritten bucket the
+  remainder is exact, and "derived" is the right label rather than a failed
+  checksum. A total *below* the sum is never derived — it stays a failure.
+- `toolUsePromptTokenCount` bills at the input price and is never cached.
+- Upstream, when the producer adds the missing bucket to a persisted record,
+  **write it always, zero included — no `omitempty`**. Key absence is then the
+  one signal a consumer has to tell a pre-change record (derive the remainder)
+  from a measured zero (trust it); `omitempty` folds the two cases into one.
+  (gem-agent ADR-0066 / gem-usage-lens: the lens reads `tool_prompt` when the
+  key is present and derives only when it is absent.)
 
 ### When syncing a price table, check every multiplier column and the footnotes — not just the base price
 
@@ -392,6 +458,42 @@ misses the retirement that is actually close.
   replacement without a retirement date is not a reason to migrate.
 - Do not remove a retired model from the rate table — re-pricing past calls still needs it.
 
+### When checking against a pricing page, record the rows it did not print and the charges that live only in footnotes
+
+**What happened:** While adding a new model to a usage tool's rate table, the existing models were re-checked
+against the pricing page and the verification date was bumped. A pre-release independent verification was handed
+"what was read from the page" and told to recompute the numbers, and found two gaps. (1) The output-price row of
+one preview model was **absent** from that day's standard table. The value was carried forward, yet the text still
+said every figure had been re-verified with no change (the same day's priority and batch tables matched 1.8× and
+0.5× of the carried value). (2) A footnote under the table said a long completion is charged even when the request
+ends in a timeout, effective on the very day of the work — a charge with no column in the table, mentioned in no
+document (the Vertex AI pricing page, 2026-11; no row carried the footnote's mark, so which models of the section
+it covers could not be told).
+
+**Why:** A check tends to become "do the values on the page match mine", and a value that is **not there** does
+not show up as a difference. A footnote has no column, so it falls away when the page is copied into the shape of
+a rate table. A tool that counts only calls that returned a response cannot, by construction, show a charge for a
+request that failed.
+
+**How to apply:**
+- When bumping a verification date, write separately what was confirmed from values the page printed and what was
+  carried forward because nothing was printed. If another table supports the carried value, say so.
+- Read the section's footnotes every time, and put charges that have no column (dated ones especially) in the
+  README as things the tool's figures do not include.
+- Hand an independent verifier the **text that was read**, not the conclusion, and have the numbers derived from
+  it again. A gap in the reading then shows to the verifier as a gap in the text.
+- Re-check, at the next sync, every row recorded last time as "not printed", and if it is still missing say so
+  again. At the next sync after this entry existed (adding a new model, 2026-11), the changelog wording slid back to
+  "re-verified, no existing price changed", and the independent verification flagged it as a breach of the rule.
+  Recording it once does not stop the next sync's wording from returning to the default.
+- When another table supports a value that was not printed, read it from the row that names that model. In the same
+  sync, the new model's priority **input** price was the same number as the unprinted model's priority **output**
+  price. The text handed to the verifier held only the new model's row, and the verifier asked whether the number
+  cited as support came from another model's row (re-reading the page showed the right model's row carried the same
+  value, so the support held).
+- For the breakdowns a row draws that the records have no dimension for (input prices per modality, for example),
+  also write in the README that the tool's figures do not include them.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
@@ -411,6 +513,34 @@ services tend to have stabler limits).
 - Collecting parallel results in submission order (`map`) makes one stuck item look like the whole job has stopped.
   Collect them in completion order (`as_completed`) and append each one as it finishes, so a stopped run resumes
   where it left off.
+
+### A retry loop decides from the error's status, never from digits in its text — and a backoff's default jitter can exceed its base
+
+**Symptom:** A pre-release review of a new "this call was retried" record found two defects in the retry
+loops it was about to describe. (1) One loop decided whether to retry by searching the error's text for
+"429", "500", "502", "503", "504". A transport error quotes the request's address and port, and an API
+refusal can mention another status in its message, so `read tcp 10.0.0.5:50234` was a "502" and was sent
+again up to four times; the cause reported for a real 503 that mentioned a 429 was "429". (2) Both loops
+built their backoff with a 500 ms base and the helper library's default jitter of a full second either way.
+The first wait was therefore uniform over −0.5 … 1.5 s clamped at zero: one first retry in four fired with no
+wait at all. A test that asserted a positive delay failed in about half its runs, which is how it was found.
+
+**Why:** The text check predates a typed error from the SDK and was never revisited; it works on every error
+a developer tries by hand. The jitter default is sensible for the library's own default base of several
+seconds and was inherited without looking at the ratio. Neither shows up in normal use — an immediate retry
+on a 429 mostly just fails again and the next step waits — and both become visible the moment the retry is
+written down as data.
+
+**How to apply:**
+- Take the status from the error value (`errors.As` to the SDK's API error) for both the decision and
+  anything displayed or recorded. An error that is not an API error is not transient by its text.
+- Set the jitter explicitly, as a fraction of the base, in one constructor every retry loop shares, and pin
+  the lower bound of the first wait with a test over many samples.
+- Pin the call sites in the source as well (one constructor, and each loop calls it). A timing assertion on
+  the loop cannot do it: a loop put back on the old jitter passed such a test in 8 of 40 runs, because a wait
+  drawn from the old range lands inside the new bounds a quarter of the time.
+- When recording an upstream failure, keep the status code and the machine-readable status token only. The
+  message is free text that can quote back what was sent (see the security entry on upstream error text).
 
 ### Vertex AI tool config: unify the schema, keep paths per-tool
 
@@ -1063,6 +1193,43 @@ budget, processing time grew stepwise, and the run hit timeouts.
 **How to apply:** Wherever accumulated data enters prompts, implement budget
 calculation and budget application (truncation) as a pair. Structures containing
 raw-data references must be controlled by tokens, not item counts.
+
+### When an agent session is slow and costly, count where the prompt went before changing anything — the cache follows the age of the previous request, and a large context outlasts it
+
+**Symptom:** An agent runtime on a hosted frontier model felt slow and its bill was mostly input tokens. A
+read-only count over the operator's own transcripts (one account, 30 days, a little over 200 main-loop calls, almost all
+on one model) found: 88% of the list-price cost was prompt tokens *not* served from the provider's implicit
+cache; output and thinking together were 5%; the tools themselves were 1% of the waiting time and the model
+87%. Sorting the calls that repeat the previous call's prompt by how long before their start the previous
+call *started*, the share that hit the cache fell steadily — 98% under 30 s, 85% to 60 s, 69% to 120 s, 52%
+to 300 s, 10% past 900 s — while sorting by how long ago the previous call *ended* showed misses even when the
+next request went out within 30 s (27% of those calls). At contexts over 150k tokens one call took 45–137 s,
+so the next request already found an old prefix: a miss made the call slow, and the slow call made the next
+miss. One call after a tool list changed re-read the whole context at full price, every time (4 of 4).
+
+**Why:** The provider's documents describe the implicit cache as best-effort and do not state how long a
+prefix is kept; what the account showed is an observation of one month, not a rule. What is documented, and
+was not known to the runtime's design, is that the same provider's newest model family does not support
+explicit (paid, guaranteed) caching at all, and that its pay-as-you-go tier gives that family a quarter of
+the prioritised tokens-per-minute of the cheaper family — a single request from a long session can exceed it.
+A design decision taken on an older, faster model ("the implicit cache hits 97% of the time, so explicit
+caching is not worth building") had quietly stopped being true when the model changed, and nothing in the
+runtime's own display said so, because a hit rate averaged over a session hides that the misses cluster.
+
+**How to apply:**
+- Count before designing: cost by cached / uncached input, output and thinking; waiting time by model, judge
+  calls, tools and operator; main-loop calls by prompt size and by time since the previous call. All of it is
+  in the transcripts if every model call writes a usage record with the cached count.
+- Sort cache hits by time measured **to the call's start**, from the previous call's start and from its end,
+  as two tables. A table that measures to the call's own end sorts slow calls by their own length (see the
+  testing entry on self-selecting buckets).
+- Separate the calls whose prefix was necessarily new (session start, compaction, resume, a changed tool list
+  or system prompt) from the ones that repeat. Only a miss among the repeats is a question.
+- Re-read the provider's model page when the model family changes: caching modes, throughput tiers, token
+  limits and rejected parameters are per family, and "it runs" does not show which of them moved.
+- Write the mechanism as a hypothesis with its counts. The lever that does not depend on the hypothesis —
+  a smaller context makes calls shorter and cheaper whether or not the cache behaves as observed — is the one
+  to pull first.
 
 ## Pipeline design
 
@@ -1802,191 +1969,6 @@ scales with document size:
 - A route made right is not one every model takes. The same two changes in lagent, measured on a local model (a 35B MoE at 4 bits), copied a small result in 0 of 10 runs and a spilled one in 1–2 of 10. The numbers did not move after the facts line was corrected to say every result is saved (measured, 2026-11). With the spilled result most runs named the saved file but mis-transcribed its path, and kept trying shell `mkdir` and `cp` first. Do not compensate in the runtime (a path alias, say): it widens what a path argument means, which readers of it then miss, and splits runtimes that share the route. When the runtime's facts and route are right, record that the model does not take it as a property of the model.
 - When a local inference server rejects requests (out of GPU memory, say), runs end with nothing saved, and a probe may count them as valid "no evidence". Check each run's server errors before counting. One measurement where 27 of 29 runs failed this way was discarded whole.
 
-## Documentation & licensing
-
-### Never claim "fully offline" for tools running in an LLM session
-
-**Symptom:** A Skill's README claimed "fully offline / completes locally" and was
-called out as an overstatement. Content entering the session (even preprocessed)
-is sent to the model backend. For security tools handling sensitive data, such
-overclaims mislead users' data-handling decisions.
-
-**How to apply:**
-- Phrase claims by **enumerating destinations**: "the skill itself makes zero web
-  accesses and zero connections to the target; content reaches only the
-  session's model backend and local output".
-- "Offline" is only valid when the process truly runs with no external
-  connections (local LLMs etc.). Distinguish the tool's own traffic from the
-  session's traffic.
-- Review trigger: any "offline / local-only / no external transmission" claim
-  gets fact-checked including model-backend transmission.
-
-### Derive model licenses from the upstream weight distributor
-
-**Symptom:** Judging by a repackage repo's missing LICENSE led to a
-"license-unclear" misclassification; the upstream repo and HF model card declared
-Apache-2.0. Over-conservative classification has real cost — it chills
-legitimate commercial use.
-
-**How to apply:** (1) Treat the HF model card's `license:` metadata as the
-primary source; (2) check upstream even when pulling via a repackage; (3) code
-license and weight license can differ (the weight side governs). Use
-"needs review" only for genuinely undeclared cases.
-
-**The case pointing the other way:** two source-separation models were checked —
-one of them the official release of a well-known open-source project — and
-**both are MIT in code with not one word about the weights**. One carries only a
-note that you must obtain rights from copyright holders before using it on
-protected material. Applying the rule strictly meant **not adopting either.**
-**Undeclared is not a licence** — it is not grounds to err permissive, and not
-grounds to put something in a default catalog.
-
-**Two ways this shipped wrong, and the guard that catches both (2026-09-21).**
-One catalog took two entries' terms from the conversion repo it downloads from
-(`ggerganov/whisper.cpp`, `license: mit`) and reported terms that were not the
-weights'. Another took an entry's terms from the model it was trained *from* —
-NVIDIA's Open Model License for the base — and therefore told users commercial
-use was permitted, while the weights being downloaded were their publisher's
-non-commercial licence. Both read the licence off something that was not the
-weights, and in the second the error inverted a permission.
-
-- **A publisher's family is not uniform.** `openai/whisper-large-v3-turbo` is
-  MIT while `whisper-large-v3` and `whisper-base` are Apache-2.0; one repo can
-  hold a non-commercial checkpoint beside Apache-2.0 components someone
-  re-hosted. Read the card for the *file*, not for the owner.
-- **Both catalogs' default model happened to be the correct entry**, which is
-  why a spot-check passed. Check every entry or none.
-- **Record the provenance as data**, not in a comment: a field naming the card
-  each licence was read from, and a test pinning the (entry → source) pair and
-  comparing the entry count, so a model cannot be added without stating where
-  its terms came from. `cardData.license` / `license_name` from
-  `https://huggingface.co/api/models/<repo>` gives the whole table in one pass.
-- **Check that a correction reaches an installed model.** One tool recorded the
-  licence at install time and consulted the catalog only when that was empty, so
-  corrected terms would never have been shown to anyone who already had the
-  model. **So did the other** — on the released binary, after the catalog was
-  corrected, an installed `base` reported `mit` while the catalog reported
-  `apache-2.0` in the same run. **Assume this asymmetry is the default for the
-  class.** But that is only **stage two**. A correction can stop at three stages,
-  each checked differently: (1) the tap formula — read a file; (2) the installed
-  binary — ask `--version`; (3) **the running process** — which answers only when
-  you call it. Measured 2026-09-21: with (1) and (2) both current, nine resident
-  MCP processes still held `/opt/homebrew/Cellar/<tool>/0.4.3/bin/<tool>`, a
-  directory brew had already removed, and answered with values from three
-  releases earlier (`lsof -p <pid> | awk '$4=="txt"'`). **An upgrade does not
-  replace a running process.**
-  Scope that correctly, though: stages 1 and 2 are properties of an artifact and
-  belong to development — a formula pointing at an older release means the thing
-  is not installable at the version it claims, which is a release defect. Stage
-  3 is a property of a machine. On a development machine a resident agent
-  holding the binary it started with is the normal state, often the wanted one,
-  and where the host cannot reload a server (Claude Desktop) it is not even
-  avoidable. So stage 3 is a **debugging lead for "why is this answering
-  something I already fixed"**, not a completion criterion for a release, and
-  not a gate: making it one turns ordinary development into a permanently
-  failing check. The org's own attempt to put it in the release checklist was
-  withdrawn for exactly that reason.
-  For the marker, **a field the release added beats a word it removed**: a value
-  can coincide with the correct one, a field cannot exist early. Here the absence
-  of `weights_repo` identified the response as pre-0.4.5 outright, while reading
-  the licence alone would have meant deciding whether that `mit` was stale or
-  simply right — the same trap that let the original defect through. The field a
-  user reads is the one to test.
-- Where two statements genuinely exist (an HF card and a Civitai listing for the
-  same weights), report the stricter and name both rather than picking one.
-
----
-
-## Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work
-
-**What happened:** a character's surname was consistently misheard as a different
-word on a Japanese recording. The obvious fix seemed to be putting it in
-whisper's initial prompt (`--prompt`). **Four attempts all failed** — kanji,
-katakana, a comma-separated list, and the name used naturally in a sentence — and
-some of them broke lines that had been correct with no prompt at all.
-
-**Why:** the initial prompt conditions **register and context**, not the acoustic
-model's ear. A sound that context cannot rescue is not rescued. And because the
-prompt shifts the decoder's whole distribution, **a string unlike the speech in
-the audio (a bare noun list) destabilises the output.**
-
-**Measured** (two 60-second windows, kotoba-whisper-v2.0):
-
-| prompt | result |
-|---|---|
-| none | baseline |
-| noun list | **worse**. **Injected one of the prompt's own terms into an unrelated line**, and fragmented the lines around it |
-| sentence describing the scene | **better**. Recovered whole lines the unprompted run dropped, including a name it had lost |
-| sentence containing the correct name | the name is **still wrong**, in every spelling |
-
-**How to apply:**
-
-- Write the prompt as **one or two sentences describing the recording**, in the
-  register you expect to hear. Never a comma-separated list of names.
-- Plan for **proper nouns to be fixed by post-processing the transcript**, not by
-  the prompt. Do not design around the prompt solving it.
-- Before applying one to a long recording, **cut a few minutes and compare with
-  and without.** A bad prompt makes things worse, so it is not a free addition.
-- **Grammar-constrained decoding is not the escape hatch.** This entry originally
-  said that `grammar_rules` was "the mechanism" for constraining vocabulary. It
-  was measured later and **that was wrong**. See the next entry.
-
-**The larger lesson:** the documentation originally called this "cheap and
-effective". It was written from expectation, never measured, and turned out to be
-close to backwards. Adjectives about model behaviour — effective, fast, accurate
-— do not belong in docs without a measurement behind them.
-
----
-
-## whisper.cpp's grammar-constrained decoding is not a vocabulary hint
-
-**Symptom:** after the initial prompt turned out not to fix proper nouns (above),
-`whisper_full_params.grammar_rules` — grammar-constrained decoding — was the
-obvious next move. Measured: **a permissive grammar with the correct name added
-as an alternative produces output byte-identical to no grammar at all**, on two
-different models.
-
-**Why:** the implementation only ever **subtracts**. There is a single line that
-takes the penalty off the logits of tokens the grammar *rejects*, and **nothing
-that lifts tokens the grammar allows**. A permissive grammar rejects nothing, so
-nothing happens. Three more properties compound it:
-
-- What it constrains is **not a lexicon but the shape of the entire 30-second
-  window**. `root` must accept the whole window's output.
-- **The penalty on the end-of-text token is commented out upstream.** The decoder
-  can escape a constraining grammar by **ending the segment early** instead of
-  satisfying it.
-- The grammar is re-initialised per 30-second window, so cross-window constraints
-  cannot be expressed.
-
-**Measured (50 seconds of real audio, beam size fixed across all arms, two models):**
-
-| grammar | output |
-|---|---|
-| none | baseline (name wrong) |
-| name + any character (permissive) | **byte-identical to no grammar** |
-| closed vocabulary of 7 words, name included | 50 seconds of dialogue collapsed to two sentences, and **the name never appeared** despite being in the vocabulary |
-| same, penalty at 1/10 | identical. Not a question of strength |
-| name forced as a prefix | emitted one character and stopped — the EOT escape, demonstrated |
-
-**How to apply:**
-
-- Grammar constraints are for **audio whose utterances are known to come from a
-  closed set** — voice commands, fixed read-back confirmations — pushed into that
-  set. Do not mix them into open-ended transcription as a vocabulary hint.
-- Fix proper nouns by **substituting after transcription**, and **record that the
-  substitution happened**. That is what lets a later reader tell a heard string
-  from an edited one — and when the consumer downstream is a model that cannot
-  hear, there is no other way to recover the distinction.
-- Do not locally re-enable something upstream deliberately disabled (the EOT
-  penalty). It breaks on every dependency update.
-
-**Methodology:** that an API *has* the parameter is no evidence it does what you
-expect. Coming straight off making that mistake with the prompt, this one was
-written only after **reading the upstream implementation first and measuring
-second**. Building the upstream CLI example from source is what makes parameters
-your own bindings do not expose measurable at all.
-
 ### Hand the agent its own runtime through a read-only tool (same accounting source as the human UI)
 
 **Symptom:** an agent's model does not reliably know its own deployment name
@@ -2010,39 +1992,6 @@ process — there was simply no tool handing it over.
   the tool before constructing the agent** and let the snapshot closure
   lazily dereference a pointer assigned afterwards (the tool only ever runs
   inside the loop, so it never sees nil).
-
-### Vertex's `totalTokenCount` is the sum of FOUR buckets — dropping `toolUsePromptTokenCount` breaks the checksum
-
-**Symptom:** An agent writes accounting records (prompt / output / thoughts /
-cached / total) into its transcripts and an aggregator checks them with
-`prompt + output + thoughts == total`. Two records on another machine failed
-the check (2026-09). Both were calls that used Google Search grounding / URL
-context, and `total` was larger by exactly the content the tool returned.
-
-**Why:** The genai SDK's `GenerateContentResponseUsageMetadata` defines
-`totalTokenCount` as the sum of prompt, candidates, **tool_use_prompt** and
-thoughts. `toolUsePromptTokenCount` is the results of built-in tool executions
-fed back to the model as input; on a main loop that uses no built-in tools it
-is always 0, so a three-bucket identity measured only on main-loop rounds
-appeared to hold. An n=1 conclusion from a probe that was not representative.
-
-**How to apply:**
-- When designing an accounting record, enumerate **every** field of the API's
-  metadata type and write the identity from the SDK's doc comment on `total`;
-  use measurement to confirm the definition, not to invent it.
-- Include a tool-using call in the checksum fixtures — on the main loop alone
-  this bucket is 0 and silent.
-- Downstream, decide from the API definition whether an unwritten bucket can
-  be **derived as the remainder**. When it is the only unwritten bucket the
-  remainder is exact, and "derived" is the right label rather than a failed
-  checksum. A total *below* the sum is never derived — it stays a failure.
-- `toolUsePromptTokenCount` bills at the input price and is never cached.
-- Upstream, when the producer adds the missing bucket to a persisted record,
-  **write it always, zero included — no `omitempty`**. Key absence is then the
-  one signal a consumer has to tell a pre-change record (derive the remainder)
-  from a measured zero (trust it); `omitempty` folds the two cases into one.
-  (gem-agent ADR-0066 / gem-usage-lens: the lens reads `tool_prompt` when the
-  key is present and derives only when it is absent.)
 
 ### Carry "whose words is this failure" as a type, count identical texts per tool, then say so in-band
 
@@ -2095,7 +2044,6 @@ designed to ignore.
   effect can be measured after release, and one operator line per streak.
   No runtime retry, no text classification, no hard stop, no prompt rule.
   (gem-agent ADR-0075.)
-
 
 ### A tool the model must not use is made absent by name — not refused, absent; declarations were nine tenths of the prompt
 
@@ -2517,136 +2465,189 @@ becomes a refusal and a re-ask.
 - Budget a re-ask rate in the cost estimate and update it from measurements
   (22% in this run, six of them from the parent's wording).
 
-## When checking against a pricing page, record the rows it did not print and the charges that live only in footnotes
+## Documentation & licensing
 
-**What happened:** While adding a new model to a usage tool's rate table, the existing models were re-checked
-against the pricing page and the verification date was bumped. A pre-release independent verification was handed
-"what was read from the page" and told to recompute the numbers, and found two gaps. (1) The output-price row of
-one preview model was **absent** from that day's standard table. The value was carried forward, yet the text still
-said every figure had been re-verified with no change (the same day's priority and batch tables matched 1.8× and
-0.5× of the carried value). (2) A footnote under the table said a long completion is charged even when the request
-ends in a timeout, effective on the very day of the work — a charge with no column in the table, mentioned in no
-document (the Vertex AI pricing page, 2026-11; no row carried the footnote's mark, so which models of the section
-it covers could not be told).
+### Never claim "fully offline" for tools running in an LLM session
 
-**Why:** A check tends to become "do the values on the page match mine", and a value that is **not there** does
-not show up as a difference. A footnote has no column, so it falls away when the page is copied into the shape of
-a rate table. A tool that counts only calls that returned a response cannot, by construction, show a charge for a
-request that failed.
+**Symptom:** A Skill's README claimed "fully offline / completes locally" and was
+called out as an overstatement. Content entering the session (even preprocessed)
+is sent to the model backend. For security tools handling sensitive data, such
+overclaims mislead users' data-handling decisions.
 
 **How to apply:**
-- When bumping a verification date, write separately what was confirmed from values the page printed and what was
-  carried forward because nothing was printed. If another table supports the carried value, say so.
-- Read the section's footnotes every time, and put charges that have no column (dated ones especially) in the
-  README as things the tool's figures do not include.
-- Hand an independent verifier the **text that was read**, not the conclusion, and have the numbers derived from
-  it again. A gap in the reading then shows to the verifier as a gap in the text.
-- Re-check, at the next sync, every row recorded last time as "not printed", and if it is still missing say so
-  again. At the next sync after this entry existed (adding a new model, 2026-11), the changelog wording slid back to
-  "re-verified, no existing price changed", and the independent verification flagged it as a breach of the rule.
-  Recording it once does not stop the next sync's wording from returning to the default.
-- When another table supports a value that was not printed, read it from the row that names that model. In the same
-  sync, the new model's priority **input** price was the same number as the unprinted model's priority **output**
-  price. The text handed to the verifier held only the new model's row, and the verifier asked whether the number
-  cited as support came from another model's row (re-reading the page showed the right model's row carried the same
-  value, so the support held).
-- For the breakdowns a row draws that the records have no dimension for (input prices per modality, for example),
-  also write in the README that the tool's figures do not include them.
+- Phrase claims by **enumerating destinations**: "the skill itself makes zero web
+  accesses and zero connections to the target; content reaches only the
+  session's model backend and local output".
+- "Offline" is only valid when the process truly runs with no external
+  connections (local LLMs etc.). Distinguish the tool's own traffic from the
+  session's traffic.
+- Review trigger: any "offline / local-only / no external transmission" claim
+  gets fact-checked including model-backend transmission.
 
-## When an agent session is slow and costly, count where the prompt went before changing anything — the cache follows the age of the previous request, and a large context outlasts it
+### Derive model licenses from the upstream weight distributor
 
-**Symptom:** An agent runtime on a hosted frontier model felt slow and its bill was mostly input tokens. A
-read-only count over the operator's own transcripts (one account, 30 days, a little over 200 main-loop calls, almost all
-on one model) found: 88% of the list-price cost was prompt tokens *not* served from the provider's implicit
-cache; output and thinking together were 5%; the tools themselves were 1% of the waiting time and the model
-87%. Sorting the calls that repeat the previous call's prompt by how long before their start the previous
-call *started*, the share that hit the cache fell steadily — 98% under 30 s, 85% to 60 s, 69% to 120 s, 52%
-to 300 s, 10% past 900 s — while sorting by how long ago the previous call *ended* showed misses even when the
-next request went out within 30 s (27% of those calls). At contexts over 150k tokens one call took 45–137 s,
-so the next request already found an old prefix: a miss made the call slow, and the slow call made the next
-miss. One call after a tool list changed re-read the whole context at full price, every time (4 of 4).
+**Symptom:** Judging by a repackage repo's missing LICENSE led to a
+"license-unclear" misclassification; the upstream repo and HF model card declared
+Apache-2.0. Over-conservative classification has real cost — it chills
+legitimate commercial use.
 
-**Why:** The provider's documents describe the implicit cache as best-effort and do not state how long a
-prefix is kept; what the account showed is an observation of one month, not a rule. What is documented, and
-was not known to the runtime's design, is that the same provider's newest model family does not support
-explicit (paid, guaranteed) caching at all, and that its pay-as-you-go tier gives that family a quarter of
-the prioritised tokens-per-minute of the cheaper family — a single request from a long session can exceed it.
-A design decision taken on an older, faster model ("the implicit cache hits 97% of the time, so explicit
-caching is not worth building") had quietly stopped being true when the model changed, and nothing in the
-runtime's own display said so, because a hit rate averaged over a session hides that the misses cluster.
+**How to apply:** (1) Treat the HF model card's `license:` metadata as the
+primary source; (2) check upstream even when pulling via a repackage; (3) code
+license and weight license can differ (the weight side governs). Use
+"needs review" only for genuinely undeclared cases.
+
+**The case pointing the other way:** two source-separation models were checked —
+one of them the official release of a well-known open-source project — and
+**both are MIT in code with not one word about the weights**. One carries only a
+note that you must obtain rights from copyright holders before using it on
+protected material. Applying the rule strictly meant **not adopting either.**
+**Undeclared is not a licence** — it is not grounds to err permissive, and not
+grounds to put something in a default catalog.
+
+**Two ways this shipped wrong, and the guard that catches both (2026-09-21).**
+One catalog took two entries' terms from the conversion repo it downloads from
+(`ggerganov/whisper.cpp`, `license: mit`) and reported terms that were not the
+weights'. Another took an entry's terms from the model it was trained *from* —
+NVIDIA's Open Model License for the base — and therefore told users commercial
+use was permitted, while the weights being downloaded were their publisher's
+non-commercial licence. Both read the licence off something that was not the
+weights, and in the second the error inverted a permission.
+
+- **A publisher's family is not uniform.** `openai/whisper-large-v3-turbo` is
+  MIT while `whisper-large-v3` and `whisper-base` are Apache-2.0; one repo can
+  hold a non-commercial checkpoint beside Apache-2.0 components someone
+  re-hosted. Read the card for the *file*, not for the owner.
+- **Both catalogs' default model happened to be the correct entry**, which is
+  why a spot-check passed. Check every entry or none.
+- **Record the provenance as data**, not in a comment: a field naming the card
+  each licence was read from, and a test pinning the (entry → source) pair and
+  comparing the entry count, so a model cannot be added without stating where
+  its terms came from. `cardData.license` / `license_name` from
+  `https://huggingface.co/api/models/<repo>` gives the whole table in one pass.
+- **Check that a correction reaches an installed model.** One tool recorded the
+  licence at install time and consulted the catalog only when that was empty, so
+  corrected terms would never have been shown to anyone who already had the
+  model. **So did the other** — on the released binary, after the catalog was
+  corrected, an installed `base` reported `mit` while the catalog reported
+  `apache-2.0` in the same run. **Assume this asymmetry is the default for the
+  class.** But that is only **stage two**. A correction can stop at three stages,
+  each checked differently: (1) the tap formula — read a file; (2) the installed
+  binary — ask `--version`; (3) **the running process** — which answers only when
+  you call it. Measured 2026-09-21: with (1) and (2) both current, nine resident
+  MCP processes still held `/opt/homebrew/Cellar/<tool>/0.4.3/bin/<tool>`, a
+  directory brew had already removed, and answered with values from three
+  releases earlier (`lsof -p <pid> | awk '$4=="txt"'`). **An upgrade does not
+  replace a running process.**
+  Scope that correctly, though: stages 1 and 2 are properties of an artifact and
+  belong to development — a formula pointing at an older release means the thing
+  is not installable at the version it claims, which is a release defect. Stage
+  3 is a property of a machine. On a development machine a resident agent
+  holding the binary it started with is the normal state, often the wanted one,
+  and where the host cannot reload a server (Claude Desktop) it is not even
+  avoidable. So stage 3 is a **debugging lead for "why is this answering
+  something I already fixed"**, not a completion criterion for a release, and
+  not a gate: making it one turns ordinary development into a permanently
+  failing check. The org's own attempt to put it in the release checklist was
+  withdrawn for exactly that reason.
+  For the marker, **a field the release added beats a word it removed**: a value
+  can coincide with the correct one, a field cannot exist early. Here the absence
+  of `weights_repo` identified the response as pre-0.4.5 outright, while reading
+  the licence alone would have meant deciding whether that `mit` was stale or
+  simply right — the same trap that let the original defect through. The field a
+  user reads is the one to test.
+- Where two statements genuinely exist (an HF card and a Civitai listing for the
+  same weights), report the stricter and name both rather than picking one.
+
+---
+
+## Speech recognition (whisper)
+
+### Whisper's initial prompt is not a vocabulary declaration — the use it is most wanted for does not work
+
+**What happened:** a character's surname was consistently misheard as a different
+word on a Japanese recording. The obvious fix seemed to be putting it in
+whisper's initial prompt (`--prompt`). **Four attempts all failed** — kanji,
+katakana, a comma-separated list, and the name used naturally in a sentence — and
+some of them broke lines that had been correct with no prompt at all.
+
+**Why:** the initial prompt conditions **register and context**, not the acoustic
+model's ear. A sound that context cannot rescue is not rescued. And because the
+prompt shifts the decoder's whole distribution, **a string unlike the speech in
+the audio (a bare noun list) destabilises the output.**
+
+**Measured** (two 60-second windows, kotoba-whisper-v2.0):
+
+| prompt | result |
+|---|---|
+| none | baseline |
+| noun list | **worse**. **Injected one of the prompt's own terms into an unrelated line**, and fragmented the lines around it |
+| sentence describing the scene | **better**. Recovered whole lines the unprompted run dropped, including a name it had lost |
+| sentence containing the correct name | the name is **still wrong**, in every spelling |
 
 **How to apply:**
-- Count before designing: cost by cached / uncached input, output and thinking; waiting time by model, judge
-  calls, tools and operator; main-loop calls by prompt size and by time since the previous call. All of it is
-  in the transcripts if every model call writes a usage record with the cached count.
-- Sort cache hits by time measured **to the call's start**, from the previous call's start and from its end,
-  as two tables. A table that measures to the call's own end sorts slow calls by their own length (see the
-  testing entry on self-selecting buckets).
-- Separate the calls whose prefix was necessarily new (session start, compaction, resume, a changed tool list
-  or system prompt) from the ones that repeat. Only a miss among the repeats is a question.
-- Re-read the provider's model page when the model family changes: caching modes, throughput tiers, token
-  limits and rejected parameters are per family, and "it runs" does not show which of them moved.
-- Write the mechanism as a hypothesis with its counts. The lever that does not depend on the hypothesis —
-  a smaller context makes calls shorter and cheaper whether or not the cache behaves as observed — is the one
-  to pull first.
 
-## A retry loop decides from the error's status, never from digits in its text — and a backoff's default jitter can exceed its base
+- Write the prompt as **one or two sentences describing the recording**, in the
+  register you expect to hear. Never a comma-separated list of names.
+- Plan for **proper nouns to be fixed by post-processing the transcript**, not by
+  the prompt. Do not design around the prompt solving it.
+- Before applying one to a long recording, **cut a few minutes and compare with
+  and without.** A bad prompt makes things worse, so it is not a free addition.
+- **Grammar-constrained decoding is not the escape hatch.** This entry originally
+  said that `grammar_rules` was "the mechanism" for constraining vocabulary. It
+  was measured later and **that was wrong**. See the next entry.
 
-**Symptom:** A pre-release review of a new "this call was retried" record found two defects in the retry
-loops it was about to describe. (1) One loop decided whether to retry by searching the error's text for
-"429", "500", "502", "503", "504". A transport error quotes the request's address and port, and an API
-refusal can mention another status in its message, so `read tcp 10.0.0.5:50234` was a "502" and was sent
-again up to four times; the cause reported for a real 503 that mentioned a 429 was "429". (2) Both loops
-built their backoff with a 500 ms base and the helper library's default jitter of a full second either way.
-The first wait was therefore uniform over −0.5 … 1.5 s clamped at zero: one first retry in four fired with no
-wait at all. A test that asserted a positive delay failed in about half its runs, which is how it was found.
+**The larger lesson:** the documentation originally called this "cheap and
+effective". It was written from expectation, never measured, and turned out to be
+close to backwards. Adjectives about model behaviour — effective, fast, accurate
+— do not belong in docs without a measurement behind them.
 
-**Why:** The text check predates a typed error from the SDK and was never revisited; it works on every error
-a developer tries by hand. The jitter default is sensible for the library's own default base of several
-seconds and was inherited without looking at the ratio. Neither shows up in normal use — an immediate retry
-on a 429 mostly just fails again and the next step waits — and both become visible the moment the retry is
-written down as data.
+---
 
-**How to apply:**
-- Take the status from the error value (`errors.As` to the SDK's API error) for both the decision and
-  anything displayed or recorded. An error that is not an API error is not transient by its text.
-- Set the jitter explicitly, as a fraction of the base, in one constructor every retry loop shares, and pin
-  the lower bound of the first wait with a test over many samples.
-- Pin the call sites in the source as well (one constructor, and each loop calls it). A timing assertion on
-  the loop cannot do it: a loop put back on the old jitter passed such a test in 8 of 40 runs, because a wait
-  drawn from the old range lands inside the new bounds a quarter of the time.
-- When recording an upstream failure, keep the status code and the machine-readable status token only. The
-  message is free text that can quote back what was sent (see the security entry on upstream error text).
+### whisper.cpp's grammar-constrained decoding is not a vocabulary hint
 
-## An SDK update that compiles and passes every test can still change what a call does — run the old and the new against one local endpoint
+**Symptom:** after the initial prompt turned out not to fix proper nouns (above),
+`whisper_full_params.grammar_rules` — grammar-constrained decoding — was the
+obvious next move. Measured: **a permissive grammar with the correct name added
+as an alternative produces output byte-identical to no grammar at all**, on two
+different models.
 
-**Symptom:** A model provider's Go SDK was moved six minor versions forward in an agent runtime. One line of
-`go.mod` changed, the code compiled, and the whole test suite passed unchanged. The update nevertheless
-carried two changes in what one model call does. (1) A new default, listed under Features: when a response
-ends with a continuation token the SDK sends the same request again and reports the usage of all such
-requests added together — which would have broken the runtime's per-call usage record, its record of every
-re-send, and a compaction trigger that reads the prompt count as the conversation's size. It was found by
-reading the changelog. (2) A change listed under Bug Fixes: an error the endpoint sends *as a stream event* is
-now raised; the old version decoded it as an empty chunk, so a call came back as a success holding nothing,
-or holding half an answer with no sign of the cut. Reading for new defaults missed it; a reviewer found it by
-serving the same responses from one local endpoint to a tree on each version and comparing. The same probe
-found that the new version dereferences a null candidate in a stream chunk before the caller's own guard can
-see it — a panic inside the caller's loop.
+**Why:** the implementation only ever **subtracts**. There is a single line that
+takes the penalty off the logits of tokens the grammar *rejects*, and **nothing
+that lifts tokens the grammar allows**. A permissive grammar rejects nothing, so
+nothing happens. Three more properties compound it:
 
-**Why:** A test suite pins the caller's code against the dependency it was written with. Behaviour that lives
-only in the dependency — what it does with a response shape the tests never serve — is pinned by nothing, so
-neither its loss nor its arrival fails a test. Changelogs sort by the author's view of the change (feature,
-fix), not by whether a caller's contract moves.
+- What it constrains is **not a lexicon but the shape of the entire 30-second
+  window**. `root` must accept the whole window's output.
+- **The penalty on the end-of-text token is commented out upstream.** The decoder
+  can escape a constraining grammar by **ending the segment early** instead of
+  satisfying it.
+- The grammar is re-initialised per 30-second window, so cross-window constraints
+  cannot be expressed.
+
+**Measured (50 seconds of real audio, beam size fixed across all arms, two models):**
+
+| grammar | output |
+|---|---|
+| none | baseline (name wrong) |
+| name + any character (permissive) | **byte-identical to no grammar** |
+| closed vocabulary of 7 words, name included | 50 seconds of dialogue collapsed to two sentences, and **the name never appeared** despite being in the vocabulary |
+| same, penalty at 1/10 | identical. Not a question of strength |
+| name forced as a prefix | emitted one character and stopped — the EOT escape, demonstrated |
 
 **How to apply:**
-- For a dependency that sits between the product and a remote service, keep a local fake of the service and,
-  on update, run every response shape the product handles against the old and the new tree: a normal answer,
-  an error as status and as an in-band event, before and after output, a cut stream, a malformed chunk, and
-  whatever the new version adds. Diff the requests sent and the results returned.
-- Decline a new default that sends requests the product does not see, explicitly, on every call site, and
-  hold it with a control test that shows the default still does what you declined — otherwise the test goes
-  quiet when the dependency changes again.
-- Pin wanted behaviour that the dependency provides with an offline test of your own, even when you wrote no
-  code for it.
-- Put a recover at the boundary where a dependency's reader runs inside your loop if a panic there would
-  take a terminal UI down; report it as the call's error.
+
+- Grammar constraints are for **audio whose utterances are known to come from a
+  closed set** — voice commands, fixed read-back confirmations — pushed into that
+  set. Do not mix them into open-ended transcription as a vocabulary hint.
+- Fix proper nouns by **substituting after transcription**, and **record that the
+  substitution happened**. That is what lets a later reader tell a heard string
+  from an edited one — and when the consumer downstream is a model that cannot
+  hear, there is no other way to recover the distinction.
+- Do not locally re-enable something upstream deliberately disabled (the EOT
+  penalty). It breaks on every dependency update.
+
+**Methodology:** that an API *has* the parameter is no evidence it does what you
+expect. Coming straight off making that mistake with the prompt, this one was
+written only after **reading the upstream implementation first and measuring
+second**. Building the upstream CLI example from source is what makes parameters
+your own bindings do not expose measurable at all.

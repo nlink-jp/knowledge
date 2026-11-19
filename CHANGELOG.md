@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-19 (llm-integration: entries back under their sections)
+
+- **llm-integration** (ja + en): 21 entries that had fallen outside the
+  section structure are moved under a section and written as `###`, as
+  AGENTS.md asks. Two whisper entries had been written at section depth,
+  and every `###` entry appended after them showed as their child in the
+  outline. The two whisper entries open a new section, "Speech recognition
+  (whisper)"; the usage, pricing, retry and SDK-update entries join
+  "SDK & API" beside their neighbours; the session-cost entry joins "Token &
+  budget management"; the rest join "Agents & subagents" in their original
+  order. No text changed.
+
 ## 2026-11-19 (a new model's availability, and the pricing sync after it)
 
 From adding a newly released model to a usage tool's rate table.
