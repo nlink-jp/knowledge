@@ -19,6 +19,11 @@ version, and ja and en against each other.
   first section; new sections "Agent approval & permissions", "Sandboxing &
   path containment", "Parsing and displaying untrusted data", "Network &
   TLS" and "Designing safety mechanisms".
+- **testing**, **build-and-packaging** (ja + en): these files have no
+  sections and write every entry as `##`; the 15 and 1 entries written as
+  `###` showed as children of the entry above them, and are now `##` like
+  the rest. Whether the eight section-less files should gain sections, as
+  AGENTS.md's `###` entry format implies, is left open.
 
 ## 2026-11-19 (llm-integration: entries back under their sections)
 

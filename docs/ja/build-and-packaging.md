@@ -157,7 +157,7 @@ $(ORT_ZIP):
 - キャッシュをリポジトリ内に置くなら、整形・一括置換の対象から確実に外れているかを確かめる。
 
 
-### macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE=1` と `--no-xattrs` の両方が要る
+## macOSで作るLinux配布tarにmacOSのメタデータを混ぜない — `COPYFILE_DISABLE=1` と `--no-xattrs` の両方が要る
 
 **事象:** Go CLIの4環境向けrelease（2026-09-22）で、macOS上の `tar -czf` が
 `LICENSE`、`README.md`、binaryに加えて `._LICENSE`、`._README.md`、`._<binary>` を収録した。

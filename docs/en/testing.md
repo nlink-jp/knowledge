@@ -606,7 +606,7 @@ at only one plane makes the device look absent from it.
   seconds.** Asking is faster, more reliable, and cheaper to be wrong about.
   Infer only when there is nobody to ask.
 
-### Verify concurrency concerns with a concurrent test, not by reading — the bug lives next door
+## Verify concurrency concerns with a concurrent test, not by reading — the bug lives next door
 
 **Symptom:** asked whether timestamp-based session ids collide under parallel
 execution, code-reading found the suspected layer safe (O_EXCL + suffix retry
@@ -625,7 +625,7 @@ frequency. A reading-based "it's safe" answer would have shipped the bug.
 - Measure before answering "no issue": the negative-answer integrity duty
   applies to concurrency too.
 
-### The single production call site is the weak point of injected features — pin the wiring with an AST test
+## The single production call site is the weak point of injected features — pin the wiring with an AST test
 
 **Symptom:** a UI language-catalog feature shipped with all unit tests green
 and a non-interactive E2E pass — while the one production TUI-constructor
@@ -704,7 +704,7 @@ The same date string appearing at widely separated line numbers proves the file
 spans multiple years. Bracketing each cluster by the year boundaries fixes its
 year (this relies on the monotonicity assumption in 5).
 
-### A feature that learns from usage must be tested against usage-shaped data
+## A feature that learns from usage must be tested against usage-shaped data
 
 **Symptom:** An approval-rule learner shipped with unit tests, an E2E,
 and a threshold of "approved in three separate sessions". Its first
@@ -808,7 +808,7 @@ tier".
   before sending (`plan_restricted`); pin the evidence for the list as a fixed
   test in the live e2e.
 
-### golangci-lint truncates identical findings at three — list everything before a bulk fix
+## golangci-lint truncates identical findings at three — list everything before a bulk fix
 
 **Symptom:** errcheck reported "8" unchecked `defer x.Close()` calls; there
 were 18. golangci-lint caps identical messages at `max-same-issues`
@@ -824,7 +824,7 @@ surfaced the "next" three — a whack-a-mole loop.
 - One finding of a shape is a reason to grep every file for that shape.
   The displayed count is a floor, not the total.
 
-### An E2E script aimed at a fixture must refuse to run in your own repository even with an empty argument
+## An E2E script aimed at a fixture must refuse to run in your own repository even with an empty argument
 
 **Symptom:** An E2E script was generated through an unquoted heredoc
 (`<<EOF`), so the `$1`/`$P` in its body expanded to empty strings at
@@ -889,7 +889,7 @@ hunt for a bug that does not exist begins.
   the working tree is still clean after a run.
 
 
-### An independent pass finds its real defects right after a fix — the place of the fix is the place of the next defect
+## An independent pass finds its real defects right after a fix — the place of the fix is the place of the next defect
 
 **Symptom:** One release of a CLI agent (2026-09; 68 files, three ADRs) went
 through five full independent verification passes and one narrowed one before
@@ -960,7 +960,7 @@ binary from another version, a missing marker — and assert a **non-zero exit**
 case too, so a gate that rejects everything is not mistaken for a working one. Run the self-test
 against the unfixed gate first and confirm it reports the misses, before trusting it.
 
-### A model-comparison bench interleaves configurations per case, time-boxes every call, and prints progress live
+## A model-comparison bench interleaves configurations per case, time-boxes every call, and prints progress live
 
 **Symptom:** Three thinking configurations of the same model, run in
 parallel, throttled each other: medians above 30 s against a measured 4 s
@@ -988,7 +988,7 @@ finished" from "broken".
 - Report both per-decision (several rounds folded into one verdict) and
   per-call numbers, and count retries.
 
-### Measure an inline TUI's row arithmetic in tmux and script — the renderer paints only the latest View per tick
+## Measure an inline TUI's row arithmetic in tmux and script — the renderer paints only the latest View per tick
 
 **Symptom:** With Bubble Tea's inline renderer, closing a panel left one
 line of earlier output standing at the top of the screen. Two fixes
@@ -1022,7 +1022,7 @@ detect the difference.
 - A trace of "lines the model returned" is not evidence of what was
   painted; confirm painting from the raw bytes.
 
-### Anything that occupies N rows in an inline TUI must erase below itself — the renderer's flush clears one
+## Anything that occupies N rows in an inline TUI must erase below itself — the renderer's flush clears one
 
 **Symptom:** Inline terminal images in an inline TUI, with the row
 accounting already correct (the emitter declares a box and tells the row
@@ -1052,7 +1052,7 @@ correct.
   fix, and the same tree with the one line removed — under the same
   conditions, and count the leftovers.
 
-### A terminal capability probe asks a second question every terminal answers
+## A terminal capability probe asks a second question every terminal answers
 
 **Symptom:** A probe asked whether the terminal could draw inline images
 with an APC graphics query and read silence as "no" via a timeout. On Apple
@@ -1109,7 +1109,7 @@ were far too few. The assertion spread at once to every reader-facing surface
   manual, result note, ADR, CHANGELOG) and fix them in one pass; fixing one
   surface creates drift.
 
-### When you add a boundary, write the test that drives the real product through the real boundary — stubs and permission stand-ins pass while production is broken
+## When you add a boundary, write the test that drives the real product through the real boundary — stubs and permission stand-ins pass while production is broken
 
 **Symptom:** The file tools' reads were moved into a child process under a purpose-built profile that denies the credential list. Unit tests and the full gate were green and it shipped; independent review measured a Critical. **One `.env` in a project made `search_files` answer "no matches (0 files scanned)"** — a false negative with no error and no warning. Four High findings followed from the same pass: reads silently truncated at 85 KB, `file_info` collapsing a permission error into "not found", a cancelled walk losing its partial result, and the note the design promised being unreachable.
 
@@ -1124,7 +1124,7 @@ were far too few. The assertion spread at once to every reader-facing surface
 
 Related: "independent review turns up something real right after a fix". For the same reason a fix creates a new unverified surface, **a new boundary is at its least verified the moment it is added**.
 
-### If a design document says "applied at every N", write the test that enumerates N in the same commit
+## If a design document says "applied at every N", write the test that enumerates N in the same commit
 
 **Symptom:** An agent runtime's ADR said one function is applied at **every spawn site**, so a child process cannot be added without inheriting the rule. The rule: the runtime's own configuration variables (an API key among them) reach no child. The build was green, and an AST test pinning the namespace partition passed. Four kinds of child did not apply the rule: the shell of a sandbox-disabled launch (where the API key did reach it), two kinds of startup verification probe, and the clipboard capture. It surfaced not months later but the same day, during unrelated work.
 
@@ -1138,7 +1138,7 @@ Related: "independent review turns up something real right after a fix". For the
 
 Related: "drive the path that turns the boundary on". That one pins whether the boundary is installed at all; this one pins whether it is installed at **every** entrance.
 
-### A withdrawn mechanism disappears from the code, not from the **prose** — write a test that compiles the strings the model reads
+## A withdrawn mechanism disappears from the code, not from the **prose** — write a test that compiles the strings the model reads
 
 **Symptom:** File-mediated results were removed from two servers and released. The
 implementation, the schemas and the tests were all correct, and an arch test pinning the
@@ -1192,7 +1192,7 @@ Related: "If a design document says a rule applies to all N, write the test that
 enumerates N in the same commit." That one pins the coverage of the application points;
 this one pins the coverage of the **explanations**.
 
-### Hold a bundled skill to its server with a closed vocabulary — "is it mentioned" and a retired-name list let wrong names through
+## Hold a bundled skill to its server with a closed vocabulary — "is it mentioned" and a retired-name list let wrong names through
 
 **Symptom:** Bundled skills were added to three MCP servers (2026-11). The check was written as a closed
 vocabulary: every identifier the skill puts in backticks must exist in the server. Every name comes from the
@@ -1228,7 +1228,7 @@ server drops it. But it can only check forms that can be told from prose: snake_
   misspelled directive.
 
 
-### Verify WebKit authorization at the actual callback boundary
+## Verify WebKit authorization at the actual callback boundary
 
 **Symptom:** During a macOS client port, JavaScript navigation produced click-like
 metadata. An async method with a name resembling an authentication delegate

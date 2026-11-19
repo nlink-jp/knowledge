@@ -167,7 +167,7 @@ showed it.
 - If the cache lives in the repository, make sure formatters and bulk replacements cannot reach it.
 
 
-### Keep macOS file metadata out of Linux release tarballs — it takes both `COPYFILE_DISABLE=1` and `--no-xattrs`
+## Keep macOS file metadata out of Linux release tarballs — it takes both `COPYFILE_DISABLE=1` and `--no-xattrs`
 
 **Symptom:** A four-platform Go CLI release (2026-09-22) built with macOS
 `tar -czf` contained `._LICENSE`, `._README.md` and `._<binary>` alongside the
