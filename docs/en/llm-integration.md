@@ -368,6 +368,30 @@ previous generation's value is carried over.
   `reprice`). No warning is raised, since nothing was unpriced — records that
   were merely priced too high are ones a user cannot notice alone.
 
+### Check a model's availability on the provider's model list, not in the press — "successor" does not announce a retirement
+
+**What happened:** While adding a new model to a usage tool's rate table, the press said it "replaces" an existing
+model Y. Before deciding whether to tell users who have Y in their configuration to migrate, the provider's model
+lifecycle page was read: Y sat in the "available for at least 12 months" table, with a retirement date about
+eleven months away or later. The new model was in the "shorter availability" table with no retirement date
+announced, and the same table gave another older model a retirement date of the very day of the work. The new
+model's id and GA stage were also confirmed with the publisher-model GET, which costs nothing (Vertex AI, 2026-11;
+confirmed on the page's tables and in the API response. The articles disagreed with each other on where the model
+was available).
+
+**Why:** "Successor" and "replaces" in the press place a model in a product line-up; they say nothing about an API
+being withdrawn. A retirement date, the other way round, appears only in the list's table and is often not
+reported. Recommending a configuration change on the strength of the press makes users migrate for nothing, and
+misses the retirement that is actually close.
+
+**How to apply:**
+- For a new model, (1) confirm its id and launch stage from the provider's own sources (on Vertex, the
+  `launchStage` of a GET on `v1beta1/publishers/google/models/<id>`, and the model lifecycle page), and (2) read the
+  existing models' retirement dates on the same page. Use the press only as a hint that the model exists.
+- Before passing on "X succeeds Y" as an effect on Y's users, look up Y's retirement date in the list. A
+  replacement without a retirement date is not a reason to migrate.
+- Do not remove a retired model from the rate table — re-pricing past calls still needs it.
+
 ### The Gemini API throws 429s under heavy sequential load
 
 **Symptom:** A large analysis making dozens of sequential LLM calls hit constant
@@ -2517,6 +2541,17 @@ request that failed.
   README as things the tool's figures do not include.
 - Hand an independent verifier the **text that was read**, not the conclusion, and have the numbers derived from
   it again. A gap in the reading then shows to the verifier as a gap in the text.
+- Re-check, at the next sync, every row recorded last time as "not printed", and if it is still missing say so
+  again. At the next sync after this entry existed (adding a new model, 2026-11), the changelog wording slid back to
+  "re-verified, no existing price changed", and the independent verification flagged it as a breach of the rule.
+  Recording it once does not stop the next sync's wording from returning to the default.
+- When another table supports a value that was not printed, read it from the row that names that model. In the same
+  sync, the new model's priority **input** price was the same number as the unprinted model's priority **output**
+  price. The text handed to the verifier held only the new model's row, and the verifier asked whether the number
+  cited as support came from another model's row (re-reading the page showed the right model's row carried the same
+  value, so the support held).
+- For the breakdowns a row draws that the records have no dimension for (input prices per modality, for example),
+  also write in the README that the tool's figures do not include them.
 
 ## When an agent session is slow and costly, count where the prompt went before changing anything — the cache follows the age of the previous request, and a large context outlasts it
 

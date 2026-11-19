@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-19 (a new model's availability, and the pricing sync after it)
+
+From adding a newly released model to a usage tool's rate table.
+
+- **llm-integration** (ja + en): one new entry. Check a model's availability
+  on the provider's model list rather than in the press — "replaces" placed
+  the new model in the line-up while the lifecycle table kept the older model
+  for another eleven months or more; read the existing models' retirement
+  dates on the same page, and keep retired models in the rate table.
+- **llm-integration** (ja + en): the entry on rows a pricing page did not
+  print gains three points — re-check last sync's unprinted rows (the wording
+  slid back to "no change" with the entry already in place), read a carried
+  value's support from the row that names the model (two models' rows shared
+  a number), and list per-modality prices the records cannot split.
+
 ## 2026-11-19 (output an inline TUI loses)
 
 From fixing, in two agent runtimes, notices that never reached the
