@@ -193,6 +193,70 @@ only shows at the moment of a wrap, as a spike of several GB/s.
 - When reading `netstat -ibn` mechanically, a row without an address (loopback, tunnels) has
   one column fewer. A fixed column number reads the packet count as bytes on those rows only.
 
+### Record a guessed value marked apart from a fact — and compare only facts
+
+**Symptom:** image-forge gained a check refusing, before a render, a LoRA or ControlNet made for another
+architecture than the model (2026-09-22). The registry's arch field held, without distinction, the
+catalog's value, a value given with `--arch`, and a guess from the name (`profile.Detect`, SDXL whenever
+nothing matched). Comparing guesses as facts, an SD1.5 model whose name lacks `sd15` (e.g.
+`dreamshaper_8`) is recorded as SDXL and every SD1.5 LoRA is refused; the GUI, filtering on the same
+field, had been hiding them all along. `--arch` was not validated either, so `pony` or `SDXL` became a
+"fact" as typed.
+
+**Why:** A guess with a default is indistinguishable from a fact once written without a mark. It is
+harmless when recorded and decides outcomes the day a feature refuses or filters on it.
+
+**How to apply:**
+- Record the value's source (`catalog` / `flag` / `detected`) with it, and refuse or filter only on facts.
+  An entry written before sources were recorded is trusted only where it can be confirmed (the catalog's
+  own entry).
+- Decide the source in one place and test the write side too; a read-side test passes even when every
+  registration records a fact.
+- Validate values the user supplies: unvalidated free text is treated as a fact the moment it is compared.
+- Put the mark in the listing (`arch_trusted`) so a front-end can filter by the same rule.
+
+### Windows Explorer's ZIP turns into Deflate64 past about 2 GB — when "unzip opens it", suspect the compression method
+
+**What happened:** A ~2.8 GB ZIP made with Windows Server 2012's Explorer ("Send to → Compressed (zipped)
+folder") failed in an in-house macOS extraction app and extracted fine with `unzip` in the terminal. The
+contents were confidential and could not be shared, but the app handled only store and Deflate, which narrowed
+it down: once the files it packs pass about 2 GB, Explorer switches the compression method from Deflate
+(method 8) to **Deflate64 (method 9)**. Microsoft does not document the threshold; it comes from user reports
+and from tools that added support for the same reason (reported). A method-9 ZIP made with 7-Zip reproduced
+the app's error (measured).
+
+**Why:** No macOS component reads Deflate64. The Compression framework does raw Deflate only, and the SDK's
+zlib does not include `infback9`, zlib's contrib module for Deflate64 (checked in the SDK's `zlib.h` and
+`libz.tbd`). The Info-ZIP `unzip` that ships with macOS, on the other hand, is built with `USE_DEFLATE64`
+(checked with `unzip -v`). A 2 GB boundary invites suspicion of a signed 32-bit overflow; here that was not it
+(the app's reader handled 64-bit sizes correctly).
+
+**How to apply:**
+- When one extraction tool fails and another succeeds, look at the entry's compression method first. If the
+  contents cannot be shared, ask the recipient for `unzip -Z -v <file> | grep -i 'compression method'`, which
+  shows the method alone (`deflated (enhanced-64k)` is Deflate64).
+- A tool meant to receive ZIPs from Windows needs to extract method 9 (creating it is unnecessary). It differs
+  from Deflate in three places only: a 64 KiB window, distance codes 30/31 (32769 / 49153 + 14 extra bits),
+  and length code 285 meaning 3 + 16 extra bits. Report an unsupported method in a sentence that names its
+  number, not as a raw enum value.
+- Test data can be made with 7-Zip (`7zz a -tzip -mm=Deflate64`), but it never emits length code 285 (second
+  instance under "Verify the fixture before blaming the code" in testing).
+
+### Undeclared ISO-2022-JP is 7-bit, so it passes both an ASCII check and a UTF-8 check — look for its escapes first
+
+**Symptom:** text with no declared charset was read as "US-ASCII if all ASCII, UTF-8 if valid UTF-8, otherwise guess
+Japanese", and an ISO-2022-JP body came back as US-ASCII with its `ESC $ B` sequences still in it (2026-11, a
+mail-parsing library; found by a test of .msg code page 50220, and the .eml path had the same hole).
+
+**Why:** every byte of ISO-2022-JP is 0x7F or below; Japanese is switched in by escape sequences. It passes the ASCII
+check and the UTF-8 validity check, so the guess that keys on 8-bit bytes is never reached.
+
+**How to apply:**
+- Before calling undeclared text ASCII or UTF-8, look for the ISO-2022-JP escapes (`ESC $ B`, `ESC $ @`, `ESC ( J`) and,
+  if present, try a strict ISO-2022-JP decode; on success, record that the charset was guessed.
+- For the same reason, take an "all ASCII needs no conversion" shortcut only when the declared charset is
+  ASCII-compatible (ISO-2022-JP and UTF-16 are not).
+
 ## Data retention
 
 ### A retention period is not a retention depth — ingestion lag eats into what you keep
@@ -484,6 +548,16 @@ the input gate allows relates to the separator breaks silently the day the gate 
   difference in case only, another `kind`. Check through the engine as well that the second
   query reaches upstream.
 
+### A list in the global config applies to every project — a refusal that depends on this session skips, not stops
+
+**Symptom:** with `write = ["~/notes"]` in the global file, starting under `~/notes` stopped with "contains the project", and a path on an unmounted volume stopped every start in every project (found from the code by lagent's design review; the note and the continued start were confirmed live after the fix).
+
+**Why:** "the operator typed it, so a refusal stops the start" is the reasoning of a flag typed for this run. A config file is written once and applies to every project, so a refusal that depends on the current project or on what is mounted now does not mean the entry is wrong.
+
+**How to apply:**
+- Separate by type "the path itself is invalid" from "this session's circumstances" (missing, not openable, holds the project, already covered).
+- From the config, skip the second kind with a note; from a flag, stop. A path invalid wherever you start, such as `/` or the home, stops either way.
+
 ## Filesystem
 
 ### Never read volume free space from volumeAvailableCapacityForImportantUsage alone
@@ -612,6 +686,27 @@ the path.
   are found without rewriting anything.
 - When measuring, remember your own `cd` spelling changes the condition
   under test (`env -u PWD` aligns it with the kernel's).
+
+### A path in hand is not text — do not feed it back through a grammar that finds paths in text
+
+**Symptom:** a `/show <path>` command put an `@` in front of its argument and handed it to the
+`@reference` parser used for chat input. That parser ends a reference at the first space,
+correctly, because it reads running text. `/show Screenshot 2026-09-21 at 10.00.00.png` — what
+macOS names every screenshot — looked for "Screenshot". The command's own test passed a fake
+resolver, so it proved only that the spaces survived *to* the layer that lost them.
+
+**How to apply:** give the resolver an entry point that takes a path, and let the text grammar
+call that, not the other way round. Accept what a terminal delivers — one pair of quotes, or
+backslash-escaped spaces, which is what dragging a file into the window types — and expand
+nothing.
+
+### On APFS, a loop renaming a directory slows every open of a file on the volume — a slow walk may not be the walk's fault
+
+Measured on macOS 27 (APFS, 2026-11): while one process renames a directory back and forth as fast as it can (about 8,000 renames a second), every open of a regular file on the same volume — by any program — waits for a gap in the renames, about 155 ms each time. A walk of 201 files took 30 s against 8 ms, and `cat` of one file took 0.15 s. The directory renamed can be anywhere on the volume. Not slowed: listing a directory, `fstatat`, opening a directory, reading from a file already open. A loop renaming a *file* has no such effect. Read-only, write-only and event-only opens wait alike. The opens that wait pass together at the same gap: the same files opened 32 at a time took 1.1 s. At one rename every 100 ms there is no measurable effect. The kernel cause was not determined.
+
+**How to apply:** before bounding or parallelising a slow file walk, check whether something on the machine is renaming directories; the slowness is the system's, and making one walk faster leaves every other reader as slow. Any timeout derived from "an open takes microseconds" has to survive this: a sandboxed process that may rename a directory can slow everything that opens files, including the checks that are supposed to confine it. Record it as an accepted limit with its reason, rather than building on how the system happens to release the waiting opens, which no document states.
+
+Origin: found while testing a skill-digest walk in two agent runtimes (2026-11).
 
 ## OAuth
 
@@ -1166,35 +1261,7 @@ notice at 60 seconds. Inside tmux, Claude Code itself wrote no BEL and no OSC.
 - Leave posting to the terminal application. A CLI posting OS notifications by another route shows the
   operator two streams of notices from different sources.
 
-## Do not gate the next send on an acknowledgement the peer is not obliged to send
-
-**What happened:** A remote-desktop client sent the guest a monitors
-configuration and then refused to send another until the first was acknowledged.
-The transport it ran over consumes that message in the hypervisor and never
-replies, by design. The first request therefore latched the sender for the life
-of the connection: every later resize was queued and dropped, while the session
-kept reporting that resizing was available, so the failure was silent for the
-operator. Reconnecting cleared it, which is why manual testing never caught it
-(spice-client, 2026-09-18).
-
-**How to apply:** A send window of one, held open by a reply, is only safe when
-the protocol *requires* the reply. When it is optional, or when one transport of
-several omits it, the window needs a second way to close: a timeout, a
-supersede-in-place rule for a request whose newer version makes the older
-irrelevant, or no window at all. The shape to look for in review is a state
-machine whose "in flight" field has exactly one clearing path, and a capability
-flag that keeps advertising the feature while that field is stuck.
-
-The fix that kept everything worth keeping was a deadline on the in-flight entry
-rather than removing the window: coalescing still protects the peer during a
-drag, and liveness is restored for the case that matters, a newer request
-waiting behind an older one. Two details make it safe. An expired window with
-nothing queued must send nothing, or liveness becomes a resend loop of state the
-peer already has. And a reply arriving after the expiry acknowledges whatever is
-in flight then, so if those events are surfaced, say that the newest wins rather
-than pretending the correlation survived.
-
-## A terminal query read from a goroutine leaves a reader behind — and it takes the next input
+### A terminal query read from a goroutine leaves a reader behind — and it takes the next input
 
 **Symptom:** a start-up capability probe wrote a query to `/dev/tty`, read the reply in a
 goroutine, and returned as soon as it had a verdict. The goroutine stayed blocked in
@@ -1225,94 +1292,7 @@ query; "nothing of mine is still reading" is.
 - Confirm on a real terminal with an observable that cannot be right by luck — the colour the
   next query parsed (`#161821`) against the fallback (`#000000`), not "dark or light".
 
-## A time budget is stated once, by the work that owns it
-
-**Symptom:** a handshake ran under a startup timeout, and the call helper inside it laid the
-per-call timeout on top. Every timeout was then reported under the per-call number — a
-handshake that gave up at its own 30 s said "timed out after 1m0s", sending the operator to the
-wrong setting — and because the shorter deadline wins, a startup budget configured *longer*
-than the call budget was silently cut at the call's value, while the reference called the two
-"separate". A first fix named the right number for `initialize` only: the first `tools/list`
-ran under the same outer deadline, set with a bare `context.WithTimeout`, and still blamed the
-call budget.
-
-**How to apply:** carry the budget in the context as a value and let a helper refuse to add a
-second one (`withBudget`: a context that already states a budget keeps it). Error text names
-the budget found in the context, never a struct field. Wherever an outer phase sets a
-deadline, it sets it through the same helper — a bare `WithTimeout` anywhere in the chain
-brings the wrong number back.
-
-## A checked number can still become a zero Duration — and zero never means "very short"
-
-**Symptom:** after ranges were restated from the inside to refuse NaN, `--timeout 1e-10` still
-passed: it is above 0, and it is no nanoseconds. `time.Duration(1e-10 * 1e9)` is 0, which the
-config loader read as "no override" and `http.Client` reads as "no timeout at all". The
-smallest value one could write behaved as the largest.
-
-**How to apply:** convert in one function that refuses a result `<= 0`, and use it for every
-unit and every source (flag, environment, file). Related, from the same sweep: a lesson fixed
-in the tool where it was found stayed unfixed in the six siblings it had been copied from, and
-in the *other* entry point of the same tool (config was fixed, flags were not). When a range
-check is corrected, grep the fleet for the old shape the same day.
-
-## A path in hand is not text — do not feed it back through a grammar that finds paths in text
-
-**Symptom:** a `/show <path>` command put an `@` in front of its argument and handed it to the
-`@reference` parser used for chat input. That parser ends a reference at the first space,
-correctly, because it reads running text. `/show Screenshot 2026-09-21 at 10.00.00.png` — what
-macOS names every screenshot — looked for "Screenshot". The command's own test passed a fake
-resolver, so it proved only that the spaces survived *to* the layer that lost them.
-
-**How to apply:** give the resolver an entry point that takes a path, and let the text grammar
-call that, not the other way round. Accept what a terminal delivers — one pair of quotes, or
-backslash-escaped spaces, which is what dragging a file into the window types — and expand
-nothing.
-
-## Record a guessed value marked apart from a fact — and compare only facts
-
-**Symptom:** image-forge gained a check refusing, before a render, a LoRA or ControlNet made for another
-architecture than the model (2026-09-22). The registry's arch field held, without distinction, the
-catalog's value, a value given with `--arch`, and a guess from the name (`profile.Detect`, SDXL whenever
-nothing matched). Comparing guesses as facts, an SD1.5 model whose name lacks `sd15` (e.g.
-`dreamshaper_8`) is recorded as SDXL and every SD1.5 LoRA is refused; the GUI, filtering on the same
-field, had been hiding them all along. `--arch` was not validated either, so `pony` or `SDXL` became a
-"fact" as typed.
-
-**Why:** A guess with a default is indistinguishable from a fact once written without a mark. It is
-harmless when recorded and decides outcomes the day a feature refuses or filters on it.
-
-**How to apply:**
-- Record the value's source (`catalog` / `flag` / `detected`) with it, and refuse or filter only on facts.
-  An entry written before sources were recorded is trusted only where it can be confirmed (the catalog's
-  own entry).
-- Decide the source in one place and test the write side too; a read-side test passes even when every
-  registration records a fact.
-- Validate values the user supplies: unvalidated free text is treated as a fact the moment it is compared.
-- Put the mark in the listing (`arch_trusted`) so a front-end can filter by the same rule.
-
-### Exclusive time bounds need different rounding directions when precision becomes coarser
-
-**Symptom:** during scat's Slack-only renewal (2026-09), RFC3339 fractions were
-converted to microsecond API bounds. Flooring an end time ending in `.123456789`
-to `.123456` and sending it as an exclusive upper bound dropped the message at
-`.123456`, even though that message preceded the original end. Independent review
-found this; synthetic regression tests verified it. This is not a new live-service observation.
-
-**Why:** the input precision differs from the grid on which data exists. Keeping
-exclusive comparisons while flooring both ends is correct at the lower bound,
-but narrows the selected set at the upper bound.
-
-**How to apply:**
-- To select microsecond-grid values with `start < value < end`, floor start and
-  ceil end only when necessary. Leave values already on the grid unchanged.
-- Test immediately before, on and after each boundary, including an upper fraction
-  `.999999999` carrying into the next second.
-- Do not convert timestamp identifiers to float64; handle seconds and fractions
-  as integers.
-- Whether the interval selects parents or every message is a separate contract;
-  a rounding correction must not silently change that meaning.
-
-## A terminal cell's aspect ratio differs by terminal — read it from `TIOCGWINSZ` instead of assuming it, and never query
+### A terminal cell's aspect ratio differs by terminal — read it from `TIOCGWINSZ` instead of assuming it, and never query
 
 **Symptom:** an agent's TUI computed the rows an inline image occupies from a fixed cell aspect of 2.25.
 While designing images for mermaid diagrams (2026-09), two terminals on the same Mac were measured:
@@ -1337,62 +1317,84 @@ whole declared rows and columns, a wrong ratio may distort the picture (whether 
 - Do not use CSI 16t or similar queries. Some terminals do not answer, and on those that do, the reply leaks
   into the input box while the UI runs (see "A terminal query read from a goroutine" above).
 
-## Windows Explorer's ZIP turns into Deflate64 past about 2 GB — when "unzip opens it", suspect the compression method
+## Time & communication
 
-**What happened:** A ~2.8 GB ZIP made with Windows Server 2012's Explorer ("Send to → Compressed (zipped)
-folder") failed in an in-house macOS extraction app and extracted fine with `unzip` in the terminal. The
-contents were confidential and could not be shared, but the app handled only store and Deflate, which narrowed
-it down: once the files it packs pass about 2 GB, Explorer switches the compression method from Deflate
-(method 8) to **Deflate64 (method 9)**. Microsoft does not document the threshold; it comes from user reports
-and from tools that added support for the same reason (reported). A method-9 ZIP made with 7-Zip reproduced
-the app's error (measured).
+### Do not gate the next send on an acknowledgement the peer is not obliged to send
 
-**Why:** No macOS component reads Deflate64. The Compression framework does raw Deflate only, and the SDK's
-zlib does not include `infback9`, zlib's contrib module for Deflate64 (checked in the SDK's `zlib.h` and
-`libz.tbd`). The Info-ZIP `unzip` that ships with macOS, on the other hand, is built with `USE_DEFLATE64`
-(checked with `unzip -v`). A 2 GB boundary invites suspicion of a signed 32-bit overflow; here that was not it
-(the app's reader handled 64-bit sizes correctly).
+**What happened:** A remote-desktop client sent the guest a monitors
+configuration and then refused to send another until the first was acknowledged.
+The transport it ran over consumes that message in the hypervisor and never
+replies, by design. The first request therefore latched the sender for the life
+of the connection: every later resize was queued and dropped, while the session
+kept reporting that resizing was available, so the failure was silent for the
+operator. Reconnecting cleared it, which is why manual testing never caught it
+(spice-client, 2026-09-18).
+
+**How to apply:** A send window of one, held open by a reply, is only safe when
+the protocol *requires* the reply. When it is optional, or when one transport of
+several omits it, the window needs a second way to close: a timeout, a
+supersede-in-place rule for a request whose newer version makes the older
+irrelevant, or no window at all. The shape to look for in review is a state
+machine whose "in flight" field has exactly one clearing path, and a capability
+flag that keeps advertising the feature while that field is stuck.
+
+The fix that kept everything worth keeping was a deadline on the in-flight entry
+rather than removing the window: coalescing still protects the peer during a
+drag, and liveness is restored for the case that matters, a newer request
+waiting behind an older one. Two details make it safe. An expired window with
+nothing queued must send nothing, or liveness becomes a resend loop of state the
+peer already has. And a reply arriving after the expiry acknowledges whatever is
+in flight then, so if those events are surfaced, say that the newest wins rather
+than pretending the correlation survived.
+
+### A time budget is stated once, by the work that owns it
+
+**Symptom:** a handshake ran under a startup timeout, and the call helper inside it laid the
+per-call timeout on top. Every timeout was then reported under the per-call number — a
+handshake that gave up at its own 30 s said "timed out after 1m0s", sending the operator to the
+wrong setting — and because the shorter deadline wins, a startup budget configured *longer*
+than the call budget was silently cut at the call's value, while the reference called the two
+"separate". A first fix named the right number for `initialize` only: the first `tools/list`
+ran under the same outer deadline, set with a bare `context.WithTimeout`, and still blamed the
+call budget.
+
+**How to apply:** carry the budget in the context as a value and let a helper refuse to add a
+second one (`withBudget`: a context that already states a budget keeps it). Error text names
+the budget found in the context, never a struct field. Wherever an outer phase sets a
+deadline, it sets it through the same helper — a bare `WithTimeout` anywhere in the chain
+brings the wrong number back.
+
+### A checked number can still become a zero Duration — and zero never means "very short"
+
+**Symptom:** after ranges were restated from the inside to refuse NaN, `--timeout 1e-10` still
+passed: it is above 0, and it is no nanoseconds. `time.Duration(1e-10 * 1e9)` is 0, which the
+config loader read as "no override" and `http.Client` reads as "no timeout at all". The
+smallest value one could write behaved as the largest.
+
+**How to apply:** convert in one function that refuses a result `<= 0`, and use it for every
+unit and every source (flag, environment, file). Related, from the same sweep: a lesson fixed
+in the tool where it was found stayed unfixed in the six siblings it had been copied from, and
+in the *other* entry point of the same tool (config was fixed, flags were not). When a range
+check is corrected, grep the fleet for the old shape the same day.
+
+### Exclusive time bounds need different rounding directions when precision becomes coarser
+
+**Symptom:** during scat's Slack-only renewal (2026-09), RFC3339 fractions were
+converted to microsecond API bounds. Flooring an end time ending in `.123456789`
+to `.123456` and sending it as an exclusive upper bound dropped the message at
+`.123456`, even though that message preceded the original end. Independent review
+found this; synthetic regression tests verified it. This is not a new live-service observation.
+
+**Why:** the input precision differs from the grid on which data exists. Keeping
+exclusive comparisons while flooring both ends is correct at the lower bound,
+but narrows the selected set at the upper bound.
 
 **How to apply:**
-- When one extraction tool fails and another succeeds, look at the entry's compression method first. If the
-  contents cannot be shared, ask the recipient for `unzip -Z -v <file> | grep -i 'compression method'`, which
-  shows the method alone (`deflated (enhanced-64k)` is Deflate64).
-- A tool meant to receive ZIPs from Windows needs to extract method 9 (creating it is unnecessary). It differs
-  from Deflate in three places only: a 64 KiB window, distance codes 30/31 (32769 / 49153 + 14 extra bits),
-  and length code 285 meaning 3 + 16 extra bits. Report an unsupported method in a sentence that names its
-  number, not as a raw enum value.
-- Test data can be made with 7-Zip (`7zz a -tzip -mm=Deflate64`), but it never emits length code 285 (second
-  instance under "Verify the fixture before blaming the code" in testing).
-
-## Undeclared ISO-2022-JP is 7-bit, so it passes both an ASCII check and a UTF-8 check — look for its escapes first
-
-**Symptom:** text with no declared charset was read as "US-ASCII if all ASCII, UTF-8 if valid UTF-8, otherwise guess
-Japanese", and an ISO-2022-JP body came back as US-ASCII with its `ESC $ B` sequences still in it (2026-11, a
-mail-parsing library; found by a test of .msg code page 50220, and the .eml path had the same hole).
-
-**Why:** every byte of ISO-2022-JP is 0x7F or below; Japanese is switched in by escape sequences. It passes the ASCII
-check and the UTF-8 validity check, so the guess that keys on 8-bit bytes is never reached.
-
-**How to apply:**
-- Before calling undeclared text ASCII or UTF-8, look for the ISO-2022-JP escapes (`ESC $ B`, `ESC $ @`, `ESC ( J`) and,
-  if present, try a strict ISO-2022-JP decode; on success, record that the charset was guessed.
-- For the same reason, take an "all ASCII needs no conversion" shortcut only when the declared charset is
-  ASCII-compatible (ISO-2022-JP and UTF-16 are not).
-
-## A list in the global config applies to every project — a refusal that depends on this session skips, not stops
-
-**Symptom:** with `write = ["~/notes"]` in the global file, starting under `~/notes` stopped with "contains the project", and a path on an unmounted volume stopped every start in every project (found from the code by lagent's design review; the note and the continued start were confirmed live after the fix).
-
-**Why:** "the operator typed it, so a refusal stops the start" is the reasoning of a flag typed for this run. A config file is written once and applies to every project, so a refusal that depends on the current project or on what is mounted now does not mean the entry is wrong.
-
-**How to apply:**
-- Separate by type "the path itself is invalid" from "this session's circumstances" (missing, not openable, holds the project, already covered).
-- From the config, skip the second kind with a note; from a flag, stop. A path invalid wherever you start, such as `/` or the home, stops either way.
-
-## On APFS, a loop renaming a directory slows every open of a file on the volume — a slow walk may not be the walk's fault
-
-Measured on macOS 27 (APFS, 2026-11): while one process renames a directory back and forth as fast as it can (about 8,000 renames a second), every open of a regular file on the same volume — by any program — waits for a gap in the renames, about 155 ms each time. A walk of 201 files took 30 s against 8 ms, and `cat` of one file took 0.15 s. The directory renamed can be anywhere on the volume. Not slowed: listing a directory, `fstatat`, opening a directory, reading from a file already open. A loop renaming a *file* has no such effect. Read-only, write-only and event-only opens wait alike. The opens that wait pass together at the same gap: the same files opened 32 at a time took 1.1 s. At one rename every 100 ms there is no measurable effect. The kernel cause was not determined.
-
-**How to apply:** before bounding or parallelising a slow file walk, check whether something on the machine is renaming directories; the slowness is the system's, and making one walk faster leaves every other reader as slow. Any timeout derived from "an open takes microseconds" has to survive this: a sandboxed process that may rename a directory can slow everything that opens files, including the checks that are supposed to confine it. Record it as an accepted limit with its reason, rather than building on how the system happens to release the waiting opens, which no document states.
-
-Origin: found while testing a skill-digest walk in two agent runtimes (2026-11).
+- To select microsecond-grid values with `start < value < end`, floor start and
+  ceil end only when necessary. Leave values already on the grid unchanged.
+- Test immediately before, on and after each boundary, including an upper fraction
+  `.999999999` carrying into the next second.
+- Do not convert timestamp identifiers to float64; handle seconds and fractions
+  as integers.
+- Whether the interval selects parents or every message is a separate contract;
+  a rounding correction must not silently change that meaning.

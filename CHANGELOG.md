@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-19 (four more files: entries back under their sections)
+
+Same defect as llm-integration earlier the same day: entries appended at
+section depth, and the `###` entries after them showing as their children.
+No text changed — each file was checked line by line against its previous
+version, and ja and en against each other.
+
+- **config-and-io** (ja + en): 12 entries moved under their sections; a new
+  section "Time & communication" holds the four about time budgets, time
+  bounds and send windows.
+- **development-process** (ja + en): 20 entries moved; a new section
+  "Verification & review" holds the four on independent verification,
+  audit findings, "out of scope" and on-screen text.
+- **macos-gui** (ja + en): 17 entries moved; new sections "Networking
+  (Network framework)" and "System APIs".
+- **security** (ja + en): 49 entries moved, two of them from before the
+  first section; new sections "Agent approval & permissions", "Sandboxing &
+  path containment", "Parsing and displaying untrusted data", "Network &
+  TLS" and "Designing safety mechanisms".
+
 ## 2026-11-19 (llm-integration: entries back under their sections)
 
 - **llm-integration** (ja + en): 21 entries that had fallen outside the

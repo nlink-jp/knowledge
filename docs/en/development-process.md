@@ -444,6 +444,239 @@ project leaves no trail to diagnose it by (the user's point).
   the files.
 - "The effect is limited" is not a reason to leave something.
 
+### Verify a vendored patch by replaying it against upstream — hashes prove "unchanged", not "explained"
+
+**Symptom:** A pinned upstream dependency was vendored with local patches, one per ADR.
+Every vendored file and every patch file was pinned by hash and checked by a script. When
+the time came to add a third patch, the two recorded ones no longer explained the
+difference between the vendored tree and upstream. The check had been green throughout.
+
+**Why:** Hashes pin one property: nobody edited anything without recording it. The patch
+files are hashed too, but that says their contents did not change, not that applying them
+to upstream produces the vendored tree. Those are independent properties, and checking
+only the first lets a patch decay quietly into a description. The decay surfaces when the
+pin is moved — exactly when the record is most needed.
+
+**How to apply:** Actually **re-apply** the recorded patches to the pinned upstream and
+require the result to equal the vendored tree.
+
+- Read the files a patch touches from the patch's own headers, so adding a patch needs no
+  change to the checker.
+- Apply them in the **order** the upstream record lists. The order is part of the record.
+- Fetching upstream needs the network, so this can be its own target rather than part of
+  the offline test run — but run it before moving the pin.
+- Past one local patch, split them one patch per decision (one ADR). Which decision needs
+  which lines is the only handle you get when reconciling with upstream changes later.
+
+### A local patch is part of the system under test — read your own diff before the dependency's code
+
+**Symptom:** A file transfer through a dependency stalled partway. Reading the
+dependency's implementation turned up a re-entrancy defect, which was fixed. It still
+stalled. The third cause found was the real root. The first was in a local patch this
+repository had applied two ADRs earlier: it returned early on a denied-permission path
+and skipped unrelated work at the end of the same method.
+
+**Why:** A local patch is the least-reviewed code in the repository. Upstream's tests do
+not exercise it. Your own tests look at the feature the patch was for — the clipboard, in
+that case. What the patch does to the **other responsibilities of the same function**
+falls through both nets. Worse, it is filed in memory as "a small clipboard change", so
+it is not a candidate when chasing an unrelated feature.
+
+**How to apply:**
+
+- The moment you suspect a dependency, **read your own diff against it first**, side by
+  side with the pristine upstream file. Read the diff, not your memory of it.
+- Check what the patched function does besides the patch's purpose. An early `return` or
+  `guard` is the classic way to strand unrelated work at the end of a method.
+- Expect several causes behind one symptom. A symptom that does not move after a fix
+  usually means there is another cause, not that the fix was wrong.
+- When you widen a patch, record that decision in the **current** ADR, not the original.
+  When and why the patch grew is what the next person moving the pin needs.
+
+### After a test joins a Wi-Fi network, clean up two places — Known Networks and the System keychain — and find Launch Services entries by bundle id
+
+**Symptom:** Cleaning up after a test in which a Mac joined a device's setup Wi-Fi (one-time password)
+(macOS 27.0, 2026-09-26, once):
+- Joining added the network to Known Networks at once; when the device stopped its Wi-Fi the Mac rejoined its
+  previous network by itself after ~11 s.
+- `networksetup -removepreferredwirelessnetwork <IF> <SSID>` removed the entry without admin rights, but the
+  "AirPort network password" in the System keychain (`/Library/Keychains/System.keychain`) remained. Deleting it
+  took `sudo security delete-generic-password -a <SSID> -D "AirPort network password" /Library/Keychains/System.keychain`
+  (run by the maintainer).
+- When unregistering the test app, `lsregister -dump` also listed a **never-launched** build output with the same
+  bundle id (the `.app` in `dist/`).
+- An unprivileged process could not read the current Wi-Fi name (`ipconfig getsummary` shows it redacted,
+  `networksetup -getairportnetwork` reports "not associated").
+
+**Why:** The Known Networks entry and the password are stored separately (as observed). System Settings › Wi-Fi ›
+Known Networks › "Remove From List" **removed both** (2026-09-27, macOS 27.0, measured once: neither the `networksetup`
+list nor the System keychain had it afterwards). How the build output came to be registered is unknown (it may be
+the per-build registration described in macos-gui, "Notification clicks resolve by bundle ID — resident apps must
+enforce a single instance"). Later observations (2026-09-27, macOS 27.0): an `.app` that was only assembled, signed
+and notarized — **never launched** — was registered; and an `.app` removed with `lsregister -u` was registered again
+later without being rebuilt (it was running when removed, and the user quit it afterwards). Which action registers
+them was not isolated.
+
+**How to apply:**
+- When telling users how to remove such a network, name System Settings' "Remove From List" (it takes the password
+  too). `networksetup -removepreferredwirelessnetwork` leaves the password; follow it with the admin-rights delete.
+- List both Known Networks and the System keychain in the clean-up, and confirm with
+  `networksetup -listpreferredwirelessnetworks` and `security find-generic-password -a <SSID> <keychain>`.
+- For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`
+  everything it finds. **Count again after every build or release** (assembling alone registers, and removed entries
+  can come back). Leave the copy the user installed (`/Applications` and the like).
+  Verifying `.app` copies unpacked in temporary directories (`codesign`, `stapler`, `spctl`) also left registrations
+  (2026-09-27, 19 of them). `lsregister -u` removes a path even after it is deleted; an `.app` whose directory had
+  been deleted was later found registered again.
+- Registrations from verification in temporary directories **pile up across sessions**. Search `lsregister -dump`
+  by temporary-directory prefix too, not only by bundle id: on 2026-09-27 that found 19 left by six earlier sessions
+  and Python temporary directories (every directory already gone). End each verification procedure with a step that
+  removes the registrations it made.
+- To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
+  `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
+- With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.
+
+### No trace of use is not evidence of no demand — a feature that cannot be used is not used
+
+**Symptom:** planning an engine to show mermaid diagrams as images in the terminal (2026-09), the mermaid
+blocks in about 250 agent sessions were counted to decide the scope. There were 51, but checking where they
+came from showed that every one came from requests to test the display ("show some diagrams to test the
+rendering"); mermaid arising naturally during real work was close to zero. An independent verification pass
+flagged "no evidence of demand". The operator's explanation ran the other way: they want diagrams, but the
+current box-drawing text rendering is too poor to use, so they do not ask for them; once usable, diagrams
+will go into their work instructions.
+
+**Why:** usage records capture behaviour under the features as they are. When a feature works badly, users
+route around it and stop asking. The gap in the records then measures the current feature's quality, not
+the size of the need.
+
+**How to apply:**
+- Before using "no trace of use in the records" as a reason to reject or defer, check whether the feature
+  was usable at all, and ask the person who holds the demand (the operator) directly.
+- Count what comes from the records by provenance (real work / display-test requests / file writes) and
+  state it as such. Samples from test requests can serve to choose the syntax to support, but not as grounds
+  for coverage or demand.
+- When the operator's explanation establishes the demand, record the decision and its reason in the RFP
+  (if only the numbers remain, later readers will raise the same objection again).
+
+### When porting a parser generator's grammar, port the lexer rules in order, not the documentation's prose
+
+**Symptom:** mermaid's erDiagram and sequenceDiagram (jison) were ported to Go (mermaid-render,
+2026-09). Every detail that "writing to the documentation" was expected to match came from the
+lexer's nature instead: words such as `one` and `to` are never names in any case, `direction TD`
+is two entities rather than a direction (the lexer has no TD), `#` cuts a message's text. An
+independent review found more port mismatches: Go did not reproduce JavaScript's lookahead
+backtracking (`participant Alice # …` was refused), the `\s` and `.` character sets differ, and
+Go's `(?i)` folds `ſ` to `s`.
+
+**Why:** a jison lexer takes the **first rule that matches** unless `flex` is set (not the
+longest), appends `\b` to a rule ending in a word character, and `case-insensitive` applies to
+every rule. JavaScript's `\s` includes Unicode spaces and its `.` also stops at `\r`, U+2028 and
+U+2029. Go's regexp has no lookahead `(?=…)`, and JavaScript shortens a match until its lookahead
+holds.
+
+**How to apply:**
+- Keep the rules as a table in the original order, with each exclusive state's scope. Reproduce
+  the automatic `\b`.
+- Spell out JavaScript's `\s` and `.` character sets. Write lookaheads as functions and reproduce
+  the backtracking too.
+- Check each ported matcher position by position against the original regular expression as an
+  oracle, in a differential test.
+- Keep surprising behaviour as the original has it. Before "fixing" one, check the original's
+  source does otherwise.
+
+### A regex tried at every token that reads to the line's end makes lexing quadratic — answer from per-line facts, and adopt the original's limit
+
+**Symptom:** the same port tried ER's `.*direction\s+TB[^\n]*` at every token: 106 s on one 40 KB
+line. The sequence lexer lowered the whole rest of the source for every name it matched: 23 s at
+32,000 lines. A prefilter skipping lines without the word did nothing on lines with it. The first
+fix still fell back to the original regex on lines ending in a bare "direction": 167 s at 48 KB.
+Deeply nested blocks recursed until the stack overflowed, a fatal error that took the calling
+process down (mermaid-render, 2026-09).
+
+**Why:** a lexer tries rules at every position. A rule that reads to the line's end costs a line's
+length per token: quadratic in the line. A leading `.*` rereads the same stretch at every shifted
+position.
+
+**How to apply:**
+- Turn a rule that runs to the line's end into a function that gathers facts (occurrences, stops)
+  once per line and answers each position by binary search. Lexing only moves forward, so keeping
+  positions as "length remaining" makes the state safe.
+- Keep both a differential test against the original regex and a timing test on inputs the
+  original is slow on. The timing test also catches a fix whose branch still falls back to the
+  original regex.
+- Adopt the original system's limit (mermaid's `maxTextSize`, 50,000 characters) and bound
+  recursion depth. The limits are a backstop; the fix is the complexity.
+
+### Before building a tool, check whether it is "not visible" or "not installed" — and test its skill with an ordinary request, naming nothing, in a fresh session
+
+**Symptom:** an agent kept reaching for headless Chrome, mermaid.js from a CDN or hand-drawn SVG to turn mermaid into an
+image (2026-11). The first diagnosis was "our own engine exists but is not visible", and an MCP server, discovery by
+name, steering by server instructions and user-scope registration were stacked onto the design. In fact no command on
+PATH turned mermaid into an image: the engine was a library and its only command a debugging tool that was never
+distributed — the earlier decision "no distributed CLI" was itself the cause. The session transcripts used as evidence
+had also been misread, from the first request alone.
+
+**Why:** inferring a mechanism's defect (discoverability) from a symptom (odd means) grows fixes shaped to that
+inference. Whether the tool can run on this machine now is answered by one command, yet it is not asked first.
+
+**How to apply:**
+- When a missing tool is suspected, look first at `command -v` and at the past decision not to build or ship it.
+- When session transcripts are the evidence, read up to what was said just before the fumbling, not only the first
+  request.
+- Once the tool and its skill are installed, start fresh sessions with ordinary requests that name neither the tool nor
+  the trial — one scene the tool handles and one it does not. Count from the transcripts' tool calls whether the skill
+  was loaded, whether the tool was used, and whether other means were reached for. Here both scenes loaded the skill
+  first and drew with the tool alone, and the unsupported type ended in a question with choices.
+
+### A rule that judges by its neighbours answers differently at the edges of what was read — and machinery to fix the edges changes the output even with the rule off
+
+**What happened:** A rule was added at aggregation time over a list of recorded spans: "a no-input span of at
+most ten minutes directly followed by an absence counts as the absence". The rule looks at the neighbouring
+span, so a span straddling the start of the read looks shorter than it is, and a span just past the end is not
+seen. The first draft of the design removed this by padding the read on both sides and clipping to the window.
+An independent verification (the design against the existing code, one pass) found:
+- The padding needed is longer than drafted (behind: the rule's limit + its confirmation time + the largest
+  sample gap).
+- Padding and clipping **change the output even with the rule set to 0**. The existing totals counted only "from
+  the first to the last sample inside the window"; clipping newly counts the fractions at both ends and a sleep
+  straddling the window's start.
+- A span that looks short at the head of a read, once rewritten by the rule, fuses with its neighbour into "a
+  long absence that is not there" and misleads another routine that uses such an absence as its marker (deciding
+  how far back to read).
+
+**Why:** A context-dependent rule over a windowed list lacks context at the window's edges. Machinery that
+fills the gap touches the foundation — what is read and how it is totalled — so it changes behaviour
+independently of the rule.
+
+**How to apply:**
+- If the edge disagreement is "rare and bounded", **leave it and record it in the design as a residual**. Here
+  it arose only when the change fell exactly across a day boundary, and by at most the limit each time. Keep
+  padding-and-clipping as a rejected alternative, with the reason.
+- If you promise "turned off, the output is what it was", write **not touching the read window or how totals
+  are taken** into the design as an item. The promise breaks in the read path, not in the pure functions' tests.
+- At design time, look for any routine that uses the rewritten list as **a marker for a different purpose**. If
+  there is one, have it judge on the list before the rewrite (and when the rewrite is one-directional, say which
+  direction is the safe one).
+- Before adding a rule where two copies of the same computation exist, **make them one, and first confirm the
+  existing tests pass with their expectations unchanged and the rule not yet in**. A rule added to one copy makes
+  two commands disagree about the same number.
+
+### Accepting an id's prefix: a full id that finds nothing must not fall through to the prefix search
+
+A cleanup command that took only full session ids was changed to accept a unique prefix, as the tool's resume flag already did. The new lookup ran in three steps: the exact id in the listing, the id as a directory name, then a prefix search. The independent review before the release found the gap between the second and the third. Older ids are timestamps, and two sessions started in the same second are told apart by a suffix (`20250101-120000` and `20250101-120000-2`). When the first one's directory was already gone, its full id missed both exact steps, matched the second as a prefix, and `--yes` deleted the wrong directory.
+
+**Why:** a prefix search treats every input as the start of something longer. A full id is also the start of any id that extends it, so wherever ids can extend each other (a suffix, a version, a counter) a miss on the full id becomes a hit on a neighbour. The resume flag already guarded this — a well-formed id is looked up as that id only — but the new code copied the order of the steps and not the guard.
+
+**How to apply:**
+
+- When adding prefix matching to anything that names a thing to change or delete, check first whether the input is a well-formed full id. If it is, look it up as that id and stop: a miss is "not found", never a prefix.
+- Port the guard together with the order when the behaviour is meant to match an existing lookup, and test the case where the full id is missing and a longer id it prefixes exists.
+- Refuse a prefix when the listing it searched was truncated: the one match found may not be the only one.
+- De-duplicate what was named: a prefix and its full id given together are one target, not two in the confirmation's count.
+
+Origin: the work-directory cleanup command of two agent runtimes (2026-11).
+
 ## Bulk & mechanical changes
 
 ### Verify "identical generated output" mechanically before sweeping vendored templates
@@ -569,6 +802,61 @@ replacement found nothing — a silent rename gap.
 substring of another, the longer goes first). Finish with a grep for the old
 pattern to confirm zero remnants. Separator swaps (kebab → snake) collide most
 easily.
+
+### Do not let parallel subagents use `pkill -f` — they stop each other's processes
+
+**Symptom:** A pre-release independent review ran as three subagents in parallel, each starting and
+exercising the same binary (an MCP server). One cleaned up with `pkill -9 -f <binary name>` and
+stopped a process another agent was in the middle of testing (observed once, 2026-11-04). The agent
+that lost its process then had to tell that failure apart from a bug in the subject.
+
+**Why:** `pkill -f` selects by matching the command line. Parallel agents start the same binary under
+the same name, so a name cannot tell which process is yours.
+
+**How to apply:**
+- In the brief for parallel agents, write: "stop only the processes you started, by their PID; do not
+  use `pkill` or `killall`".
+- Give each agent its own scratch directory too.
+- When a test sees an unexplained exit, suspect the parallel work first.
+
+### Don't split a move onto a shared library into one independent agent per consumer — write the shared plan first, then do it in one place
+
+**Symptom:** Moving four tools onto a new shared mail-parsing library was handed to a separate agent session per
+tool, "each at the tool's own judgment" (2026-11). Two tools whose code had been byte-for-byte identical ended up
+judging by different policies, and two tools whose output had been identical ended up printing different JSONL.
+Half the tools kept their own formatting and so did not use the spoofing fix the library provided. Consumers were
+released before the library's fixes, one of them twice in a day, and a session inside a sandbox created the tag and
+the release before stopping at signing, publishing a "Latest" with no assets. All four were reverted to before the
+library and the move was redone.
+
+**Why:** Spreading the decisions without a shared plan breaks what comes in pairs (identical code, identical
+output). The irreversible steps were delegated without checking that the environment could finish them (signing,
+notarizing).
+
+**How to apply:**
+- Before the move, write the shared plan as one document: the library APIs every consumer must use (no reimplementing
+  them), the judgment and output shapes, and pairs kept identical as pairs. Ask the owner the open decisions first.
+- Fix the library's defects first and release it; release each consumer once, after. Write no workarounds in the
+  consumers.
+- Implement and release in one place, in order. Use subagents only for read-only independent review, and check the
+  pairs there (compare the files that should be identical).
+- Before the irreversible steps (pushing the tag, creating the release), check with a local tag that signing,
+  notarizing and the asset checks all pass.
+
+### Rewrite locals into struct fields from the type checker's resolution of each reference — not by text substitution
+
+**Symptom:** to split a function of about 1,900 lines, the locals rewritten after startup and the locals its closures read — some forty — moved onto the fields of one struct. They had 758 references. The first receiver name chosen, `s`, was used about a hundred times in the same function for something else (`func(s string)` and the like).
+
+**Why:** text substitution cannot tell a variable from another of the same name: a closure parameter, a declaration in an inner block, a key in a struct literal, a field of another value. The type checker has resolved which variable every identifier denotes.
+
+**How to apply:**
+- In Go, load the package with types (`golang.org/x/tools/go/packages`), and from `types.Info.Defs` and `Uses` select only the variable of that name declared directly in the function (`Parent()` is the function's scope). Rewrite its uses from the end of the file backwards.
+- Handle declarations by form: delete `var x T` without a value; turn `x := v` into `recv.x = v`; and for a `:=` whose left side also declares a new local, have the tool report it and fix it by hand (4 of 758 here).
+- Pick a receiver name that the function never uses.
+- When a closure becomes a method, fields are read when it is called, which keeps the closure's read-at-call meaning. A method value (`recv.f`) binds its receiver when it is taken; with a pointer receiver it follows later rewrites.
+- Around every step, check that it type-checks and that the behaviour characterization still matches (testing.md, "Before restructuring a large function, record what the whole thing does as a characterization").
+
+Origin: restructuring the session assembly of an agent runtime (2026-11).
 
 ## External contributions
 
@@ -739,6 +1027,31 @@ rewritten, then merged.
   descriptions public.
 - Behavior descriptions scatter across docs — grep the whole surface before
   fixing.
+
+### Before proposing a fix upstream, read the project's participation history, not its settings
+
+**What happened:** A local patch fixed a real defect in a vendored dependency,
+and the defect was still live at the tip of the dependency's `main` — the very
+commit the project pinned. The obvious next step was to offer it upstream. The
+repository was public, MIT, unarchived, with issues open and pull requests
+allowed from anyone, which all reads as "contributions welcome". The history said
+something else: no `CONTRIBUTING`, no issue or pull-request template, no
+discussions, zero forks, one star, and every pull request across the maintainer's
+two related repositories was their own, from agent-generated branches, three of
+them still open after three weeks. The one issue ever filed was the maintainer's
+own. The decision was to keep the local patch and revisit at the next dependency
+upgrade (spice-client, 2026-09-18).
+
+**How to apply:** Repository settings say what is mechanically possible, not what
+is wanted. The cheap signals that a proposal will be read are participation ones:
+forks, pull requests from accounts other than the owner's, issues from outside,
+and how long the maintainer's own pull requests sit before merging. When those
+are all zero, budget the proposal as a gift with no expected reply, or skip it.
+A solo, agent-driven project is also the case most likely to reach the same fix
+on its own, which lowers the value of the proposal further. Either way, write
+down the decision and its evidence next to the patch, so the next person does not
+redo the investigation — and make the upgrade path check whether the hole was
+closed upstream, since a patch that stops applying cleanly is the signal.
 
 ## ADR & release granularity
 
@@ -1057,6 +1370,66 @@ verified that the entry leads anywhere.
 
 **How to apply:** Resolve the index's relative links against the file system. Identifier
 agreement and link resolution are different properties, and the first does not imply the second.
+
+### A lesson nobody is held to is a note — turn it into a check the day it is written
+
+**Symptom:** an audit of one week's changes across about forty repositories found the same
+shape four times. The knowledge base said a menu-bar popover's re-click handling was saved by
+an animation's timing "in two other apps" — and those two apps' own documents still stated the
+insufficient rule as fact. It said a cask's macOS floor must be set deliberately — and ten
+casks carried the template default, two re-issued after the entry was written. A tool learnt
+that `NaN` passes a range check written from the outside, fixed its config parser, and left its
+own flags and the six siblings it was copied from. A sweep's fix reached some servers and not
+the two that share a workspace. In every case the lesson was *recorded* correctly. Nothing
+held anything to it.
+
+**How to apply:**
+- When you write the entry, ask what would fail if it were ignored tomorrow. If the answer is
+  "nothing", write that check now: an org-wide comparison (cask floor vs `Package.swift`), a
+  source check in the package, a retired-phrase scan that covers every read surface.
+- The same day, grep the fleet for the old shape. "Applied where it was found" is the normal
+  outcome of a fix, not the end of one.
+- A list repeated in a second file drifts unless something compares them. Replace the copy with
+  a pointer, or write the comparison.
+
+### Line citations move with the code — remap all of them by diff, from the base copy
+
+**Symptom:** ADRs cite code as `file.go:NNN`, and a test fails when a cited line no longer
+carries one of its paragraph's identifiers. An edit that added lines tripped it three times in
+one series. Fixing the citation the test reports is the wrong repair: the test cannot see a
+citation that shifted onto *another* line naming the same thing. And the first remapping script
+was not idempotent — it read the numbers from the working copy, so a second run moved
+citations it had already moved.
+
+**How to apply:** map every citation into every file changed since a base ref, by diffing the
+base text against the working tree (`difflib` equal-blocks give the line map). Read the number
+to map from the **base ref's copy of the document**, pair citations by position, and report —
+do not guess — a cited line that was itself edited or a document whose citations were added or
+removed. Run it twice; the second run must move nothing.
+
+### A pair-parity check does not resolve references — follow the links, from the document's own directory
+
+**Symptom:** eleven records were moved and translated, and a structure comparison of each pair
+(headings, table rows, code fences) reported eleven matches and no mismatches. The release
+shipped with four changelog links to `docs/ja/adr/NNNN-slug.md` when the files are `.ja.md`, a
+README sending English readers to the Japanese copy, and a config comment still naming a path
+from two moves earlier. A sweep across the whole organization then found **55 dead links in 6
+repositories** — 46 in one repo, whose feature lists broke on the first link of the paragraph,
+and four in changelogs, where the link is the only route from a release note to the record.
+Every one of those repositories passed its pair check.
+
+**Why:** a parity check looks *inside* a pair. A reference is a path *into* it, held in a third
+file the check never opens, and an extension or one directory level is invisible to the eye that
+just compared two documents it wrote.
+
+**How to apply:** resolve the references mechanically, and by cd'ing to the linking document's
+own directory so `../` behaves as it does for a reader following it. Report "N of M resolved",
+not "fixed". Exempt what is shown rather than offered — fenced blocks, inline spans, external
+schemes, absolute paths, anchors, vendored copies — and assert each exemption is silent in a
+test, so the exemptions cannot quietly become "nothing is checked". Repair a label that spells a
+path along with the target it points at: a label that lies is the next broken link. Then wire it
+into the organization gate the same day — the class recurs on every move, and nobody re-runs a
+one-off script (see *A lesson nobody is held to is a note*).
 
 ## GitHub operations
 
@@ -1588,117 +1961,9 @@ Command guards do not help either. Through `make`, the guard sees only `make fmt
 - If it has already run: restore, by explicit path, only the files that were clean in the `git status` taken before the run. For files carrying your own edits, restore them and re-apply the edits, then confirm identity by checking that the rebuilt artifact's hash matches the one you had verified.
 - **Size the remedy to the measured scope.** Here exactly one formatter hook in the whole organization was affected. Count before adding checks or guard rules — for one occurrence, deleting that target and adding one item to the scaffold checklist is the smallest correct fix.
 
-## Before proposing a fix upstream, read the project's participation history, not its settings
+## Verification & review
 
-**What happened:** A local patch fixed a real defect in a vendored dependency,
-and the defect was still live at the tip of the dependency's `main` — the very
-commit the project pinned. The obvious next step was to offer it upstream. The
-repository was public, MIT, unarchived, with issues open and pull requests
-allowed from anyone, which all reads as "contributions welcome". The history said
-something else: no `CONTRIBUTING`, no issue or pull-request template, no
-discussions, zero forks, one star, and every pull request across the maintainer's
-two related repositories was their own, from agent-generated branches, three of
-them still open after three weeks. The one issue ever filed was the maintainer's
-own. The decision was to keep the local patch and revisit at the next dependency
-upgrade (spice-client, 2026-09-18).
-
-**How to apply:** Repository settings say what is mechanically possible, not what
-is wanted. The cheap signals that a proposal will be read are participation ones:
-forks, pull requests from accounts other than the owner's, issues from outside,
-and how long the maintainer's own pull requests sit before merging. When those
-are all zero, budget the proposal as a gift with no expected reply, or skip it.
-A solo, agent-driven project is also the case most likely to reach the same fix
-on its own, which lowers the value of the proposal further. Either way, write
-down the decision and its evidence next to the patch, so the next person does not
-redo the investigation — and make the upgrade path check whether the hole was
-closed upstream, since a patch that stops applying cleanly is the signal.
-
-## Verify a vendored patch by replaying it against upstream — hashes prove "unchanged", not "explained"
-
-**Symptom:** A pinned upstream dependency was vendored with local patches, one per ADR.
-Every vendored file and every patch file was pinned by hash and checked by a script. When
-the time came to add a third patch, the two recorded ones no longer explained the
-difference between the vendored tree and upstream. The check had been green throughout.
-
-**Why:** Hashes pin one property: nobody edited anything without recording it. The patch
-files are hashed too, but that says their contents did not change, not that applying them
-to upstream produces the vendored tree. Those are independent properties, and checking
-only the first lets a patch decay quietly into a description. The decay surfaces when the
-pin is moved — exactly when the record is most needed.
-
-**How to apply:** Actually **re-apply** the recorded patches to the pinned upstream and
-require the result to equal the vendored tree.
-
-- Read the files a patch touches from the patch's own headers, so adding a patch needs no
-  change to the checker.
-- Apply them in the **order** the upstream record lists. The order is part of the record.
-- Fetching upstream needs the network, so this can be its own target rather than part of
-  the offline test run — but run it before moving the pin.
-- Past one local patch, split them one patch per decision (one ADR). Which decision needs
-  which lines is the only handle you get when reconciling with upstream changes later.
-
-## A local patch is part of the system under test — read your own diff before the dependency's code
-
-**Symptom:** A file transfer through a dependency stalled partway. Reading the
-dependency's implementation turned up a re-entrancy defect, which was fixed. It still
-stalled. The third cause found was the real root. The first was in a local patch this
-repository had applied two ADRs earlier: it returned early on a denied-permission path
-and skipped unrelated work at the end of the same method.
-
-**Why:** A local patch is the least-reviewed code in the repository. Upstream's tests do
-not exercise it. Your own tests look at the feature the patch was for — the clipboard, in
-that case. What the patch does to the **other responsibilities of the same function**
-falls through both nets. Worse, it is filed in memory as "a small clipboard change", so
-it is not a candidate when chasing an unrelated feature.
-
-**How to apply:**
-
-- The moment you suspect a dependency, **read your own diff against it first**, side by
-  side with the pristine upstream file. Read the diff, not your memory of it.
-- Check what the patched function does besides the patch's purpose. An early `return` or
-  `guard` is the classic way to strand unrelated work at the end of a method.
-- Expect several causes behind one symptom. A symptom that does not move after a fix
-  usually means there is another cause, not that the fix was wrong.
-- When you widen a patch, record that decision in the **current** ADR, not the original.
-  When and why the patch grew is what the next person moving the pin needs.
-
-## A lesson nobody is held to is a note — turn it into a check the day it is written
-
-**Symptom:** an audit of one week's changes across about forty repositories found the same
-shape four times. The knowledge base said a menu-bar popover's re-click handling was saved by
-an animation's timing "in two other apps" — and those two apps' own documents still stated the
-insufficient rule as fact. It said a cask's macOS floor must be set deliberately — and ten
-casks carried the template default, two re-issued after the entry was written. A tool learnt
-that `NaN` passes a range check written from the outside, fixed its config parser, and left its
-own flags and the six siblings it was copied from. A sweep's fix reached some servers and not
-the two that share a workspace. In every case the lesson was *recorded* correctly. Nothing
-held anything to it.
-
-**How to apply:**
-- When you write the entry, ask what would fail if it were ignored tomorrow. If the answer is
-  "nothing", write that check now: an org-wide comparison (cask floor vs `Package.swift`), a
-  source check in the package, a retired-phrase scan that covers every read surface.
-- The same day, grep the fleet for the old shape. "Applied where it was found" is the normal
-  outcome of a fix, not the end of one.
-- A list repeated in a second file drifts unless something compares them. Replace the copy with
-  a pointer, or write the comparison.
-
-## Line citations move with the code — remap all of them by diff, from the base copy
-
-**Symptom:** ADRs cite code as `file.go:NNN`, and a test fails when a cited line no longer
-carries one of its paragraph's identifiers. An edit that added lines tripped it three times in
-one series. Fixing the citation the test reports is the wrong repair: the test cannot see a
-citation that shifted onto *another* line naming the same thing. And the first remapping script
-was not idempotent — it read the numbers from the working copy, so a second run moved
-citations it had already moved.
-
-**How to apply:** map every citation into every file changed since a base ref, by diffing the
-base text against the working tree (`difflib` equal-blocks give the line map). Read the number
-to map from the **base ref's copy of the document**, pair citations by position, and report —
-do not guess — a cited line that was itself edited or a document whose citations were added or
-removed. Run it twice; the second run must move nothing.
-
-## Bound an independent pass before it starts — and since the author's fix is where the next defect is, review the fix diff once
+### Bound an independent pass before it starts — and since the author's fix is where the next defect is, review the fix diff once
 
 **Symptom:** a fix for a record that went wrong after a failed write was blocked by review as
 worse than the shipped code; its replacement was blocked again, on a path the first review had
@@ -1732,246 +1997,13 @@ fixing all of them, a fresh reviewer given **only the fix diff** found 10, two o
 mail). The author's tests and fuzzing passed both. The second round's severity was lower (nothing high), so the passes
 stopped there, and the record says the second round's fixes were checked by tests and fuzzing only.
 
-## A pair-parity check does not resolve references — follow the links, from the document's own directory
-
-**Symptom:** eleven records were moved and translated, and a structure comparison of each pair
-(headings, table rows, code fences) reported eleven matches and no mismatches. The release
-shipped with four changelog links to `docs/ja/adr/NNNN-slug.md` when the files are `.ja.md`, a
-README sending English readers to the Japanese copy, and a config comment still naming a path
-from two moves earlier. A sweep across the whole organization then found **55 dead links in 6
-repositories** — 46 in one repo, whose feature lists broke on the first link of the paragraph,
-and four in changelogs, where the link is the only route from a release note to the record.
-Every one of those repositories passed its pair check.
-
-**Why:** a parity check looks *inside* a pair. A reference is a path *into* it, held in a third
-file the check never opens, and an extension or one directory level is invisible to the eye that
-just compared two documents it wrote.
-
-**How to apply:** resolve the references mechanically, and by cd'ing to the linking document's
-own directory so `../` behaves as it does for a reader following it. Report "N of M resolved",
-not "fixed". Exempt what is shown rather than offered — fenced blocks, inline spans, external
-schemes, absolute paths, anchors, vendored copies — and assert each exemption is silent in a
-test, so the exemptions cannot quietly become "nothing is checked". Repair a label that spells a
-path along with the target it points at: a label that lies is the next broken link. Then wire it
-into the organization gate the same day — the class recurs on every move, and nobody re-runs a
-one-off script (see *A lesson nobody is held to is a note*).
-
-## After a test joins a Wi-Fi network, clean up two places — Known Networks and the System keychain — and find Launch Services entries by bundle id
-
-**Symptom:** Cleaning up after a test in which a Mac joined a device's setup Wi-Fi (one-time password)
-(macOS 27.0, 2026-09-26, once):
-- Joining added the network to Known Networks at once; when the device stopped its Wi-Fi the Mac rejoined its
-  previous network by itself after ~11 s.
-- `networksetup -removepreferredwirelessnetwork <IF> <SSID>` removed the entry without admin rights, but the
-  "AirPort network password" in the System keychain (`/Library/Keychains/System.keychain`) remained. Deleting it
-  took `sudo security delete-generic-password -a <SSID> -D "AirPort network password" /Library/Keychains/System.keychain`
-  (run by the maintainer).
-- When unregistering the test app, `lsregister -dump` also listed a **never-launched** build output with the same
-  bundle id (the `.app` in `dist/`).
-- An unprivileged process could not read the current Wi-Fi name (`ipconfig getsummary` shows it redacted,
-  `networksetup -getairportnetwork` reports "not associated").
-
-**Why:** The Known Networks entry and the password are stored separately (as observed). System Settings › Wi-Fi ›
-Known Networks › "Remove From List" **removed both** (2026-09-27, macOS 27.0, measured once: neither the `networksetup`
-list nor the System keychain had it afterwards). How the build output came to be registered is unknown (it may be
-the per-build registration described in macos-gui, "Notification clicks resolve by bundle ID — resident apps must
-enforce a single instance"). Later observations (2026-09-27, macOS 27.0): an `.app` that was only assembled, signed
-and notarized — **never launched** — was registered; and an `.app` removed with `lsregister -u` was registered again
-later without being rebuilt (it was running when removed, and the user quit it afterwards). Which action registers
-them was not isolated.
-
-**How to apply:**
-- When telling users how to remove such a network, name System Settings' "Remove From List" (it takes the password
-  too). `networksetup -removepreferredwirelessnetwork` leaves the password; follow it with the admin-rights delete.
-- List both Known Networks and the System keychain in the clean-up, and confirm with
-  `networksetup -listpreferredwirelessnetworks` and `security find-generic-password -a <SSID> <keychain>`.
-- For Launch Services, search `lsregister -dump` by bundle id rather than the launched path, and `lsregister -u`
-  everything it finds. **Count again after every build or release** (assembling alone registers, and removed entries
-  can come back). Leave the copy the user installed (`/Applications` and the like).
-  Verifying `.app` copies unpacked in temporary directories (`codesign`, `stapler`, `spctl`) also left registrations
-  (2026-09-27, 19 of them). `lsregister -u` removes a path even after it is deleted; an `.app` whose directory had
-  been deleted was later found registered again.
-- Registrations from verification in temporary directories **pile up across sessions**. Search `lsregister -dump`
-  by temporary-directory prefix too, not only by bundle id: on 2026-09-27 that found 19 left by six earlier sessions
-  and Python temporary directories (every directory already gone). End each verification procedure with a step that
-  removes the registrations it made.
-- To log which network the Mac is on, use the address and router (`ipconfig getifaddr` /
-  `ipconfig getoption <IF> router`) rather than the SSID, and never write other networks' names to the log.
-- With wired Ethernet as the primary service, switching Wi-Fi to a test network does not cut the working session.
-
-## No trace of use is not evidence of no demand — a feature that cannot be used is not used
-
-**Symptom:** planning an engine to show mermaid diagrams as images in the terminal (2026-09), the mermaid
-blocks in about 250 agent sessions were counted to decide the scope. There were 51, but checking where they
-came from showed that every one came from requests to test the display ("show some diagrams to test the
-rendering"); mermaid arising naturally during real work was close to zero. An independent verification pass
-flagged "no evidence of demand". The operator's explanation ran the other way: they want diagrams, but the
-current box-drawing text rendering is too poor to use, so they do not ask for them; once usable, diagrams
-will go into their work instructions.
-
-**Why:** usage records capture behaviour under the features as they are. When a feature works badly, users
-route around it and stop asking. The gap in the records then measures the current feature's quality, not
-the size of the need.
-
-**How to apply:**
-- Before using "no trace of use in the records" as a reason to reject or defer, check whether the feature
-  was usable at all, and ask the person who holds the demand (the operator) directly.
-- Count what comes from the records by provenance (real work / display-test requests / file writes) and
-  state it as such. Samples from test requests can serve to choose the syntax to support, but not as grounds
-  for coverage or demand.
-- When the operator's explanation establishes the demand, record the decision and its reason in the RFP
-  (if only the numbers remain, later readers will raise the same objection again).
-
-## When porting a parser generator's grammar, port the lexer rules in order, not the documentation's prose
-
-**Symptom:** mermaid's erDiagram and sequenceDiagram (jison) were ported to Go (mermaid-render,
-2026-09). Every detail that "writing to the documentation" was expected to match came from the
-lexer's nature instead: words such as `one` and `to` are never names in any case, `direction TD`
-is two entities rather than a direction (the lexer has no TD), `#` cuts a message's text. An
-independent review found more port mismatches: Go did not reproduce JavaScript's lookahead
-backtracking (`participant Alice # …` was refused), the `\s` and `.` character sets differ, and
-Go's `(?i)` folds `ſ` to `s`.
-
-**Why:** a jison lexer takes the **first rule that matches** unless `flex` is set (not the
-longest), appends `\b` to a rule ending in a word character, and `case-insensitive` applies to
-every rule. JavaScript's `\s` includes Unicode spaces and its `.` also stops at `\r`, U+2028 and
-U+2029. Go's regexp has no lookahead `(?=…)`, and JavaScript shortens a match until its lookahead
-holds.
-
-**How to apply:**
-- Keep the rules as a table in the original order, with each exclusive state's scope. Reproduce
-  the automatic `\b`.
-- Spell out JavaScript's `\s` and `.` character sets. Write lookaheads as functions and reproduce
-  the backtracking too.
-- Check each ported matcher position by position against the original regular expression as an
-  oracle, in a differential test.
-- Keep surprising behaviour as the original has it. Before "fixing" one, check the original's
-  source does otherwise.
-
-## A regex tried at every token that reads to the line's end makes lexing quadratic — answer from per-line facts, and adopt the original's limit
-
-**Symptom:** the same port tried ER's `.*direction\s+TB[^\n]*` at every token: 106 s on one 40 KB
-line. The sequence lexer lowered the whole rest of the source for every name it matched: 23 s at
-32,000 lines. A prefilter skipping lines without the word did nothing on lines with it. The first
-fix still fell back to the original regex on lines ending in a bare "direction": 167 s at 48 KB.
-Deeply nested blocks recursed until the stack overflowed, a fatal error that took the calling
-process down (mermaid-render, 2026-09).
-
-**Why:** a lexer tries rules at every position. A rule that reads to the line's end costs a line's
-length per token: quadratic in the line. A leading `.*` rereads the same stretch at every shifted
-position.
-
-**How to apply:**
-- Turn a rule that runs to the line's end into a function that gathers facts (occurrences, stops)
-  once per line and answers each position by binary search. Lexing only moves forward, so keeping
-  positions as "length remaining" makes the state safe.
-- Keep both a differential test against the original regex and a timing test on inputs the
-  original is slow on. The timing test also catches a fix whose branch still falls back to the
-  original regex.
-- Adopt the original system's limit (mermaid's `maxTextSize`, 50,000 characters) and bound
-  recursion depth. The limits are a backstop; the fix is the complexity.
-
-## Do not let parallel subagents use `pkill -f` — they stop each other's processes
-
-**Symptom:** A pre-release independent review ran as three subagents in parallel, each starting and
-exercising the same binary (an MCP server). One cleaned up with `pkill -9 -f <binary name>` and
-stopped a process another agent was in the middle of testing (observed once, 2026-11-04). The agent
-that lost its process then had to tell that failure apart from a bug in the subject.
-
-**Why:** `pkill -f` selects by matching the command line. Parallel agents start the same binary under
-the same name, so a name cannot tell which process is yours.
-
-**How to apply:**
-- In the brief for parallel agents, write: "stop only the processes you started, by their PID; do not
-  use `pkill` or `killall`".
-- Give each agent its own scratch directory too.
-- When a test sees an unexplained exit, suspect the parallel work first.
-
-## Don't split a move onto a shared library into one independent agent per consumer — write the shared plan first, then do it in one place
-
-**Symptom:** Moving four tools onto a new shared mail-parsing library was handed to a separate agent session per
-tool, "each at the tool's own judgment" (2026-11). Two tools whose code had been byte-for-byte identical ended up
-judging by different policies, and two tools whose output had been identical ended up printing different JSONL.
-Half the tools kept their own formatting and so did not use the spoofing fix the library provided. Consumers were
-released before the library's fixes, one of them twice in a day, and a session inside a sandbox created the tag and
-the release before stopping at signing, publishing a "Latest" with no assets. All four were reverted to before the
-library and the move was redone.
-
-**Why:** Spreading the decisions without a shared plan breaks what comes in pairs (identical code, identical
-output). The irreversible steps were delegated without checking that the environment could finish them (signing,
-notarizing).
-
-**How to apply:**
-- Before the move, write the shared plan as one document: the library APIs every consumer must use (no reimplementing
-  them), the judgment and output shapes, and pairs kept identical as pairs. Ask the owner the open decisions first.
-- Fix the library's defects first and release it; release each consumer once, after. Write no workarounds in the
-  consumers.
-- Implement and release in one place, in order. Use subagents only for read-only independent review, and check the
-  pairs there (compare the files that should be identical).
-- Before the irreversible steps (pushing the tag, creating the release), check with a local tag that signing,
-  notarizing and the asset checks all pass.
-
-## Before building a tool, check whether it is "not visible" or "not installed" — and test its skill with an ordinary request, naming nothing, in a fresh session
-
-**Symptom:** an agent kept reaching for headless Chrome, mermaid.js from a CDN or hand-drawn SVG to turn mermaid into an
-image (2026-11). The first diagnosis was "our own engine exists but is not visible", and an MCP server, discovery by
-name, steering by server instructions and user-scope registration were stacked onto the design. In fact no command on
-PATH turned mermaid into an image: the engine was a library and its only command a debugging tool that was never
-distributed — the earlier decision "no distributed CLI" was itself the cause. The session transcripts used as evidence
-had also been misread, from the first request alone.
-
-**Why:** inferring a mechanism's defect (discoverability) from a symptom (odd means) grows fixes shaped to that
-inference. Whether the tool can run on this machine now is answered by one command, yet it is not asked first.
-
-**How to apply:**
-- When a missing tool is suspected, look first at `command -v` and at the past decision not to build or ship it.
-- When session transcripts are the evidence, read up to what was said just before the fumbling, not only the first
-  request.
-- Once the tool and its skill are installed, start fresh sessions with ordinary requests that name neither the tool nor
-  the trial — one scene the tool handles and one it does not. Count from the transcripts' tool calls whether the skill
-  was loaded, whether the tool was used, and whether other means were reached for. Here both scenes loaded the skill
-  first and drew with the tool alone, and the unsupported type ended in a question with choices.
-
-## Before fixing an audit finding, ask whose act makes it happen and whether the behaviour is specified
+### Before fixing an audit finding, ask whose act makes it happen and whether the behaviour is specified
 
 An audit rated as high that piped stdin without `-p` runs as typed input, `!` commands included. It was implemented as a breaking refusal and taken through two reviews before the question was asked of it: this was the specification, recorded in an ADR, and it happened only when the operator composed the pipe themselves, the shape of `curl … | bash`. It was withdrawn and documented instead. The same audit's finding that an unasked sandbox lane could write what approved builds trust needed nobody's act and broke a recorded guarantee, and fixing it was right.
 
 **How to apply:** before proposing a fix, answer two questions: does this happen unasked, or does the operator have to compose it, and is there a decision record for the behaviour? When the operator's own act is required, the default is to state the behaviour where it is read and record the residual. When offering choices, include "this is not a defect", not only ways to fix it.
 
-## A rule that judges by its neighbours answers differently at the edges of what was read — and machinery to fix the edges changes the output even with the rule off
-
-**What happened:** A rule was added at aggregation time over a list of recorded spans: "a no-input span of at
-most ten minutes directly followed by an absence counts as the absence". The rule looks at the neighbouring
-span, so a span straddling the start of the read looks shorter than it is, and a span just past the end is not
-seen. The first draft of the design removed this by padding the read on both sides and clipping to the window.
-An independent verification (the design against the existing code, one pass) found:
-- The padding needed is longer than drafted (behind: the rule's limit + its confirmation time + the largest
-  sample gap).
-- Padding and clipping **change the output even with the rule set to 0**. The existing totals counted only "from
-  the first to the last sample inside the window"; clipping newly counts the fractions at both ends and a sleep
-  straddling the window's start.
-- A span that looks short at the head of a read, once rewritten by the rule, fuses with its neighbour into "a
-  long absence that is not there" and misleads another routine that uses such an absence as its marker (deciding
-  how far back to read).
-
-**Why:** A context-dependent rule over a windowed list lacks context at the window's edges. Machinery that
-fills the gap touches the foundation — what is read and how it is totalled — so it changes behaviour
-independently of the rule.
-
-**How to apply:**
-- If the edge disagreement is "rare and bounded", **leave it and record it in the design as a residual**. Here
-  it arose only when the change fell exactly across a day boundary, and by at most the limit each time. Keep
-  padding-and-clipping as a rejected alternative, with the reason.
-- If you promise "turned off, the output is what it was", write **not touching the read window or how totals
-  are taken** into the design as an item. The promise breaks in the read path, not in the pure functions' tests.
-- At design time, look for any routine that uses the rewritten list as **a marker for a different purpose**. If
-  there is one, have it judge on the list before the rewrite (and when the rewrite is one-directional, say which
-  direction is the safe one).
-- Before adding a rule where two copies of the same computation exist, **make them one, and first confirm the
-  existing tests pass with their expectations unchanged and the rule not yet in**. A rule added to one copy makes
-  two commands disagree about the same number.
-
-## "Out of scope" in a verification bounds the question; it is not a reason to leave a defect that was found
+### "Out of scope" in a verification bounds the question; it is not a reason to leave a defect that was found
 
 **What happened:** A pre-release independent verification reported three defects outside the question it was
 asked (an infinite loop that predated the change, a config value that overflowed, a screen's colours left
@@ -1996,7 +2028,7 @@ located is worse than shipping without knowing.
   put to the owner. Do not decide "accepted" yourself.
 - The discipline of not widening scope is about **features and design**. It does not apply to fixing defects.
 
-## Lay out every line the feature prints before a release, and read each in every state that prints it — check the manual's statements against the code
+### Lay out every line the feature prints before a release, and read each in every state that prints it — check the manual's statements against the code
 
 Just before releasing a new question dialog — after a design verification and several implementation reviews — a reader was asked to read only the operator-facing text. Eight findings: a word the manual does not use, a notice untrue in some of its states (the "directory is gone" notice was also printed when the directory had been replaced, and when only the body file had been removed), a notice that does not say what to do next, and text that existed in one language only. A second reader then checked the manual's statements against the code and found more.
 
@@ -2014,35 +2046,3 @@ Just before releasing a new question dialog — after a design verification and 
 - Pad by display width.
 
 Origin: the release of the use-time skill compare in two agent runtimes (2026-11).
-
-
-## Accepting an id's prefix: a full id that finds nothing must not fall through to the prefix search
-
-A cleanup command that took only full session ids was changed to accept a unique prefix, as the tool's resume flag already did. The new lookup ran in three steps: the exact id in the listing, the id as a directory name, then a prefix search. The independent review before the release found the gap between the second and the third. Older ids are timestamps, and two sessions started in the same second are told apart by a suffix (`20250101-120000` and `20250101-120000-2`). When the first one's directory was already gone, its full id missed both exact steps, matched the second as a prefix, and `--yes` deleted the wrong directory.
-
-**Why:** a prefix search treats every input as the start of something longer. A full id is also the start of any id that extends it, so wherever ids can extend each other (a suffix, a version, a counter) a miss on the full id becomes a hit on a neighbour. The resume flag already guarded this — a well-formed id is looked up as that id only — but the new code copied the order of the steps and not the guard.
-
-**How to apply:**
-
-- When adding prefix matching to anything that names a thing to change or delete, check first whether the input is a well-formed full id. If it is, look it up as that id and stop: a miss is "not found", never a prefix.
-- Port the guard together with the order when the behaviour is meant to match an existing lookup, and test the case where the full id is missing and a longer id it prefixes exists.
-- Refuse a prefix when the listing it searched was truncated: the one match found may not be the only one.
-- De-duplicate what was named: a prefix and its full id given together are one target, not two in the confirmation's count.
-
-Origin: the work-directory cleanup command of two agent runtimes (2026-11).
-
-## Rewrite locals into struct fields from the type checker's resolution of each reference — not by text substitution
-
-**Symptom:** to split a function of about 1,900 lines, the locals rewritten after startup and the locals its closures read — some forty — moved onto the fields of one struct. They had 758 references. The first receiver name chosen, `s`, was used about a hundred times in the same function for something else (`func(s string)` and the like).
-
-**Why:** text substitution cannot tell a variable from another of the same name: a closure parameter, a declaration in an inner block, a key in a struct literal, a field of another value. The type checker has resolved which variable every identifier denotes.
-
-**How to apply:**
-- In Go, load the package with types (`golang.org/x/tools/go/packages`), and from `types.Info.Defs` and `Uses` select only the variable of that name declared directly in the function (`Parent()` is the function's scope). Rewrite its uses from the end of the file backwards.
-- Handle declarations by form: delete `var x T` without a value; turn `x := v` into `recv.x = v`; and for a `:=` whose left side also declares a new local, have the tool report it and fix it by hand (4 of 758 here).
-- Pick a receiver name that the function never uses.
-- When a closure becomes a method, fields are read when it is called, which keeps the closure's read-at-call meaning. A method value (`recv.f`) binds its receiver when it is taken; with a pointer receiver it follows later rewrites.
-- Around every step, check that it type-checks and that the behaviour characterization still matches (testing.md, "Before restructuring a large function, record what the whole thing does as a characterization").
-
-Origin: restructuring the session assembly of an agent runtime (2026-11).
-

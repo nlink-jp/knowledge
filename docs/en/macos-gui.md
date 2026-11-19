@@ -1349,6 +1349,271 @@ region it picked did not match the one the app meant.
 - Before owning read-aloud at all, see whether the OS already does it: a selectable SwiftUI `Text` was read aloud
   via right-click › Speech › Start Speaking (inside a non-activating `NSPanel`, confirmed by hand).
 
+### What an app looks like is decided by the SDK it recorded linking against — and a toolchain update rewrites that silently
+
+**What happened:** A SwiftUI menu-bar app re-released with only string and layout
+changes came back drawing with the previous generation of window chrome (square
+corners). The Info.plist was identical apart from the version string. The
+difference was in the binary's `LC_BUILD_VERSION`:
+
+| build | minos | sdk |
+|---|---|---|
+| previous release (looked right) | 14.0 | **26.5** |
+| new release (square corners) | 14.0 | **14.0** |
+| other Swift GUI apps on the same machine, built before the update | 13/14.0 | 26.5 |
+
+macOS reads **which SDK an app was linked against** to decide which design
+generation to render it with. The newer toolchain (Xcode 27 / Swift 6.4) stamps
+that field with the *deployment target*, so the app declared an old SDK and got
+the old look.
+
+**Why nothing caught it:** the build, the signature, the notarization and the
+whole test suite pass either way. Only the OS's rendering changes, and no
+artifact check looks at that. The symptom also appears **only when the deployment
+target is older than the current SDK**, so an app targeting the current OS does
+not reproduce it on the same toolchain — a sibling app looking fine is actively
+misleading.
+
+**How to apply:**
+- Pass the SDK version to the link step explicitly in release builds:
+  `swift build -c release -Xlinker -platform_version -Xlinker macos -Xlinker <min> -Xlinker <sdk>`.
+  Setting `SDKROOT`, or passing `-Xlinker -sdk_version` on its own, does not work
+  (both measured). Derive `<min>` from `Package.swift`'s `.macOS(.vNN)` so the
+  deployment target is stated once.
+- **Add the check to `verify-release`**: read `LC_BUILD_VERSION`'s `sdk` with
+  `otool -l` and fail unless it equals the current SDK. A visual regression can
+  only be judged by a human, so this is the one proxy a machine can gate on.
+- After updating a toolchain, **diff the first release artifact against the
+  previous one at the binary level**, not just the sources. `LC_BUILD_VERSION`,
+  signing attributes and embedded versions all change without any source diff.
+- **Count the sweep population from the workspace root, `_wip/` included.** The
+  fix was rolled out to every Swift GUI in the series checkouts on 2026-09-17; a
+  project scaffolded under `_wip/` the same day was not in that enumeration and
+  produced a deployment-target-stamped build the next morning (spice-client,
+  2026-09-18). `find <workspace> -name Package.swift` is the population, not
+  `find <series>`.
+
+### When every view is correct and the drawing is not, the thing to dump is the layer tree
+
+**Symptom:** The top 44pt of a session window was a black band, and the status text,
+checkbox and two buttons that live there were not visible at all. Accessibility
+reported all four controls present at the right positions and sizes. A recursive dump
+of the view hierarchy showed every view with `isHidden` false, `alphaValue` 1.0 and
+the intended frames. The window background was the system colour and the appearance
+was light. **Nothing was hidden and nothing was transparent, and nothing was visible.**
+
+Reading the code found nothing. A minimal reproduction harness — the same structure, a
+control row above a drawing view inside an `NSHostingView` — was tried five ways and
+drew correctly every time.
+
+**Why:** The fault was in the layers, not the views. Dumping the layer tree showed one
+content layer inside the drawing view measuring 1024x752 where its view was 1024x676,
+and the parent layer's `masksToBounds` was false, so the extra 76pt was not clipped
+and painted straight over the control row above it. **The view hierarchy and the layer
+hierarchy are different things, and the second is under no obligation to respect the
+first's bounds.** Checking view frames can never see this.
+
+**How to apply:**
+
+- For "laid out but not visible", **dump the layer tree**, not the view tree: each
+  layer's `frame`, `opacity`, `isHidden`, `isOpaque`, `backgroundColor`, whether
+  `contents` is set, and `masksToBounds`. One layer whose frame disagrees with its
+  view's bounds is the answer.
+- Add the diagnostic behind a temporary environment variable and remove it afterwards.
+  Attaching to the running process is not an option for a signed app under the
+  Hardened Runtime, because the debugger cannot attach.
+- When you embed someone else's drawing view — a dependency's — in your layout,
+  **clip it to your own frame**. Clipping is not cosmetic here; it is the structural
+  guarantee that whatever they do stays inside the area you gave them. `.clipped()` in
+  SwiftUI, `masksToBounds` on the parent in AppKit.
+- A reproduction harness is good at establishing what is *not* the cause, and that is
+  all it does. **Elimination and observation are different tools**; switch to observing
+  the real thing sooner than feels natural.
+
+### A menu bar panel's own state is the only state you can read at click time
+
+**Symptom:** clicking a menu bar item again, right after its panel closed, did nothing — and
+clicking repeatedly kept it shut. Reported from use, on three separate apps that shared the
+same shape.
+
+**Measured (macOS 27.0, 2026-09-21, synthetic HID clicks with every event logged):**
+
+- `NSPopover.isShown` stays **true for about half a second** after `performClose` *and* after
+  `close()`, until `popoverDidClose`. Deciding from it turns a re-click inside that half
+  second into another close: on the release builds the re-click opened the panel **0 times out
+  of 10** at every gap tried, from 60 ms to 350 ms.
+- `popoverDidClose` for one close arrives **after a show that followed it**, so the delegate
+  callback cannot be believed on its own either.
+- The panel window's `isVisible` flips false within milliseconds of a close — but it is also
+  false between a `show` and the moment the panel appears, because AppKit queues a show that
+  starts during a close animation behind it (about 0.4 s).
+- One click on the item produces **two events, either of which can be missing**: a global
+  mouse-down monitor sees it first, the button's action arrives 23–41 ms later, and of eight
+  well-separated clicks eight were monitored and five produced an action — the missing ones
+  being clicks that closed the panel.
+- A panel **shown from the monitor** (on the mouse-down or the mouse-up) is dismissed by AppKit
+  inside the same click, every time. Only the button's action can open it.
+
+**How to apply:**
+- Keep the fact in your own value — "is the panel up" — set when you show and when you close,
+  and read nothing of AppKit's to decide. Reconcile with `popoverDidClose` by counting the
+  closes you asked for and consuming their late reports; a report you did not cause is the one
+  that carries news (a `.transient` dismissal, the Escape key).
+- Give the monitor the dismissing and the action the opening. Suppress an action that arrives
+  within ~0.1 s of the monitor closing the panel for a click on the item: it is that click's
+  second event. **Do not pair the two events by order** — with one of them missing, "the
+  action of the click that just closed the panel" and "the action of the click meant to open
+  it" are the same event, and an ordering rule swallows clicks.
+- Expect a residual and measure it rather than claiming none: at a 60–100 ms gap the panel
+  ended up closed once in ten, because the dismissed click's action can arrive after the
+  window. Two clicks that fast are one gesture; a longer window brings back the defect.
+- Verify at the layer the user touches. A synthetic-click harness is a few dozen lines —
+  `CGEvent` posted at `.cghidEventTap`, the item's frame printed by the app itself, panel
+  visibility from `CGWindowList` with `.optionOnScreenOnly` — and it reproduced the defect
+  deterministically on the release build, which is what made the fix checkable. Pure tests of
+  the decision state machine pass either way: they observe a layer below the defect.
+- Fix every sibling in the same change. The third app had the same defect with a different
+  mechanism, and nobody had reported it.
+
+**Which host to choose.** The readings above are `NSPopover`'s, and much of the work they
+cause is the host's, not the status item's:
+
+| | `NSPopover` | non-activating `NSPanel` |
+|---|---|---|
+| Is it up? | `isShown` lags a close by ~0.5 s | the window tells the truth at once (keep your own boolean anyway) |
+| Reopening during a close | queued behind the animation, ~0.4 s | immediate |
+| Opening from the monitor | dismissed inside the same click | works, so one channel can do everything |
+| Outside clicks | `.transient` misses clicks that take no activation | yours to watch — which you were doing anyway |
+| Cmd-Tab, Space change | closes itself | stays open, out of sight, until you handle it |
+| Arrow, placement, material | done for you | yours to manage |
+| A menu inside the panel | the first click activates the app and ends the menu's tracking | no activation, so menus work |
+| The item's highlight while open | kept by the OS (dark for a frame or three if `show` outlasts the release) | cannot be lit with public API (next section) |
+
+So: **a panel that contains a pop-up menu has to be a non-activating `NSPanel`** — with a
+popover the first click inside it activates the accessory app, and that ends the tracking of
+the very menu the click opened (measured: 78 ms). Segmented controls and toggles track nothing
+and are safe in a popover.
+
+What a change of host does *not* buy is the rapid re-click: measured on a shipped app that
+uses a non-activating panel, the re-click opened it 4 times out of 5 at 60–100 ms and 5 of 5
+at 130 ms and beyond — the same numbers as the popover apps above, because that residual comes
+from the status item's two events, not from the host.
+
+### A menu bar item's highlight while its panel is open is decided by the container — your own panel cannot be lit with public API
+
+**Symptom:** among menu bar apps that look nearly the same, the two built on a non-activating `NSPanel`
+never showed their item pressed while the panel was open (the highlight went at the release), and one
+built on a popover blinked each time it opened. The other two popover apps and three SwiftUI
+`MenuBarExtra` apps kept it. Reported by the user, who had looked closely.
+
+**Measured (macOS 27.0, 2026-09-21; only the item's rectangle filmed with `SCStream` at 60 fps, judged by
+the median brightness of its background):**
+
+- Another process draws the item (`NSSceneStatusItem`). The open-panel highlight is requested through
+  **private** AppKit machinery — by `show` for a popover, by SwiftUI for `MenuBarExtra` (callers traced
+  with lldb). An app using `MenuBarExtra` itself uses public API only; the private part is inside the
+  framework, and Apple stands behind it.
+- `NSButton.highlight(_:)` and `isHighlighted` do not reach the screen. Called synchronously in the action,
+  the button resets them right after; called later, the in-process value stays true while the screen stays
+  dark (five ways, three tries each, all dark).
+- Even with a popover, the item's action arrives **before the release** (about 30 ms after the press). The
+  menu bar drops the pressed highlight at the release and lights the popover's only once `show` is done, so
+  a `show` that outlasts the release leaves the item dark in between. The app that blinked built a face that
+  is hidden on opening (its settings) inside every `show`: 92–94 ms. Neither its chart nor animation was the
+  cause.
+
+**How to apply:**
+
+- Weigh this highlight when choosing the container. Your own panel cannot reproduce it with public API.
+  The private call a popover makes works from a panel too, but it gives up any guarantee, so do not use it.
+  The public way is to put the panel in a container whose highlight the OS keeps — a popover or
+  `MenuBarExtra` — and decide by measuring whether the reason you left that container still holds.
+- With a popover, finish `show` before the button comes up: build whatever is hidden on opening on the
+  run-loop turn after `show` returns (`DispatchQueue.main.async`). SwiftUI's `.task` runs inside `show` and
+  cannot defer it. The first open after launch stays slow (first-time loading); building the panel once
+  off screen at launch did not remove that.
+- Judge on the screen. The in-process `isHighlighted` sits below the defect and cannot pass a fix. Film the
+  item's rectangle only, so no other app's content is captured.
+- Moving from a panel of your own to `MenuBarExtra(.window)` changes the container's behaviour (measured in
+  net-meter, macOS 27.0):
+  - A pop-up menu opened in the panel right after a LaunchServices launch stays open (3 of 3); a popover
+    control ended it 88–97 ms in (2 of 2) — the defect that drives apps off the popover is not there.
+  - Another app coming forward without a click (⌘Tab) leaves the window open, and there is no public way to
+    close it from code.
+  - The label's `accessibilityLabel` becomes the item's AXTitle and an `accessibilityValue` is dropped: put
+    what should be spoken into the label's string.
+  - SwiftUI's lifecycle installs a main menu, so while the panel has the keyboard ⌘C works and ⌘Q quits the
+    app. Remove the latter with `CommandGroup(replacing: .appTermination) {}` if it should not.
+  - The label's `colorScheme` follows the menu bar's own appearance, not the system's (`dark` under a
+    `VibrantDark` menu bar on an `Aqua` system). The content is built on the first open and kept, so push
+    nothing to it while it is closed.
+
+### SwiftUI's SecureField beeps with a Japanese input source active — restrict a password field to Roman input sources
+
+**Symptom:** In a menu bar app's setup window, typing a Wi-Fi password into SwiftUI's `SecureField` with a Japanese input
+source active beeped on every key and entered nothing. The field still looked like Japanese input, and nothing on
+screen said why (2026-09-27, macOS 27.0, observed by the user).
+
+**Why:** Not investigated (and not guessed). The documented mechanism is the input context's
+`allowedInputSourceLocales`: set to `NSAllRomanInputSourcesLocaleIdentifier`, it restricts the allowed input sources to
+Roman ones while that context is active (NSTextInputContext reference).
+
+**How to apply:**
+- Wrap `NSSecureTextField` in an `NSViewRepresentable` and, in `becomeFirstResponder()`, set
+  `currentEditor()?.inputContext?.allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]` (the field
+  editor receives the keys, so it is its context). Focusing the field then switched the menu bar input indicator to
+  "A" and the password could be typed (measured once).
+- Say under the field what is accepted (a WPA2/WPA3 passphrase is 8–63 printable ASCII characters) and how many more
+  characters are needed. A disabled button alone does not tell the user why.
+
+### A Swift Charts string axis is not thinned by `AxisMarks(values:)`, and a label wider than its column is truncated
+
+**What happened:** In a bar chart with one column per day (x is a date string), passing a thinned array to
+`AxisMarks(values:)` to get about twelve labels still labelled every column, at 30 days and at 90. Deciding inside
+the closure — emit `AxisValueLabel` only when the value is in the set to show — did thin them (macOS 27.2,
+2026-11, measured by writing an `NSHostingView` hosted in a window out as an image).
+Once thinned, a label wider than its column (about 9pt at 90 days) was truncated to one or two characters.
+`.fixedSize()` on the `Text` changed nothing; `AxisValueLabel(collisionResolution: .disabled)` together with a
+fixed `.frame(width:)` on the `Text` showed the whole label (both were changed at once, so which one mattered was
+not isolated). The rightmost label runs past the plot area and is cut, so the chart was given trailing padding.
+
+Confirmed in the same work: a `LinearGradient` given to a `BarMark` through `foregroundStyle` spans **that bar's
+own extent**, not the whole plot area (checked numerically: the colour at a bar's top matched the data of that
+bar's first slice).
+
+**Why:** Not investigated. A string axis appears to place a mark on every category and fit each label to its
+band (inferred).
+
+**How to apply:**
+- To thin the labels of a string axis, do not rely on `values:`; decide inside the closure what to emit.
+- Where columns get narrow, give labels a fixed width and leave padding for the label at the edge.
+- Whether an axis setting took effect cannot be read from the code. **Render the screen at the largest column
+  count and look at it.** This defect was invisible in the wide-column 7-day view, and every existing test passed.
+
+### In a Swift Charts horizontal bar chart, the string axis labels were drawn on top of the bars
+
+**What happened:** A per-item horizontal bar chart (y is the item name as a string, x an amount) emitted
+`AxisValueLabel` from `AxisMarks(position: .leading)`. The labels were drawn **inside** the plot area rather than
+to its left, pushed to the top of each band, over the bars and over the amount annotated at each bar's end, at
+every window size (macOS 27.2, built against the macOS 27 SDK, 2026-11; confirmed by capturing a window that was
+actually on screen). `AxisMarks(preset: .extended, position: .leading)` with `AxisValueLabel(centered: true)` moved
+the labels out to the left, but they did not line up with the band centres and a long item name took the width,
+squeezing the bars to a few points. The chart was dropped for plain SwiftUI rows — name and amount on one line,
+the bar as that row's background — which read in a box about 170pt wide and depend on no axis behaviour.
+
+The same code sat unchanged in a sibling app forked from the same skeleton, with the same overlap. Both had been
+shipping for months, and every test passed.
+
+**Why:** Not investigated. How it was drawn when it was written (against an older SDK) was not checked.
+
+**How to apply:**
+- For a per-item breakdown in a narrow box, rows of name, value and a background bar are more dependable than a
+  chart with an axis. If nothing needs an axis, do not use a chart.
+- As with the entry above (thinning a string axis), whether an axis setting took effect is not known until the
+  screen is seen. After moving to a new SDK, capture the screens that hold charts in a real window and look.
+- After fixing a display defect in an app made by forking, grep the same place in the fork's source and its other
+  forks, and capture those the same way.
+
 ## Wails (Go + WebView)
 
 ### window.alert() does not reliably appear
@@ -1608,206 +1873,145 @@ in an event**.
   real store, two seconds after launch the model's total had dropped by
   exactly the computed difference.
 
-## What an app looks like is decided by the SDK it recorded linking against — and a toolchain update rewrites that silently
+### An overlay that depends on a selection follows the condition the loaded data belongs to, not the selected value
 
-**What happened:** A SwiftUI menu-bar app re-released with only string and layout
-changes came back drawing with the previous generation of window chrome (square
-corners). The Info.plist was identical apart from the version string. The
-difference was in the binary's `LC_BUILD_VERSION`:
+**What happened:** A screen had a picker for the period (7 days, 30 days, this month, …) and a chart whose data
+for that period loads asynchronously. "Draw the budget limit line only for this month" was decided from the
+picker's value. The picker changes the moment it is clicked while the data stays the previous period's until the
+load finishes, so in between — and for good if the load fails — this month's budget line sat across a 90-day
+running total. A pre-release independent review found it by reading the code (a menu-bar usage app, 2026-11).
 
-| build | minos | sdk |
-|---|---|---|
-| previous release (looked right) | 14.0 | **26.5** |
-| new release (square corners) | 14.0 | **14.0** |
-| other Swift GUI apps on the same machine, built before the update | 13/14.0 | 26.5 |
-
-macOS reads **which SDK an app was linked against** to decide which design
-generation to render it with. The newer toolchain (Xcode 27 / Swift 6.4) stamps
-that field with the *deployment target*, so the app declared an old SDK and got
-the old look.
-
-**Why nothing caught it:** the build, the signature, the notarization and the
-whole test suite pass either way. Only the OS's rendering changes, and no
-artifact check looks at that. The symptom also appears **only when the deployment
-target is older than the current SDK**, so an app targeting the current OS does
-not reproduce it on the same toolchain — a sibling app looking fine is actively
-misleading.
+**Why:** The selection and the data change at different times. A heading that is briefly out of step does little
+harm, but **a line meant to be read against the data** (a limit, a target, an average) shows a false comparison
+for as long as they disagree.
 
 **How to apply:**
-- Pass the SDK version to the link step explicitly in release builds:
-  `swift build -c release -Xlinker -platform_version -Xlinker macos -Xlinker <min> -Xlinker <sdk>`.
-  Setting `SDKROOT`, or passing `-Xlinker -sdk_version` on its own, does not work
-  (both measured). Derive `<min>` from `Package.swift`'s `.macOS(.vNN)` so the
-  deployment target is stated once.
-- **Add the check to `verify-release`**: read `LC_BUILD_VERSION`'s `sdk` with
-  `otool -l` and fail unless it equals the current SDK. A visual regression can
-  only be judged by a human, so this is the one proxy a machine can gate on.
-- After updating a toolchain, **diff the first release artifact against the
-  previous one at the binary level**, not just the sources. `LC_BUILD_VERSION`,
-  signing attributes and embedded versions all change without any source diff.
-- **Count the sweep population from the workspace root, `_wip/` included.** The
-  fix was rolled out to every Swift GUI in the series checkouts on 2026-09-17; a
-  project scaffolded under `_wip/` the same day was not in that enumeration and
-  produced a deployment-target-stamped build the next morning (spice-client,
-  2026-09-18). `find <workspace> -name Package.swift` is the population, not
-  `find <series>`.
+- When data is loaded, keep the condition it was loaded for alongside it, and decide anything drawn over the data
+  from that.
+- Make the decision a pure function and test it, including the case where nothing has been loaded yet.
 
-## When every view is correct and the drawing is not, the thing to dump is the layer tree
+## Networking (Network framework)
 
-**Symptom:** The top 44pt of a session window was a black band, and the status text,
-checkbox and two buttons that live there were not visible at all. Accessibility
-reported all four controls present at the right positions and sizes. A recursive dump
-of the view hierarchy showed every view with `isHidden` false, `alphaValue` 1.0 and
-the intended frames. The window background was the system colour and the appearance
-was light. **Nothing was hidden and nothing was transparent, and nothing was visible.**
+### An NWConnection created while the local network prompt is up can stay in `.preparing` after the user allows it
 
-Reading the code found nothing. A minimal reproduction harness — the same structure, a
-control row above a drawing view inside an `NSHostingView` — was tried five ways and
-drew correctly every time.
+**Symptom:** A menu bar app (Developer ID signed, not sandboxed) started a Bonjour browse on its first launch and
+the local network prompt appeared. The browser found the device the moment the user clicked Allow, and the app
+created an `NWConnection` 1 ms later. The unified log shows the connection's lower path (the resolved IPv4 child)
+failing 60 ms later with `unsatisfied (Local network prohibited)`; the connection then stayed in `.preparing` for
+over 2 minutes and never retried by itself — it entered neither `.waiting` nor `.failed` (macOS 27.0, 2026-09-26,
+one occurrence). Relaunched with the permission granted, the same connection was `.ready` in 0.16 s.
 
-**Why:** The fault was in the layers, not the views. Dumping the layer tree showed one
-content layer inside the drawing view measuring 1024x752 where its view was 1024x676,
-and the parent layer's `masksToBounds` was false, so the extra 76pt was not clipped
-and painted straight over the control row above it. **The view hierarchy and the layer
-hierarchy are different things, and the second is under no obligation to respect the
-first's bounds.** Checking view frames can never see this.
+**Why:** The path evaluation appears to have run before the grant reached the lower layer (inferred). TN3179 says
+connections waiting for permission are retried once it is granted, but this one never entered `.waiting`.
 
 **How to apply:**
+- Time out `.preparing` (e.g. 10 s) and recreate the connection. Leave `.waiting` to the OS.
+- With the remote device powered off, new connections also stayed in `.preparing` (same day, once). The same
+  timeout recovers both.
+- The prompt appears only once (TN3179: it cannot be reset on macOS). To observe the first-run behaviour, have
+  logging in place before the first launch.
 
-- For "laid out but not visible", **dump the layer tree**, not the view tree: each
-  layer's `frame`, `opacity`, `isHidden`, `isOpaque`, `backgroundColor`, whether
-  `contents` is set, and `masksToBounds`. One layer whose frame disagrees with its
-  view's bounds is the answer.
-- Add the diagnostic behind a temporary environment variable and remove it afterwards.
-  Attaching to the running process is not an option for a signed app under the
-  Hardened Runtime, because the debugger cannot attach.
-- When you embed someone else's drawing view — a dependency's — in your layout,
-  **clip it to your own frame**. Clipping is not cosmetic here; it is the structural
-  guarantee that whatever they do stays inside the area you gave them. `.clipped()` in
-  SwiftUI, `masksToBounds` on the parent in AppKit.
-- A reproduction harness is good at establishing what is *not* the cause, and that is
-  all it does. **Elimination and observation are different tools**; switch to observing
-  the real thing sooner than feels natural.
+### Local network denial showed up as `.waiting(-65570)` with reason `notAvailable`
 
-## A menu bar panel's own state is the only state you can read at click time
+**Symptom:** Toggling a running app off and on in System Settings › Privacy & Security › Local Network (macOS 27.0,
+2026-09-26, twice):
+- Switching it off failed the established `NWConnection` at once with POSIX 53 (Software caused connection abort).
+- Connections created afterwards entered `.waiting(-65570: PolicyDenied)` with `currentPath?.unsatisfiedReason`
+  `.notAvailable` — not TN3179's `.localNetworkDenied`.
+- `NWBrowser` stayed `.ready` and reported nothing.
+- Switching it back on, the OS moved the `.waiting` connection to `.preparing` by itself (as TN3179 says).
+- The list shows the app's **executable name**, not `CFBundleName` (seen with an app whose two differ).
 
-**Symptom:** clicking a menu bar item again, right after its panel closed, did nothing — and
-clicking repeatedly kept it shut. Reported from use, on three separate apps that shared the
-same shape.
-
-**Measured (macOS 27.0, 2026-09-21, synthetic HID clicks with every event logged):**
-
-- `NSPopover.isShown` stays **true for about half a second** after `performClose` *and* after
-  `close()`, until `popoverDidClose`. Deciding from it turns a re-click inside that half
-  second into another close: on the release builds the re-click opened the panel **0 times out
-  of 10** at every gap tried, from 60 ms to 350 ms.
-- `popoverDidClose` for one close arrives **after a show that followed it**, so the delegate
-  callback cannot be believed on its own either.
-- The panel window's `isVisible` flips false within milliseconds of a close — but it is also
-  false between a `show` and the moment the panel appears, because AppKit queues a show that
-  starts during a close animation behind it (about 0.4 s).
-- One click on the item produces **two events, either of which can be missing**: a global
-  mouse-down monitor sees it first, the button's action arrives 23–41 ms later, and of eight
-  well-separated clicks eight were monitored and five produced an action — the missing ones
-  being clicks that closed the panel.
-- A panel **shown from the monitor** (on the mouse-down or the mouse-up) is dismissed by AppKit
-  inside the same click, every time. Only the button's action can open it.
+**Why:** Why the value differs from the documentation is unknown (not investigated).
 
 **How to apply:**
-- Keep the fact in your own value — "is the panel up" — set when you show and when you close,
-  and read nothing of AppKit's to decide. Reconcile with `popoverDidClose` by counting the
-  closes you asked for and consuming their late reports; a report you did not cause is the one
-  that carries news (a `.transient` dismissal, the Escape key).
-- Give the monitor the dismissing and the action the opening. Suppress an action that arrives
-  within ~0.1 s of the monitor closing the panel for a click on the item: it is that click's
-  second event. **Do not pair the two events by order** — with one of them missing, "the
-  action of the click that just closed the panel" and "the action of the click meant to open
-  it" are the same event, and an ordering rule swallows clicks.
-- Expect a residual and measure it rather than claiming none: at a 60–100 ms gap the panel
-  ended up closed once in ten, because the dismissed click's action can arrive after the
-  window. Two clicks that fast are one gesture; a longer window brings back the defect.
-- Verify at the layer the user touches. A synthetic-click harness is a few dozen lines —
-  `CGEvent` posted at `.cghidEventTap`, the item's frame printed by the app itself, panel
-  visibility from `CGWindowList` with `.optionOnScreenOnly` — and it reproduced the defect
-  deterministically on the release build, which is what made the fix checkable. Pure tests of
-  the decision state machine pass either way: they observe a layer below the defect.
-- Fix every sibling in the same change. The third app had the same defect with a different
-  mechanism, and nobody had reported it.
+- Decide "permission required" from a `.waiting` error of `.dns(-65570)` (`kDNSServiceErr_PolicyDenied`), and treat
+  `unsatisfiedReason == .localNetworkDenied` the same — check both.
+- Revocation at run time drops established connections at once; give the state table a "connected → no permission" row.
+- Choose the executable name as a user-facing name: System Settings shows it.
 
-**Which host to choose.** The readings above are `NSPopover`'s, and much of the work they
-cause is the host's, not the status item's:
+### Bonjour browse results do not tell you a device has gone
 
-| | `NSPopover` | non-activating `NSPanel` |
-|---|---|---|
-| Is it up? | `isShown` lags a close by ~0.5 s | the window tells the truth at once (keep your own boolean anyway) |
-| Reopening during a close | queued behind the animation, ~0.4 s | immediate |
-| Opening from the monitor | dismissed inside the same click | works, so one channel can do everything |
-| Outside clicks | `.transient` misses clicks that take no activation | yours to watch — which you were doing anyway |
-| Cmd-Tab, Space change | closes itself | stays open, out of sight, until you handle it |
-| Arrow, placement, material | done for you | yours to manage |
-| A menu inside the panel | the first click activates the app and ends the menu's tracking | no activation, so menus work |
-| The item's highlight while open | kept by the OS (dark for a frame or three if `show` outlasts the release) | cannot be lit with public API (next section) |
+**Symptom:** A device found with `NWBrowser` (`.bonjourWithTXTRecord`) was powered off for over 2 minutes; no
+`removed` was reported. When it came back under the same name, neither `added` nor `changed` arrived (macOS 27.0,
+mDNS on an ESP32, 2026-09-26, once). When the Mac's own interfaces changed (wired Ethernet going down at sleep),
+`removed` and `added` were reported.
 
-So: **a panel that contains a pop-up menu has to be a non-activating `NSPanel`** — with a
-popover the first click inside it activates the accessory app, and that ends the tracking of
-the very menu the click opened (measured: 78 ms). Segmented controls and toggles track nothing
-and are safe in a popover.
-
-What a change of host does *not* buy is the rapid re-click: measured on a shipped app that
-uses a non-activating panel, the re-click opened it 4 times out of 5 at 60–100 ms and 5 of 5
-at 130 ms and beyond — the same numbers as the popover apps above, because that residual comes
-from the status item's two events, not from the host.
-
-## A menu bar item's highlight while its panel is open is decided by the container — your own panel cannot be lit with public API
-
-**Symptom:** among menu bar apps that look nearly the same, the two built on a non-activating `NSPanel`
-never showed their item pressed while the panel was open (the highlight went at the release), and one
-built on a popover blinked each time it opened. The other two popover apps and three SwiftUI
-`MenuBarExtra` apps kept it. Reported by the user, who had looked closely.
-
-**Measured (macOS 27.0, 2026-09-21; only the item's rectangle filmed with `SCStream` at 60 fps, judged by
-the median brightness of its background):**
-
-- Another process draws the item (`NSSceneStatusItem`). The open-panel highlight is requested through
-  **private** AppKit machinery — by `show` for a popover, by SwiftUI for `MenuBarExtra` (callers traced
-  with lldb). An app using `MenuBarExtra` itself uses public API only; the private part is inside the
-  framework, and Apple stands behind it.
-- `NSButton.highlight(_:)` and `isHighlighted` do not reach the screen. Called synchronously in the action,
-  the button resets them right after; called later, the in-process value stays true while the screen stays
-  dark (five ways, three tries each, all dark).
-- Even with a popover, the item's action arrives **before the release** (about 30 ms after the press). The
-  menu bar drops the pressed highlight at the release and lights the popover's only once `show` is done, so
-  a `show` that outlasts the release leaves the item dark in between. The app that blinked built a face that
-  is hidden on opening (its settings) inside every `show`: 92–94 ms. Neither its chart nor animation was the
-  cause.
+**Why:** mDNS records carry a TTL, and a device that loses power sends no goodbye, so the record likely lives until
+it expires (inferred; the TTL was not measured).
 
 **How to apply:**
+- Use browsing only to learn the endpoint (the service name); decide whether the device is there from the
+  connection and its replies (e.g. an acknowledgement every second and a 5 s cutoff).
+- A connection to the service endpoint resolves the address on every attempt, so reconnect without waiting for the
+  browser to update.
+- In the same observation, after wake the watchdog and re-browsing reconnected 1.6 s before
+  `NSWorkspace.didWakeNotification` arrived (once). Do not design around waiting for the wake notification.
 
-- Weigh this highlight when choosing the container. Your own panel cannot reproduce it with public API.
-  The private call a popover makes works from a panel too, but it gives up any guarantee, so do not use it.
-  The public way is to put the panel in a container whose highlight the OS keeps — a popover or
-  `MenuBarExtra` — and decide by measuring whether the reason you left that container still holds.
-- With a popover, finish `show` before the button comes up: build whatever is hidden on opening on the
-  run-loop turn after `show` returns (`DispatchQueue.main.async`). SwiftUI's `.task` runs inside `show` and
-  cannot defer it. The first open after launch stays slow (first-time loading); building the panel once
-  off screen at launch did not remove that.
-- Judge on the screen. The in-process `isHighlighted` sits below the defect and cannot pass a fix. Film the
-  item's rectangle only, so no other app's content is captured.
-- Moving from a panel of your own to `MenuBarExtra(.window)` changes the container's behaviour (measured in
-  net-meter, macOS 27.0):
-  - A pop-up menu opened in the panel right after a LaunchServices launch stays open (3 of 3); a popover
-    control ended it 88–97 ms in (2 of 2) — the defect that drives apps off the popover is not there.
-  - Another app coming forward without a click (⌘Tab) leaves the window open, and there is no public way to
-    close it from code.
-  - The label's `accessibilityLabel` becomes the item's AXTitle and an `accessibilityValue` is dropped: put
-    what should be spoken into the label's string.
-  - SwiftUI's lifecycle installs a main menu, so while the panel has the keyboard ⌘C works and ⌘Q quits the
-    app. Remove the latter with `CommandGroup(replacing: .appTermination) {}` if it should not.
-  - The label's `colorScheme` follows the menu bar's own appearance, not the system's (`dark` under a
-    `VibrantDark` menu bar on an `Aqua` system). The content is built on the first open and kept, so push
-    nothing to it while it is closed.
+### NWPathMonitor updates arrive far more often than the path changes — run side effects only when the value you watch changes
 
-## At write time, neither CFPreferences nor the plist says whether a preference was saved
+**Symptom:** On each Wi-Fi path update (`NWPathMonitor(requiredInterfaceType: .wifi)`) the app tried to connect to that
+Wi-Fi's router, with up to three retries. Every update reset the retry count, so with the router unchanged it kept
+trying the home router about every 4 s (90 attempts in 6 minutes; 2026-09-27, macOS 27.0, measured in the unified log).
+
+**Why:** Path updates arrive without the router's address changing (which attribute triggered them was not
+investigated). Reading "an update arrived" as "the path changed" was the mistake.
+
+**How to apply:**
+- On an update, read the value you care about (here the interface and the router address) and do nothing if it is
+  the same as last time. After the fix: 3 attempts in 2 minutes (the first and its retries), then none (measured).
+- Do not let a retry limit depend on how often updates arrive; reset it only when the watched value changes.
+- Count your own connections in the unified log (`/usr/bin/log show --predicate 'process == "<name>" AND subsystem ==
+  "com.apple.network" AND category == "connection"'`, the `path:start` events) to see them by kind of destination.
+
+### A Network framework proxy configuration is silently bypassed when the target is one of the machine's own addresses
+
+**Symptom:** A `ProxyConfiguration(httpCONNECTProxy:)` was put in `NWParameters.PrivacyContext.proxyConfigurations`
+and the connection made with `NetworkConnection(to:using: .parameters(initialParameters:))` (macOS 27.2, 2026-11,
+measured).
+- With another host as the target, by IP or by name, the proxy received `CONNECT <host>:<port> HTTP/1.1` and
+  `Host: <host>:<port>`. A proxy that itself listens on 127.0.0.1 is used.
+- **With 127.0.0.1 or the machine's own LAN address as the target, the connection went direct, not through the
+  proxy.** The state became `ready`, with no error and no warning. Setting `allowFailover` to false changed nothing.
+- With the proxy unreachable, no direct connection was made to a target that cannot be resolved.
+
+**Why:** No documented reason was found (not investigated). Presumably traffic to the machine itself is exempt from
+proxying by default.
+
+**How to apply:**
+- In a product that tells its user "through a proxy", guarantee by validating the shape of the target that it cannot
+  be one of the machine's own addresses. Having set a proxy configuration is not evidence that the proxy was used.
+- A test of the proxy route that targets 127.0.0.1 tests a direct connection, and passes. Use a token that cannot be
+  resolved as the target, and establish the route from the number of requests the test proxy received.
+
+### A refusal by an HTTP CONNECT proxy, and an unreachable one, never reach `failed`: they stop at `waiting` with a POSIX error — and so does a missing permission
+
+**Symptom:** In the same setup, when the proxy answered `401` and closed, the connection's state became
+`waiting(POSIX 57: Socket is not connected)` and never went on to `failed`. With nothing listening on the proxy's
+port it was `waiting(POSIX 61: Connection refused)` (macOS 27.2, 2026-11, measured against both a real Proxmox VE
+spiceproxy and a local listener). The HTTP status code cannot be read through the API.
+**An application without the Local Network permission also ends up in `waiting`, with POSIX 50 (Network is down)**
+(same system, measured with the application itself started by `open`). The unified log shows the path to the proxy
+as `unsatisfied (Local network prohibited)`. The value differs from the `.dns(-65570)` a connection without a proxy
+reports.
+
+**Why:** Presumably `waiting` means "retry when the path changes" and the OS treats a proxy's refusal as transient
+too (not investigated).
+
+**How to apply:**
+- An establishment that waits only for `ready` and `failed` waits out its whole deadline when a proxy says no. For a
+  connection that names a proxy, treat as final **only the two measured values (57 and 61)** and fail at once.
+- **Do not make every `waiting` state with a POSIX error final.** That was the first implementation: a missing
+  permission (50) was taken for a proxy refusal and reported as "the ticket expired", and because it failed at once
+  the retry the OS performs after the user allows access never happened. Every first-time user hits this on the
+  first attempt. Leave 50 to the OS, and only if the deadline passes first say "allow local network access".
+- Give that failure a type of its own. Folded into the same "connection failed" as TLS failures and timeouts, it
+  leaves no way to tell the user apart "obtain a new ticket" and "check the certificate".
+- Where a time-limited ticket is handed to a proxy, this is how "expired" shows up.
+
+## System APIs
+
+### At write time, neither CFPreferences nor the plist says whether a preference was saved
 
 **Corrected twice on 2026-09-21.** This entry first prescribed a two-state record and a
 process that stops "after `CFPreferencesSynchronize` fails"; then, after one measurement, said
@@ -1847,7 +2051,7 @@ saved one. They agree again within seconds (success) or about a minute (failure)
 - When reviews keep finding the same class of defect in successive fixes, stop patching and
   test the premise.
 
-## A CGBitmapContext's memory starts with the top row — only its coordinate origin is the bottom-left
+### A CGBitmapContext's memory starts with the top row — only its coordinate origin is the bottom-left
 
 **Symptom:** Text drawn with CoreText into an 8-bit grayscale bitmap and turned
 into pixels for a device's screen came out upside down in every cell. The rows
@@ -1864,97 +2068,7 @@ showed it.
 - Pin the orientation in a test, e.g. "T" has its widest inked row first and "L"
   its widest last.
 
-## An NWConnection created while the local network prompt is up can stay in `.preparing` after the user allows it
-
-**Symptom:** A menu bar app (Developer ID signed, not sandboxed) started a Bonjour browse on its first launch and
-the local network prompt appeared. The browser found the device the moment the user clicked Allow, and the app
-created an `NWConnection` 1 ms later. The unified log shows the connection's lower path (the resolved IPv4 child)
-failing 60 ms later with `unsatisfied (Local network prohibited)`; the connection then stayed in `.preparing` for
-over 2 minutes and never retried by itself — it entered neither `.waiting` nor `.failed` (macOS 27.0, 2026-09-26,
-one occurrence). Relaunched with the permission granted, the same connection was `.ready` in 0.16 s.
-
-**Why:** The path evaluation appears to have run before the grant reached the lower layer (inferred). TN3179 says
-connections waiting for permission are retried once it is granted, but this one never entered `.waiting`.
-
-**How to apply:**
-- Time out `.preparing` (e.g. 10 s) and recreate the connection. Leave `.waiting` to the OS.
-- With the remote device powered off, new connections also stayed in `.preparing` (same day, once). The same
-  timeout recovers both.
-- The prompt appears only once (TN3179: it cannot be reset on macOS). To observe the first-run behaviour, have
-  logging in place before the first launch.
-
-## Local network denial showed up as `.waiting(-65570)` with reason `notAvailable`
-
-**Symptom:** Toggling a running app off and on in System Settings › Privacy & Security › Local Network (macOS 27.0,
-2026-09-26, twice):
-- Switching it off failed the established `NWConnection` at once with POSIX 53 (Software caused connection abort).
-- Connections created afterwards entered `.waiting(-65570: PolicyDenied)` with `currentPath?.unsatisfiedReason`
-  `.notAvailable` — not TN3179's `.localNetworkDenied`.
-- `NWBrowser` stayed `.ready` and reported nothing.
-- Switching it back on, the OS moved the `.waiting` connection to `.preparing` by itself (as TN3179 says).
-- The list shows the app's **executable name**, not `CFBundleName` (seen with an app whose two differ).
-
-**Why:** Why the value differs from the documentation is unknown (not investigated).
-
-**How to apply:**
-- Decide "permission required" from a `.waiting` error of `.dns(-65570)` (`kDNSServiceErr_PolicyDenied`), and treat
-  `unsatisfiedReason == .localNetworkDenied` the same — check both.
-- Revocation at run time drops established connections at once; give the state table a "connected → no permission" row.
-- Choose the executable name as a user-facing name: System Settings shows it.
-
-## Bonjour browse results do not tell you a device has gone
-
-**Symptom:** A device found with `NWBrowser` (`.bonjourWithTXTRecord`) was powered off for over 2 minutes; no
-`removed` was reported. When it came back under the same name, neither `added` nor `changed` arrived (macOS 27.0,
-mDNS on an ESP32, 2026-09-26, once). When the Mac's own interfaces changed (wired Ethernet going down at sleep),
-`removed` and `added` were reported.
-
-**Why:** mDNS records carry a TTL, and a device that loses power sends no goodbye, so the record likely lives until
-it expires (inferred; the TTL was not measured).
-
-**How to apply:**
-- Use browsing only to learn the endpoint (the service name); decide whether the device is there from the
-  connection and its replies (e.g. an acknowledgement every second and a 5 s cutoff).
-- A connection to the service endpoint resolves the address on every attempt, so reconnect without waiting for the
-  browser to update.
-- In the same observation, after wake the watchdog and re-browsing reconnected 1.6 s before
-  `NSWorkspace.didWakeNotification` arrived (once). Do not design around waiting for the wake notification.
-
-## SwiftUI's SecureField beeps with a Japanese input source active — restrict a password field to Roman input sources
-
-**Symptom:** In a menu bar app's setup window, typing a Wi-Fi password into SwiftUI's `SecureField` with a Japanese input
-source active beeped on every key and entered nothing. The field still looked like Japanese input, and nothing on
-screen said why (2026-09-27, macOS 27.0, observed by the user).
-
-**Why:** Not investigated (and not guessed). The documented mechanism is the input context's
-`allowedInputSourceLocales`: set to `NSAllRomanInputSourcesLocaleIdentifier`, it restricts the allowed input sources to
-Roman ones while that context is active (NSTextInputContext reference).
-
-**How to apply:**
-- Wrap `NSSecureTextField` in an `NSViewRepresentable` and, in `becomeFirstResponder()`, set
-  `currentEditor()?.inputContext?.allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]` (the field
-  editor receives the keys, so it is its context). Focusing the field then switched the menu bar input indicator to
-  "A" and the password could be typed (measured once).
-- Say under the field what is accepted (a WPA2/WPA3 passphrase is 8–63 printable ASCII characters) and how many more
-  characters are needed. A disabled button alone does not tell the user why.
-
-## NWPathMonitor updates arrive far more often than the path changes — run side effects only when the value you watch changes
-
-**Symptom:** On each Wi-Fi path update (`NWPathMonitor(requiredInterfaceType: .wifi)`) the app tried to connect to that
-Wi-Fi's router, with up to three retries. Every update reset the retry count, so with the router unchanged it kept
-trying the home router about every 4 s (90 attempts in 6 minutes; 2026-09-27, macOS 27.0, measured in the unified log).
-
-**Why:** Path updates arrive without the router's address changing (which attribute triggered them was not
-investigated). Reading "an update arrived" as "the path changed" was the mistake.
-
-**How to apply:**
-- On an update, read the value you care about (here the interface and the router address) and do nothing if it is
-  the same as last time. After the fix: 3 attempts in 2 minutes (the first and its retries), then none (measured).
-- Do not let a retry limit depend on how often updates arrive; reset it only when the watched value changes.
-- Count your own connections in the unified log (`/usr/bin/log show --predicate 'process == "<name>" AND subsystem ==
-  "com.apple.network" AND category == "connection"'`, the `path:start` events) to see them by kind of destination.
-
-## A Developer ID app's keys go to the file-based keychain and never sync via iCloud — `…ThisDeviceOnly` belongs to the other implementation
+### A Developer ID app's keys go to the file-based keychain and never sync via iCloud — `…ThisDeviceOnly` belongs to the other implementation
 
 **Symptom:** A design used `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` to keep a key out of iCloud, but the
 implementation that attribute assumes (the data protection keychain) is not available to a non-sandboxed Developer ID
@@ -1970,113 +2084,3 @@ data protection keychain, whose access groups need entitlements authorised by a 
 - Confirm where an item went with `security find-generic-password -s <service> -a <account>` (no `-g`, so no value is
   printed) and read `keychain: ".../login.keychain-db"`.
 - Unit-test the rules around the Keychain with an in-memory stand-in, so tests never write to the user's login keychain.
-
-## A Network framework proxy configuration is silently bypassed when the target is one of the machine's own addresses
-
-**Symptom:** A `ProxyConfiguration(httpCONNECTProxy:)` was put in `NWParameters.PrivacyContext.proxyConfigurations`
-and the connection made with `NetworkConnection(to:using: .parameters(initialParameters:))` (macOS 27.2, 2026-11,
-measured).
-- With another host as the target, by IP or by name, the proxy received `CONNECT <host>:<port> HTTP/1.1` and
-  `Host: <host>:<port>`. A proxy that itself listens on 127.0.0.1 is used.
-- **With 127.0.0.1 or the machine's own LAN address as the target, the connection went direct, not through the
-  proxy.** The state became `ready`, with no error and no warning. Setting `allowFailover` to false changed nothing.
-- With the proxy unreachable, no direct connection was made to a target that cannot be resolved.
-
-**Why:** No documented reason was found (not investigated). Presumably traffic to the machine itself is exempt from
-proxying by default.
-
-**How to apply:**
-- In a product that tells its user "through a proxy", guarantee by validating the shape of the target that it cannot
-  be one of the machine's own addresses. Having set a proxy configuration is not evidence that the proxy was used.
-- A test of the proxy route that targets 127.0.0.1 tests a direct connection, and passes. Use a token that cannot be
-  resolved as the target, and establish the route from the number of requests the test proxy received.
-
-## A refusal by an HTTP CONNECT proxy, and an unreachable one, never reach `failed`: they stop at `waiting` with a POSIX error — and so does a missing permission
-
-**Symptom:** In the same setup, when the proxy answered `401` and closed, the connection's state became
-`waiting(POSIX 57: Socket is not connected)` and never went on to `failed`. With nothing listening on the proxy's
-port it was `waiting(POSIX 61: Connection refused)` (macOS 27.2, 2026-11, measured against both a real Proxmox VE
-spiceproxy and a local listener). The HTTP status code cannot be read through the API.
-**An application without the Local Network permission also ends up in `waiting`, with POSIX 50 (Network is down)**
-(same system, measured with the application itself started by `open`). The unified log shows the path to the proxy
-as `unsatisfied (Local network prohibited)`. The value differs from the `.dns(-65570)` a connection without a proxy
-reports.
-
-**Why:** Presumably `waiting` means "retry when the path changes" and the OS treats a proxy's refusal as transient
-too (not investigated).
-
-**How to apply:**
-- An establishment that waits only for `ready` and `failed` waits out its whole deadline when a proxy says no. For a
-  connection that names a proxy, treat as final **only the two measured values (57 and 61)** and fail at once.
-- **Do not make every `waiting` state with a POSIX error final.** That was the first implementation: a missing
-  permission (50) was taken for a proxy refusal and reported as "the ticket expired", and because it failed at once
-  the retry the OS performs after the user allows access never happened. Every first-time user hits this on the
-  first attempt. Leave 50 to the OS, and only if the deadline passes first say "allow local network access".
-- Give that failure a type of its own. Folded into the same "connection failed" as TLS failures and timeouts, it
-  leaves no way to tell the user apart "obtain a new ticket" and "check the certificate".
-- Where a time-limited ticket is handed to a proxy, this is how "expired" shows up.
-
-## A Swift Charts string axis is not thinned by `AxisMarks(values:)`, and a label wider than its column is truncated
-
-**What happened:** In a bar chart with one column per day (x is a date string), passing a thinned array to
-`AxisMarks(values:)` to get about twelve labels still labelled every column, at 30 days and at 90. Deciding inside
-the closure — emit `AxisValueLabel` only when the value is in the set to show — did thin them (macOS 27.2,
-2026-11, measured by writing an `NSHostingView` hosted in a window out as an image).
-Once thinned, a label wider than its column (about 9pt at 90 days) was truncated to one or two characters.
-`.fixedSize()` on the `Text` changed nothing; `AxisValueLabel(collisionResolution: .disabled)` together with a
-fixed `.frame(width:)` on the `Text` showed the whole label (both were changed at once, so which one mattered was
-not isolated). The rightmost label runs past the plot area and is cut, so the chart was given trailing padding.
-
-Confirmed in the same work: a `LinearGradient` given to a `BarMark` through `foregroundStyle` spans **that bar's
-own extent**, not the whole plot area (checked numerically: the colour at a bar's top matched the data of that
-bar's first slice).
-
-**Why:** Not investigated. A string axis appears to place a mark on every category and fit each label to its
-band (inferred).
-
-**How to apply:**
-- To thin the labels of a string axis, do not rely on `values:`; decide inside the closure what to emit.
-- Where columns get narrow, give labels a fixed width and leave padding for the label at the edge.
-- Whether an axis setting took effect cannot be read from the code. **Render the screen at the largest column
-  count and look at it.** This defect was invisible in the wide-column 7-day view, and every existing test passed.
-
-## In a Swift Charts horizontal bar chart, the string axis labels were drawn on top of the bars
-
-**What happened:** A per-item horizontal bar chart (y is the item name as a string, x an amount) emitted
-`AxisValueLabel` from `AxisMarks(position: .leading)`. The labels were drawn **inside** the plot area rather than
-to its left, pushed to the top of each band, over the bars and over the amount annotated at each bar's end, at
-every window size (macOS 27.2, built against the macOS 27 SDK, 2026-11; confirmed by capturing a window that was
-actually on screen). `AxisMarks(preset: .extended, position: .leading)` with `AxisValueLabel(centered: true)` moved
-the labels out to the left, but they did not line up with the band centres and a long item name took the width,
-squeezing the bars to a few points. The chart was dropped for plain SwiftUI rows — name and amount on one line,
-the bar as that row's background — which read in a box about 170pt wide and depend on no axis behaviour.
-
-The same code sat unchanged in a sibling app forked from the same skeleton, with the same overlap. Both had been
-shipping for months, and every test passed.
-
-**Why:** Not investigated. How it was drawn when it was written (against an older SDK) was not checked.
-
-**How to apply:**
-- For a per-item breakdown in a narrow box, rows of name, value and a background bar are more dependable than a
-  chart with an axis. If nothing needs an axis, do not use a chart.
-- As with the entry above (thinning a string axis), whether an axis setting took effect is not known until the
-  screen is seen. After moving to a new SDK, capture the screens that hold charts in a real window and look.
-- After fixing a display defect in an app made by forking, grep the same place in the fork's source and its other
-  forks, and capture those the same way.
-
-## An overlay that depends on a selection follows the condition the loaded data belongs to, not the selected value
-
-**What happened:** A screen had a picker for the period (7 days, 30 days, this month, …) and a chart whose data
-for that period loads asynchronously. "Draw the budget limit line only for this month" was decided from the
-picker's value. The picker changes the moment it is clicked while the data stays the previous period's until the
-load finishes, so in between — and for good if the load fails — this month's budget line sat across a 90-day
-running total. A pre-release independent review found it by reading the code (a menu-bar usage app, 2026-11).
-
-**Why:** The selection and the data change at different times. A heading that is briefly out of step does little
-harm, but **a line meant to be read against the data** (a limit, a target, an average) shows a false comparison
-for as long as they disagree.
-
-**How to apply:**
-- When data is loaded, keep the condition it was loaded for alongside it, and decide anything drawn over the data
-  from that.
-- Make the decision a pure function and test it, including the case where nothing has been loaded yet.
