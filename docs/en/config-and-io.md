@@ -1398,3 +1398,27 @@ but narrows the selected set at the upper bound.
   as integers.
 - Whether the interval selects parents or every message is a separate contract;
   a rounding correction must not silently change that meaning.
+
+### `os.Root` walks from the root on every open — a walk over many files opens each directory as a root and its files by one name
+
+**Symptom:** After every open in an agent's file search went through `os.Root` for confinement, searching a 760-file tree took 145 ms, 70% of it in opens (2026-11, two local agent runtimes). `root.OpenFile(rel)` cost 115–135 µs per file, three times an `os.Open` of the absolute path (38–45 µs), and more in a deeper tree.
+
+**Why:** `Root.OpenFile` resolves the path one component at a time with `openat` from the root's descriptor, so that no link leads out; the cost of one file grows with the directories above it. Under a sandbox (Seatbelt) each of those `openat` calls is judged.
+
+**How to apply:**
+- Let the walk hold its current directory as a `Root`, opened from the one above with `OpenRoot(name)`, and reach the listing, the config file (`.gitignore`) and each file through that handle by one name. That cost 44–54 µs per file. Confinement is the same or stricter: the handle also refuses a link that climbs out of its own directory.
+- `OpenRoot` opens its last component with neither `O_DIRECTORY` nor `O_NONBLOCK`, so a FIFO at the name holds it — one named as the start, or one put where the listing had returned a directory. `OpenRoot(name + "/.")` resolves the name as a directory on the way and refuses anything else at once (`ENOTDIR`); links inside the root are followed as before. "Check with an open that does not wait, then `OpenRoot`" leaves the swap after the check, and in a walk that runs in process an interrupt does not reach that wait.
+- `ReadDir` on a directory opened from a `Root` runs `fstatat` on each entry from the directory's descriptor (`Info()` never looks at the cwd). `Root`'s methods are safe from several goroutines at once.
+- To read files side by side, keep the walk one sequential walk and make everything it counts, skips or asks to read one ordered stream. One goroutine applies the stream to the output in walk order. A capped or a cancelled result then counts what one reader counts. End the stream with the walk's reason for ending (finished or cancelled), so a cut is never silent. Hold each directory handle by a reference count until the workers have read its files.
+- Judge it as "the output is byte-for-byte the same", with a characterization test whose references are the old output. Break it on purpose — keep counting past the cap, change the order, keep a handle — and see the test fail before trusting it.
+
+### In a line-by-line search, checking a block first pays only for a pattern with a literal prefix
+
+**Symptom:** A design added "match the whole file first, and skip splitting it into lines when nothing matches" to a Go `regexp` search that matches line by line. The design's independent review measured the whole-file match as slower for patterns without a literal prefix (up to twice as slow). It also left no point to check the context inside a 2 MB file, so a cancel went unanswered for up to 0.8 s (2026-11, an agent runtime).
+
+**Why:** Go finds a pattern with a literal prefix (`LiteralPrefix`) by searching for the prefix. Without one, the general matcher runs over the whole text, which is slower than matching short lines one by one. A case-folded pattern (`(?i)`) has no fast path at all.
+
+**How to apply:**
+- Use the block check only when `LiteralPrefix` is not empty, cut blocks of 1024 lines at newlines, and check the context between blocks. Patterns with a prefix went from 10 ms to 3–7 ms; patterns without one stay line by line.
+- A pattern that depends on the edges of a line misses in a block. Parse with `syntax.Parse(pattern, syntax.Perl)` and do not use the check when it contains `OpBeginText` or `OpEndText` (`^`, `$`, `\A`, `\z` outside `(?m)`). Parsed with no flags, `^` parses as a line anchor and slips past.
+- What makes `(?i)` faster is matching files side by side.

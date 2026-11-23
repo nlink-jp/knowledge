@@ -2048,3 +2048,14 @@ Just before releasing a new question dialog — after a design verification and 
 - Pad by display width.
 
 Origin: the release of the use-time skill compare in two agent runtimes (2026-11).
+
+### When a design changes how work is structured, list what the old structure held without saying so — do not judge it by equal output alone
+
+**Symptom:** Two agent runtimes rebuilt a file search's single sequential loop as a walker goroutine, a pool of workers and an ordered stream (2026-11). The design promised byte-for-byte equal output and judged the change with a characterization test whose references were the old output. Every test passed, and still the review before release found five issues. A directory swapped for a FIFO held the call past an interrupt, in process. Results waiting in order held whole files. Descriptors grew with depth. A root rotated mid-walk kept being read. The random test rarely crossed a block edge. The FIFO one was a class swept out earlier — an open that waits — come back through a new open.
+
+**Why:** The old loop held many unwritten properties because it was one loop in the calling goroutine. Every open did not wait, memory was one file, descriptors were a few, every open resolved from the current root, and only counted files were read. The design restated one of them, the output, and the rest changed silently. The findings were not five accidents; each was a row of that list. Finding them by more review rounds means having the list discovered row by row from outside, which does not converge.
+
+**How to apply:**
+- In a design that changes structure (sequential to concurrent, in process to a child process, synchronous to asynchronous, one loop to a pipeline), list at design time what the old structure held without saying so. Give each row "same / fixed / accepted (why)" and how it is held. Look at waiting, cancellation, memory, descriptors, binding to state or roots, what is read (or written), permission checks, confinement, panics, goroutine lifetime.
+- Hold a row a later edit can bring back with a test of the code's shape, not of behaviour. Here, "opens do not wait" became a test that walks the syntax tree, counts open-like calls, and rejects any outside the fixed shapes and a list with reasons. Check that it fails on the shape that nearly shipped.
+- After the fixes, run one verification pass that asks only "is anything missing from the list?" and "is each row really held?", with its stopping rule (a serious finding goes back to design) fixed before it starts.

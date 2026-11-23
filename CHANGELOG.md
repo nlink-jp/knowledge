@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-23 (a search made faster, and what the loop held)
+
+From speeding up the file search of two agent runtimes, and its three verification passes.
+
+- **config-and-io** (ja + en, 2): `os.Root` walks from the root on every open — a walk over many files opens each directory as a root (through `name/.`, which refuses a FIFO at once) and its files by one name; side-by-side reads applied in walk order. And in a line-by-line search, checking a block first pays only for a pattern with a literal prefix; parse with `syntax.Perl` and leave out text anchors.
+- **development-process** (ja + en): when a design changes how work is structured, list what the old structure held without saying so before judging the change by equal output; hold a row a later edit can bring back with a test of the code's shape; bound the verification of the fixes to that list.
+
 ## 2026-11-19 (a rewrite that reached string literals)
 
 From the pre-release review of two restructured agent runtimes.
