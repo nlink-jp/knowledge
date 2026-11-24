@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25 (a container image built from uv.lock)
+
+- **containers-and-infra** (ja + en): build a Python image from `uv.lock` with `uv sync --frozen --no-install-project` (hashes verified), not `uv tool install .`; do not build the project itself, because its build backend is not in the lock.
+
 ## 2026-11-25 (a lock forked by Python version)
 
 - **release-engineering** (ja + en): an advisory that survives `uv lock --upgrade` can sit in a fork of the lock for an old Python patch range; raising `requires-python` removes it.

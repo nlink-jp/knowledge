@@ -120,6 +120,15 @@ because of the two causes above. The rebuild command succeeds, so nothing looks 
     regenerated lock that breaks is caught, end the Dockerfile with a check that exercises the
     real uses (an I/O round trip) and fails the build. `pip check` misses incompatibilities with
     dependencies that declare no upper bound.
+  - A project that has a `uv.lock` can use it directly: `uv sync --frozen --no-dev
+    --no-install-project` verifies every hash in the lock (measured: a lock with one package's
+    hash rewritten stopped with "Hash mismatch"). Do not use `uv tool install .`, which ignores the
+    lock and resolves afresh (found in a Cloud Run image). **Do not build the project itself:** its
+    build backend (`setuptools` and the like) is not in the lock and is fetched unchecked into the
+    build-isolation environment. Run the package from its source on `PYTHONPATH` with
+    `python -m <pkg>.cli`, behind a small wrapper for the command name — and set argparse's `prog=`,
+    or usage says `cli.py`. `UV_PYTHON_DOWNLOADS=never` keeps uv from fetching any Python other than
+    the base image's.
   - Tools that come as release files, not from a package manager (Go, Node.js, uv, gh, a
     vendor's native binary): replace each `curl … | sh` installer with the file that installer
     would fetch, at an exact version, with the amd64 and arm64 SHA256 copied from the author's
