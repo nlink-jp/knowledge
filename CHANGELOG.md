@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-25 (a gate that stopped after the version was spent)
+
+From taking a DuckDB security fix into four tools, one of which stopped at its vulnerability gate after its Release existed.
+
+- **release-engineering** (ja + en, 2): run the vulnerability gate on the release commit before the tag, and create the Release only after the build and verification pass — a gate that stops after the Release exists leaves an empty Release and a spent version. And a Python lock file accumulates advisories in transitive dependencies silently; `uv audit --frozen` as `make vuln` exits 1 on a finding.
+
 ## 2026-11-23 (a search made faster, and what the loop held)
 
 From speeding up the file search of two agent runtimes, and its three verification passes.

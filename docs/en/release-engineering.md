@@ -467,6 +467,26 @@ version number destroys the version's value as an identifier.
 - Before deleting any tag, check `gh release list`. Only tags without releases
   may be re-pointed.
 
+### Run the vulnerability gate before the version is spent — tagging and creating the Release first leaves an empty Release when it stops
+
+**Symptom:** The checklist's order was tag → create an empty Release → build. In one CLI's release,
+after the tag was pushed and the Release created, the `govulncheck` gate that `make package` depends on
+stopped on an advisory published the day before. A version number is never reused, so the fix shipped as
+the next patch version, and the stopped version stayed as a Release with no assets and a note (measured).
+
+**Why:** The advisory database moves under an unchanged source tree; a gate that passed yesterday
+stopping today is the gate working. When it stops after the version is spent, it leaves a skipped number
+and an empty Release behind. The build, meanwhile, reads its version from `git describe --tags`, so the
+tag has to come before the build.
+
+**How to apply:**
+- After committing the release, run `make vuln` on its own before pushing. On a finding, undo the
+  unpushed release commit (`git reset --soft HEAD~1`), fix the finding in its own commit, and commit the
+  release again. The version has not been spent.
+- Run `gh release create` only after tag → build → verification (`verify-release`) have passed. A build
+  or verification that stops after the tag then publishes no empty Release, because none exists yet.
+- Keep the gate `package` depends on. The database can move between the standalone run and the build.
+
 ### Prebuilt-binary Homebrew tap practices and verification
 
 **Symptom:** Building from source strips the Developer ID signature. The tap
@@ -811,3 +831,24 @@ runs under, which says nothing about a binary built months ago, or inside a cont
   repository-local GOPATH shared with the host already has the host's binary at that name, and make would
   take the wrong-OS file for an up-to-date tool. The file target is also what makes the gate provable: mount
   a stand-in at that path and no install runs.
+
+### A Python lock file accumulates advisories in transitive dependencies silently — make `uv audit` the `make vuln` target and run it before the tag
+
+**Symptom:** A Python CLI had just been released with a direct dependency upgraded. Running `uv audit`
+on its lock reported 23 known advisories (urllib3, cryptography, pyasn1, anyio, certifi, idna,
+pydantic-settings, and pytest in the dev extra). None was a direct dependency; the lock kept pinning old
+versions. `uv lock --upgrade` within the existing constraints brought it to zero, and tests, lint and the
+type check passed without code changes (measured).
+
+**Why:** A lock pins transitive versions for reproducibility. Upgrading one direct dependency leaves every
+other transitive pin where it was. Without a check built into the release, as `govulncheck` is for Go,
+nobody looks.
+
+**How to apply:**
+- Put `uv audit --frozen --preview-features audit-command` in `make vuln` and run it before the tag. It
+  exits 1 on a finding (measured: 1 on the old lock, 0 on the upgraded one). `--frozen` audits without
+  rewriting the lock. `uv audit` is experimental for now; `--preview-features audit-command` silences
+  that warning.
+- Say which installs are affected. The lock governs environments made with `uv sync` from the repository
+  (developers' environments and the tests). `uv tool install` resolves dependencies at install time and
+  does not read the lock (per uv's documentation; not measured).
