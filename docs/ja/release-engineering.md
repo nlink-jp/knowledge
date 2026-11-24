@@ -754,3 +754,8 @@ MIT で、LICENSE の末尾に第三者帰属が追記されていたためテ�
   検査する。`uv audit` は現時点で実験的な機能で、`--preview-features audit-command` がその警告を消す。
 - 影響範囲を書き分ける。ロックが効くのはリポから `uv sync` した環境（開発者の環境とテスト）である。
   `uv tool install` はインストール時に依存を解決し、ロックを読まない（uv の文書による。実測はしていない）。
+- `uv lock --upgrade` の後も勧告が残ったら、ロックが Python の版で分岐していないかを見る。修正版の依存が
+  新しいパッチ版の Python を要求すると、`requires-python` がまだ許す古い範囲向けに、uv は脆弱な版を別に
+  固定し続ける（実測: soupsieve の修正版は Python 3.11.5 以上を要し、`>=3.11` のロックは 3.11.0–3.11.4 向けに
+  2.10 を残した。`uv.lock` に同じ名前が `marker = "python_full_version < '3.11.5'"` つきで 2 行並ぶ）。
+  `requires-python` をその版へ上げると分岐が消える。対応範囲を狭める変更なので、版数は minor を上げる。

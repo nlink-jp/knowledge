@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25 (a lock forked by Python version)
+
+- **release-engineering** (ja + en): an advisory that survives `uv lock --upgrade` can sit in a fork of the lock for an old Python patch range; raising `requires-python` removes it.
+
 ## 2026-11-25 (a gate that stopped after the version was spent)
 
 From taking a DuckDB security fix into four tools, one of which stopped at its vulnerability gate after its Release existed.

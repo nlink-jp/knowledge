@@ -852,3 +852,9 @@ nobody looks.
 - Say which installs are affected. The lock governs environments made with `uv sync` from the repository
   (developers' environments and the tests). `uv tool install` resolves dependencies at install time and
   does not read the lock (per uv's documentation; not measured).
+- When an advisory survives `uv lock --upgrade`, look for a lock forked by Python version. If a dependency's
+  fixed release requires a newer Python patch version, uv keeps pinning a vulnerable release for the older
+  range `requires-python` still allows (measured: soupsieve's fixed releases require Python 3.11.5, and a
+  `>=3.11` lock kept 2.10 for 3.11.0–3.11.4 — `uv.lock` lists the name twice, one entry marked
+  `python_full_version < '3.11.5'`). Raising `requires-python` to that version removes the fork. It narrows
+  what is supported, so the release bumps the minor version.
