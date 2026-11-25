@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-25 (a macOS floor lowered, and its cask checked on a VM)
+
+From lowering a Swift GUI app's minimum macOS from 27 to 26 and installing the released cask on a macOS 26 VM over ssh.
+
+- **build-and-packaging** (ja + en): lower an app's minimum macOS on measurements — run the existing tests and harness unchanged on the older OS and compare with the record — and check every place that states the floor (`Package.swift`, `Info.plist`, the cask, the READMEs) against one another.
+- **release-engineering** (ja + en): over ssh, a cask's first launch stops at a confirmation dialog while its process exists — judge launch by a window (`CGWindowList`, no Screen Recording grant needed); on a borrowed machine set `HOMEBREW_NO_INSTALL_CLEANUP=1`, and remove the download cache, which uninstall leaves.
+
 ## 2026-11-25 (a container image built from uv.lock)
 
 - **containers-and-infra** (ja + en): build a Python image from `uv.lock` with `uv sync --frozen --no-install-project` (hashes verified), not `uv tool install .`; do not build the project itself, because its build backend is not in the lock.

@@ -389,6 +389,32 @@ zip が 1.2MB（正常なら約 10MB）だったことで、アップロード�
 - 手元の検査では、上げたかどうかは確かめられない。AGENTS.md に「バイナリと一緒に上げる」と書き、
   残る穴として認めておく。
 
+### 借りた検証機で ssh 越しに cask を確かめるとき、プロセスがあっても起動していない — 初回の確認ダイアログで止まる
+
+**事象:** macOS 26 の検証用 VM に ssh で入り、公開 tap から cask を `--appdir="$HOME/Applications"` で入れて `open` した
+（2026-11）。`open` は 0 で終わり、アプリのプロセスもあった。しかし新しく出た窓は CoreServicesUIAgent の 260×290 だけで、
+アプリの窓は無かった。インターネットから入れたアプリを初めて開くときの確認ダイアログである。VM の画面の前の人が
+「開く」を押すと、アプリの窓が出た。quarantine 属性の値は `0181` から `01c1` に変わった。ほかに 2 つあった。
+`brew install` が、入れたものと無関係な他ツールの古いキャッシュとログを消した。`brew uninstall --cask --zap` と
+`brew untap` の後も、ダウンロードした zip のキャッシュが `~/Library/Caches/Homebrew/` の `Cask/` と `downloads/` に
+残った（いずれも実測）。
+
+**なぜ:** cask は quarantine 属性を保つ（上の tap の記事）。初回起動の確認は LaunchServices の UI で、ssh からは
+操作できない。プロセスは確認を待つ間も存在する。キャッシュとログの削除は、Homebrew が install の後に走らせる定期の
+cleanup である（`HOMEBREW_NO_INSTALL_CLEANUP` で止まる — Homebrew の man の記載）。ダウンロードのキャッシュは
+uninstall の対象ではない。
+
+**適用方法:**
+- 「起動した」はプロセスではなく窓で判定する。`CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)` を
+  所有者名で絞って層と寸法を読む小さな Swift の道具を、手元で `-target arm64-apple-macos<版>` で作って送る。
+  所有者名と寸法は画面収録の許可なしで取れた（実測。窓のタイトルは読んでいない）。
+- 確認ダイアログは検証機の前にいる人に押してもらう。そのとき窓の見た目も見てもらうと、目視の確認が同じ 1 回で済む。
+- 借りた機械では、`brew` の前に `HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1` を付ける。
+- 置く物と撤去方法を始める前に決め、終わったら順に外して確かめる。終了はパスで絞った `pkill -TERM`
+  （AppleScript の quit は Apple Events の許可を求めうるので使わなかった — 推測）→ アプリが消える前に
+  `lsregister -u <アプリ>` → `brew uninstall --cask --zap` → `brew untap` → 送った道具 → ダウンロードのキャッシュ。
+  最後に、アプリ・登録（`lsregister -dump` に識別子が無い）・tap・キャッシュ・アプリが書く場所が全部無いことを見る。
+
 ## 版数・公開・手順
 
 ### 一度公開したバージョン番号を再利用しない（fix-forward）

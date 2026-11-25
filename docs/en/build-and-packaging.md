@@ -82,6 +82,36 @@ from the observed behaviour; the toolchain source was not read).
 - The Homebrew formula template declares no minimum macOS, so on an older OS the tool installs
   and then fails to start. State the minimum OS in the README.
 
+### When lowering an app's minimum macOS, run the existing measurements unchanged on the older OS, and check every place that states the floor against one another
+
+**Symptom:** A Swift GUI app that changes menu bar spacing had its minimum OS lowered from 27 to 26 (2026-11). It had
+been limited to 27 not because of an API but because it had only been measured on 27.0. In a copy of the repository,
+only the two floor declarations were changed to 26.0 (`platforms` in `Package.swift`, `LSMinimumSystemVersion` in
+`Info.plist`). On macOS 26.7.1 the build, every test (including those that touch the real preference domain) and two
+runs of the existing measurement harness passed with no source change, and the measured result objects equalled the
+27.0 record exactly. A `.app` assembled with the 27.0 floor was refused by LaunchServices on 26.7.1 with `-10825`
+(`kLSIncompatibleSystemVersionErr` in the SDK's `LSConstants.h`); the 26.0 build launched (measured; the refused build
+also carried `minos` 27.0, so which declaration triggered the refusal was not separated). The floor was stated in five
+places: `Package.swift`, `Info.plist`, the cask floor in the Makefile (`BREW_MACOS_FLOOR`), and the English and
+Japanese READMEs. None reads another. The organization-wide check compared only the cask against `Package.swift`.
+
+**Why:** SwiftPM's deployment target and the bundle's `LSMinimumSystemVersion` are separate declarations, and the
+build does not reconcile them. The cask and the READMEs are written by hand. Changing one place only yields an app
+that installs but does not launch, launches but does not install, or contradicts its stated requirements.
+
+**How to apply:**
+- Base the lowering on measurements on the older OS. In a copy with only the floor changed, run the existing tests
+  and measurement harness **unchanged**, and compare the results with the recorded values mechanically (save them in
+  the same schema and compare with `==`). Do not design a new measurement — it leaves nothing to compare against.
+- Check launching through LaunchServices (`open`): the old-floor build refused, the new-floor build launching. The
+  refusal also serves as a positive control that the test machine really runs the older OS.
+- Check every place that states the floor against `Package.swift` in a repository check (`Info.plist`, the cask
+  floor, the README wording). Keep the table of macOS versions to Homebrew symbols inside the check, and fail on a
+  version it does not know rather than guess. Confirm the check catches each mismatch with copies that break one
+  place at a time.
+- State in the README and the evidence which versions were measured (here one machine on 26.7.1; later the notarized
+  cask was installed on 26.6.2 and its launch and window checked) and which were not.
+
 ## Pinning & patching dependencies
 
 ### Pin vendored dependencies to immutable version tags, never rolling ones

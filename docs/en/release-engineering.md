@@ -451,6 +451,35 @@ asks for is the first one skipped in a hurried release.
 - A local check cannot see whether the asset was uploaded. Say "upload it with the binaries" in AGENTS.md,
   and accept that as the remaining gap.
 
+### Checking a cask over ssh on a borrowed machine: a running process is not a launched app — the first launch stops at a confirmation dialog
+
+**Symptom:** On a macOS 26 test VM, over ssh, a cask was installed from the public tap with
+`--appdir="$HOME/Applications"` and opened with `open` (2026-11). `open` exited 0 and the app's process existed, but
+the only new window was CoreServicesUIAgent's, 260×290, and the app had none — the confirmation shown the first time
+an app downloaded from the internet is opened. Once the person at the VM's screen clicked Open, the app's window
+appeared, and the quarantine attribute changed from `0181` to `01c1`. Two more things happened. `brew install`
+deleted old caches and logs of unrelated tools. And after `brew uninstall --cask --zap` and `brew untap`, the
+downloaded zip was still cached under `Cask/` and `downloads/` in `~/Library/Caches/Homebrew/` (all measured).
+
+**Why:** A cask keeps the quarantine attribute (see the tap entry above). The first-launch confirmation is
+LaunchServices UI and cannot be operated over ssh; the process exists while it waits. The deletion of caches and logs
+is the periodic cleanup Homebrew runs after an install (stopped by `HOMEBREW_NO_INSTALL_CLEANUP`, per Homebrew's man
+page). The download cache is not something uninstall removes.
+
+**How to apply:**
+- Judge "launched" by a window, not a process. Build a small Swift tool locally with
+  `-target arm64-apple-macos<version>` that filters `CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)`
+  by owner name and prints layer and bounds, and copy it over. Owner names and bounds were available without a
+  Screen Recording grant (measured; window titles were not read).
+- Ask the person at the machine to click the dialog, and to look at the app's window at the same time — the visual
+  check then costs no extra round.
+- On a borrowed machine, prefix `brew` with `HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1`.
+- Decide what you will place and how to remove it before you start, and remove it in order afterwards, checking
+  each: quit with `pkill -TERM` matched on the path (AppleScript's quit was avoided because Apple Events may ask for
+  a permission — inferred) → `lsregister -u <app>` while the app still exists → `brew uninstall --cask --zap` →
+  `brew untap` → the tool you copied → the download cache. Finally confirm the app, its registration (its identifier
+  absent from `lsregister -dump`), the tap, the cache and the places the app writes are all gone.
+
 ## Versions, publishing & procedure
 
 ### Never reuse a published version number (fix-forward)
