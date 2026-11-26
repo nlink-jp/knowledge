@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-26 (an agent's memory, tidied twice)
+
+From two stocktakes of the maintainer's agent memory: drift at 185 files, and drift plus duplicate bodies at 468.
+
+- **development-process** (ja + en): an agent's long-lived memory rots silently and duplicates under new names. Keep re-derivable values out of the index, descriptions and bodies. Rewrite a project's memory when the project moves. List the descriptions before writing a new one. Keep each lesson in one place, with project records linking to it. Make the mechanical checks a script, and merge duplicates only after reading both bodies.
+
 ## 2026-11-25 (a macOS floor lowered, and its cask checked on a VM)
 
 From lowering a Swift GUI app's minimum macOS from 27 to 26 and installing the released cask on a macOS 26 VM over ssh.

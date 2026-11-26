@@ -1433,6 +1433,41 @@ path along with the target it points at: a label that lies is the next broken li
 into the organization gate the same day — the class recurs on every move, and nobody re-runs a
 one-off script (see *A lesson nobody is held to is a note*).
 
+### An agent's long-lived memory rots silently and duplicates under new names — keep re-derivable values out, keep each lesson in one place, make the check a script
+
+**Symptom:** the maintainer has run Claude Code's file-based memory for months. Each fact is one file, reached from an index that is always loaded. Every stocktake found the same kinds of drift. All the counts below were measured, by a check script and by reading the bodies.
+- At 185 files, it found:
+  - over a dozen index entries with stale versions;
+  - released work still marked "in progress";
+  - 8 files pointing at paths that did not exist;
+  - 66 broken links between memories.
+- After versions were taken out of the index, the versions left in each memory's description (the one line read at recall) were checked. 13 of 20 were stale.
+- At 468 files, about 20 passages still named a project's old working-copy path as canonical, although the project had moved to its proper place.
+- At the same point, a search for duplicate bodies found:
+  - 9 whole duplicate pairs. Each was the same lesson written again later, under another name and in other words.
+  - 11 passages where one memory repeated part of another. Most were project records retelling a lesson at length.
+
+**Why:** a memory is an observation at the moment it was written, and nobody updates it afterwards. A value whose truth lives elsewhere (a version, a status, a path) starts going stale when it is written. Believed later, it quietly leads to wrong work: redoing a finished port, writing to an old path.
+Duplicates come from not looking up what exists before writing.
+- A later rewrite differs in context and in words. A dedup that rejects lexical overlap at insert time (llm-integration's *LLMs repeat the same observation in different words*) catches paraphrases of one observation. These, however, it likely misses (inferred, not measured).
+- What found them was a check that reads for meaning: five read-only subagents, one per theme, proposed candidates. It cost about 1.34M tokens, and one theme had no duplicates at all.
+
+**How to apply:**
+- Keep re-derivable values (versions, code structure, build steps) out of the index, the descriptions and the bodies.
+  - Write what cannot be re-derived later: the reason for a decision, a trap, a rejected option and why.
+  - Keep status as coarse as "released".
+- When a project moves or changes state (from a working copy to its proper place, into an archive), rewrite its memory's path, status and description in the same piece of work.
+- Before writing a new memory, list every memory's description and look for the same lesson. If it is there, add to that memory instead.
+- Keep each lesson in one place. A project record holds the facts and the history, and links to the lesson.
+- Turn whatever a machine can see into a check script, and run it at every stocktake.
+  - What it can see: broken links, files no index lists, index line length and total size, versions in descriptions, a name that does not match its file name.
+  - What the check does not look at (a table carrying versions, a statement of status) survives it. A clean check does not replace reading the bodies.
+- Subagents can propose duplicate candidates. Merge in this order:
+  1. Merge only what you confirmed by reading both bodies.
+  2. Move the cases, steps and numbers only one of them holds into the target before deleting the other.
+  3. After repointing references, look for a line that now cites the same target twice, and for an index left with two lines for one entry (both happened during the repointing).
+- Decide between merging and deleting by inbound references. A memory others cite is where a lesson came from: keep it and cut its contents instead.
+
 ## GitHub operations
 
 ### Repositories are no longer watched automatically (auto-watch sunset 2025-05)
