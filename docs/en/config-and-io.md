@@ -725,6 +725,20 @@ perfectly valid token and forced hourly re-login.
   again in an hour") reasonable.
 - "`expires_at` exactly save-time + 1 h" is the tell of a fabricated expiry.
 
+### When several processes use one login, renew under a file lock after reading it again — do not keep the refresh token in memory
+
+**Symptom:** An MCP client starts each stdio server as a child process per session or window, so six bridges per server for the same server were the normal state. Each process kept the refresh token it read at start-up and renewed with it. Against a server that issues single-use (rotating) refresh tokens, after the first process renewed, the others presented the spent token and got `invalid_grant`. A server that revokes the whole grant when a spent token is presented again (reuse detection) killed the stored login too. A provider that does not invalidate used refresh tokens showed no failure at all with the same set-up, so the symptom looked like one provider's bug. It shows up most after a period of disuse because every process reads the same `expires_at`, all expire together, and all go to renew within seconds.
+
+**How to apply:**
+- Treat the stored file as the authoritative copy of the login and what a process holds as a copy of it. When a renewal is needed, take an exclusive lock on a separate file (`<file>.lock`). If the file is replaced by renaming over it, a lock on the file itself stays behind on the old file at each replacement, so do not lock the file itself. Under the lock, read the file again and decide: adopt another process's renewal, renew with the newest refresh token in the file, or — if the file is gone — treat it as logged out and stop. Never delete the lock file.
+- If the wait for the lock has a limit, fail the request when it passes; do not "renew without the lock". Waits add up behind each holder in turn, so whatever the limit, a slow server still sees the same refresh token presented twice at once. Only where the lock file cannot be created at all (a read-only directory, an OS with no locking) — where no process can coordinate — warn and renew as before.
+- After a renewal whose result could not be saved, memory is newer than the file for as long as the file is unchanged. An implementation that always reads the file again sends a spent token even with a single process running.
+- Rewrite the file for login and logout under the same lock too. Otherwise a renewal of the old login in progress overwrites the new login, and a deleted login is written back. A new login is then also picked up by running processes at their next renewal.
+- Remember the access token a 401 rejected, and do not adopt it while it is still in the file.
+- In the concurrency tests, have the test server delay its first answer; otherwise they can pass without the lock, depending on timing. Check once that replacing the lock with a no-op makes them fail.
+
+Origin: an MCP bridge between stdio and HTTP (2026-11, from a user's improvement proposal).
+
 ### Some providers reject http:// loopback redirect_uris
 
 **Symptom:** RFC 8252 recommends `http://127.0.0.1:<port>/callback`, but some
