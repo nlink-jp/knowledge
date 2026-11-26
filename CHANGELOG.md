@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-27 (a link check that stopped reading at the 250th document)
+
+From the org health check passing while it printed `Too many open files` and awk encoding errors on a repository with 758 tracked documents.
+
+- **shell-scripting** (ja + en): a check that reads files one at a time can skip the ones it could not read without a word — bash 3.2 keeps a process substitution opened inside a function until the function returns, macOS awk under a UTF-8 locale stops at an invalid byte, and git quotes non-ASCII paths. Read every file in one process, run ASCII-only awk under `LC_ALL=C`, list paths with `core.quotePath=false`, and report a file that cannot be opened.
+
 ## 2026-11-26 (an agent's memory, tidied twice)
 
 From two stocktakes of the maintainer's agent memory: drift at 185 files, and drift plus duplicate bodies at 468.

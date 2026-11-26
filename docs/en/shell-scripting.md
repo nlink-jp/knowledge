@@ -351,6 +351,45 @@ cannot be fetched is a different path.
   prints its passing line even without input: it prints the same line when it compares nothing.
   Compare the old and new answers item by item.
 
+### A check that reads files one at a time silently skips the ones it could not read — bash 3.2's descriptors, awk's locale, git's path quoting
+
+**Symptom:** The org-wide health check's "do document links resolve" check read each tracked `.md`/`.toml`
+through `while … done < <(awk … "$file")`. On a TOML decoder's repository (it carries a conformance suite under
+testdata, 758 tracked documents in all) it printed the following, and the check still passed
+(2026-11-27, measured with macOS's `/bin/bash` 3.2.57 and `/usr/bin/awk` 20200816).
+
+```
+awk: towc: multibyte conversion failure on: '…'
+check-org.sh: redirection error: cannot duplicate fd: Too many open files
+```
+
+Writing the tests turned up a third case: awk could not open a document with a Japanese name, so it was skipped as well.
+
+**Why:** In all three, "this document could not be read" looks the same as "this document has no links".
+
+- **bash 3.2 does not close a process substitution `< <(…)` opened inside a function until the function
+  returns.** One stays open per file: 94 were open at the 100th file, and 6 again once the function returned.
+  The same loop outside a function does not grow (all measured). With `ulimit -n 256`, reading 300 files fails
+  at the limit, and no document after that point is read. The inner loop simply gets no input, so nothing is
+  reported.
+- **macOS awk under a UTF-8 locale stops reading a file at its first invalid byte** (the `towc` error). The
+  conformance suite's invalid-encoding cases are exactly such files, so a link after the bad byte is never seen.
+- **git escapes a path containing non-ASCII characters by default** (`core.quotePath`, as git documents). No
+  file is named `"docs/ja/\346\226\207…"`, so it fails to open and is skipped.
+
+**How to apply:**
+- Do not open `< <(…)` inside a per-file loop. Use one process that reads every file in one pass (with awk:
+  take the list on stdin, open each with `getline line < f`, and close it with `close(f)`). If the loop needs
+  input, feed it a here-document: one redirection, closed when the loop ends.
+- When the patterns are ASCII only, run awk under `LC_ALL=C`. Reading bytes changes no result, and an invalid
+  byte no longer stops it.
+- Take path lists from git with `git -c core.quotePath=false ls-files`.
+- Report a file that could not be opened by name instead of taking it as having no links (awk's `getline`
+  returns -1 on failure).
+- Build each test in the shape of the real failure, and confirm it fails on the old code. Reproduce a
+  failure that depends on file count by setting the limit inside the test — `( ulimit -n 256; check … )` —
+  instead of relying on the limit of whichever shell runs it.
+
 ### Do not pick "the artifact just built" with `ls <glob> | tail -1` — version strings do not sort by age
 
 **Symptom:** To check a rebuilt zip, a script used `Z=$(ls dist/<name>-v*-darwin-arm64.zip | tail -1)`. `dist/` held
