@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-27 (a dual-era MCP module, reviewed before its release)
+
+From writing the organization's MCP protocol module and the independent passes before its first release.
+
+- **mcp-server-design** (ja + en): answering a peer's requests with one goroutine each lets a flood grow without bound — one writer and a bounded queue, dropping when full.
+- **mcp-server-design** (ja + en): when an answer and the connection's end are both ready, `select` picks either — look at the answer channel first; the same holds for a write finishing at its deadline.
+- **testing** (ja + en): standard-library APIs newer than the `go` directive compile on a newer toolchain — `go vet`'s stdversion reports them, and `GOTOOLCHAIN=go1.X.Y` runs the real one.
+
 ## 2026-11-27 (an MCP revision without the handshake, and servers that echoed the version)
 
 From measuring how clients and servers meet MCP 2026-07-28, and fixing twelve stdio servers that echoed the requested protocol version.

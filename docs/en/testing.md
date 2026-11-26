@@ -322,6 +322,17 @@ input was suspected; the stalls disappearing once minimizing was capped settled 
 
 Origin: the characterization tests of an agent runtime (2026-11).
 
+### Standard-library APIs newer than the `go` directive compile silently on a newer toolchain — stop them with `go vet`'s stdversion, and run the real one with `GOTOOLCHAIN`
+
+**Symptom:** A shared module declaring `go 1.23` was written on a Go 1.27 machine (2026-11). The `go` directive gates language features, not standard-library APIs: `testing.T.Context` (1.24), `strings.Lines` (1.24) and `slog.DiscardHandler` (1.24) all compile and pass locally, and break only for a consumer building with 1.23.
+
+**Why:** The compiler resolves names against the standard library it has. It does not ask which release added them.
+
+**How to apply:**
+- Run `go vet ./...`. Its default `stdversion` analyzer reports uses of APIs newer than the `go` directive, test files included (checked by having it flag `t.Context` and others in a throwaway `go 1.23` module).
+- Before a release, also run the real toolchain: `GOTOOLCHAIN=go1.23.12 go vet ./... && GOTOOLCHAIN=go1.23.12 go test -race ./...` (this downloads that toolchain; measured on a Go 1.27.4 machine: 1.23.12 was fetched and every test passed).
+- Small types such as `slog.DiscardHandler` are easy to write yourself.
+
 ## Test design
 
 ### Mocks exercise the error path; nobody reads the sentence it produces

@@ -397,6 +397,28 @@ relays, whose upstream changes on its own schedule.
 - Record each verdict with the date and the client's version. Being dual-era is a MAY for
   clients, and the specification does not say how long the fallback will last.
 
+### Answering a peer's requests with one goroutine each lets a flood grow resources without bound — use one writer and a bounded queue, and drop when it is full
+
+**Symptom:** In a dual-era MCP client written as a shared module (2026-11), the read loop answered each request from the server (legacy sampling, ping) by writing from a new goroutine. It did not write from the read loop itself, because a peer that stops reading stdin would then block both directions (the entry above, "a synchronous write to a child's stdin is unbounded"). An independent review drove it with a server that never read stdin and kept sending requests: about 200,000 goroutines and 1 GiB within 1.5 s (measured in a test). Each write had a deadline, but a deadline bounds time, not count.
+
+**Why:** Both defences — not writing from the read loop, and a deadline on every write — guard against one stuck write. The number of requests is input the peer controls.
+
+**How to apply:**
+- Answer the peer's requests from one writer goroutine taking them one at a time from a bounded queue (16, say). When the queue is full, drop the answer and log it. Leaving a legacy peer's request unanswered does not break the connection.
+- Stop the writer when reading ends (on the channel that marks the connection's end).
+- Test with a peer that never reads stdin and keeps sending requests, and watch `runtime.NumGoroutine()`.
+
+### When an answer and the connection's end arrive together, `select` may pick either — look at the answer first
+
+**Symptom:** In the same client, a call waited with `select` on its answer channel, the connection's end (`done`) and its deadline. When a server answered `server/discover` and exited at once, the call sometimes failed with "connection closed" although its answer had arrived. An independent review measured 133 failures in 300 runs with a reproduction that delayed the caller 2 ms after its write.
+
+**Why:** The read loop puts the answer on the channel before it closes `done`. That order holds, but if both are ready when the caller reaches its `select`, Go's `select` picks one at random (language specification). Order is not priority.
+
+**How to apply:**
+- In the end branch, take a non-blocking look at the answer channel before reporting the close.
+- The deadline branch has the same shape: a write that finished as the deadline came, reported as "not sent" without looking, misleads the caller about whether a retry is safe.
+- Reproduce with a fake that answers and exits at once, run hundreds of times.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON
