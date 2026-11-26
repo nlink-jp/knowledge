@@ -324,6 +324,79 @@ Put the fix in the **send function**, not the caller: every sender has the same 
 reply written from the read loop has no call to inherit a deadline from. Test with a server that
 stops reading stdin, and with a second caller waiting on the lock.
 
+### A handshake-era `initialize` does not echo the requested version back — the versions a server names follow from the requirements it meets
+
+**Symptom:** Twelve in-house stdio servers returned the `protocolVersion` of `initialize`
+without checking it. Measured in 2026-11: asked for a revision they do not speak (2026-07-28,
+the revision that removes the initialization handshake altogether), they answered that they
+spoke it, and went on speaking the handshake-based protocol. Four of the existing tests asserted
+this echo as correct behaviour.
+
+**Why:** The lifecycle chapter of the earlier revisions (2024-11-05 to 2025-11-25, read in the
+primary source) says a server answers with the requested version when it supports it, and
+otherwise with another version it supports (preferably the latest). Echoing is the same as
+claiming every version. A client decides how to behave from the version it gets back, so a false
+claim turns straight into a mismatch. The tests had been written from the implementation, so
+they locked the mistake in.
+
+**How to apply:**
+- Keep the list of supported versions in code. Answer with the requested version when it is on
+  the list, and with the newest one on the list otherwise. Empty, unknown and malformed params
+  get the newest too.
+- Build the list by reading each revision's changelog for **server-side requirements**, and name
+  only the revisions the implementation meets. For example, 2025-03-26 makes receiving JSON-RPC
+  batches a MUST (removed again in 2025-06-18), so a server that stops on an array cannot name
+  it. For a tools-only stdio server, what 2025-11-25 adds is optional or SHOULD (read in the
+  changelog).
+- When fixing it, suspect the existing tests as well. A test that asserts the wrong behaviour is
+  rewritten in the same change, into "asking for a supported version gets that version".
+- Make the test table-driven: each supported version, a known unsupported one, an unknown one,
+  empty, and malformed params.
+
+### Before preparing for the handshake-free MCP revision, measure which era each client and server is in
+
+**Symptom:** MCP 2026-07-28 removes the `initialize` handshake and sessions, and carries the
+version and capabilities in every request's `_meta` instead ("modern" in the specification's
+terms). Servers must implement `server/discover`. According to the specification's
+compatibility matrix, a client that speaks only the earlier protocol ("legacy") cannot use a
+modern-only server, and the reverse also fails. How urgent the migration is depends on which era
+the clients and the upstream servers are in, so it was measured on macOS on 2026-11-27.
+
+- Claude Code 2.1.311 (CLI) is dual-era. On stdio it first sends `server/discover` (2026-07-28
+  in `_meta`), and on `-32601` falls back to `initialize` (2025-11-25). To a server that answers
+  in the modern protocol it sent `tools/list` with `_meta` and no handshake.
+- All 26 legacy in-house servers answered `server/discover` at once with `-32601`. A dual-era
+  client reads that as a legacy server and falls back, so they keep working for now without a
+  change.
+- GitHub's hosted MCP server and Obsidian's MCP plugin answered a modern request sent without
+  the headers with `-32020` (headers and body disagree). In the specification a modern error is
+  the sign that a server understands the modern protocol, and both also answered `initialize`,
+  so both were judged dual-era. Slack's official MCP server and the embedded server of a KVM
+  device are legacy only.
+- The in-house HTTP relays (stdio ⇄ Streamable HTTP) sent neither `MCP-Protocol-Version` nor
+  `Mcp-Method`. When an upstream becomes modern-only, those relays break (inferred from the
+  specification, not yet measured against a modern-only upstream).
+
+**Why:** Read only through the new changelog, the revision looks like a rewrite of everything.
+But with a client that probes with `server/discover` and falls back to the earlier protocol,
+legacy servers keep working for now. Where the real risk sits is decided by the other side's
+implementation, not by the specification — here it was not the in-house servers but the HTTP
+relays, whose upstream changes on its own schedule.
+
+**How to apply:**
+- Write a probe server that records every line it receives and answers either as a legacy server
+  or as a modern-only one, and have each client start it. With Claude Code,
+  `claude -p "<short prompt>" --mcp-config <json> --strict-mcp-config` runs the MCP probe before
+  calling the model, even with an expired login. It leaves a session record named after the
+  working directory under `~/.claude/projects/`; remove it afterwards.
+- To your own servers, send `server/discover`, then `initialize` with an earlier version, then
+  `initialize` with the new one, and compare the answers. Call no tools.
+- To an upstream HTTP server, send one modern request through your relay. An error in the range
+  the specification reserves (`-32020` to `-32099`) means it understands the modern protocol;
+  `-32601` or a bare HTTP 400 means legacy.
+- Record each verdict with the date and the client's version. Being dual-era is a MAY for
+  clients, and the specification does not say how long the fallback will last.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON

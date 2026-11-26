@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-27 (an MCP revision without the handshake, and servers that echoed the version)
+
+From measuring how clients and servers meet MCP 2026-07-28, and fixing twelve stdio servers that echoed the requested protocol version.
+
+- **mcp-server-design** (ja + en): a handshake-era `initialize` answers with the requested version only when the server meets that revision's requirements, and with its newest otherwise — 2025-03-26 requires accepting JSON-RPC batches; suspect existing tests that assert the echo.
+- **mcp-server-design** (ja + en): before migrating to the handshake-free revision, measure each side's era with a probe server — Claude Code 2.1.311 probes with `server/discover` and falls back; GitHub's hosted server and Obsidian's plugin are dual-era, Slack's is legacy; an HTTP relay that sends no `MCP-Protocol-Version` / `Mcp-Method` breaks once its upstream goes modern-only.
+
 ## 2026-11-27 (a link check that stopped reading at the 250th document)
 
 From the org health check passing while it printed `Too many open files` and awk encoding errors on a repository with 758 tracked documents.
