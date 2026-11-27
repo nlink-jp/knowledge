@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-27 (an OAuth discovery probe that stopped hand-writing `initialize`)
+
+From replacing a relay's hand-written discovery probe with the shared module's opening, measured on four real upstreams.
+
+- **mcp-server-design** (ja + en): an unauthenticated discovery probe sends the ordinary opening the shared part builds (the measured servers authenticate before reading the body; GET was not answered with 401). When a one-shot Conn drives a client opening, return one sentinel for every outcome (a deadline error makes the opening fall back and send again) and close the Conn yourself (a failed opening returns nothing to close).
+
 ## 2026-11-27 (a desktop agent archived instead of migrated)
 
 From archiving a Wails desktop agent whose MCP support could not follow the dual-era revision without a rewrite.

@@ -307,6 +307,49 @@ heading was written for the first.
 - Tests do not find this kind of misdirection (the branch is taken, the
   substring matches). Cause the failure and read the terminal.
 
+### An unauthenticated discovery probe sends an ordinary client's opening, built by the shared part — a one-shot Conn returns one error for every outcome, and you close it yourself
+
+**Symptom:** OAuth discovery starts from the 401 and `WWW-Authenticate` an unauthenticated request gets. An
+in-house HTTP relay probed with a hand-written `initialize` (empty `params`, so not even a valid `initialize`).
+That broke an organization rule (only the shared module writes a handshake). To replace it, on 2026-11-27, from
+macOS, four registered upstreams (GitHub's hosted MCP, Slack's MCP, the Obsidian MCP plugin, a KVM device's
+built-in server) were sent, unauthenticated: today's body, a `ping` without headers, a body-less POST, a GET,
+and the opening the shared module's `client.Open` builds (`server/discover` with its headers). Every POST got
+401 whatever its body, and on GitHub and Slack the `WWW-Authenticate` value was byte-for-byte the same for all
+five. Only the GET differed: Obsidian answered 405 before authenticating.
+
+The replacement runs `client.Open` over a `Conn` that POSTs once and reads the first answer's 401. Building it
+hit two traps (read in the module's source, confirmed by mutation tests):
+
+- If `Conn.Send` returns the transport error as it is, and that error is a deadline (`http.Client`'s timeout
+  satisfies `errors.Is(err, context.DeadlineExceeded)`), `client.Open` reads it as "no answer", falls back to
+  the legacy `initialize`, and sends a second request.
+- On failure `client.Open` returns no `Client` to close. Unless the `Conn` is closed, its read and answer
+  goroutines stay behind after every probe (5 grew to 45 over 20 probes).
+
+**Why:** All four authenticate before reading the body, so the probe's content does not change the answer.
+Following the MCP authorization specification's flow — the client sends its ordinary request without a token
+and gets 401 — is then the right form: it is the only one that also gives a correct request to a modern server
+that checks before reading the body. But a part that builds the opening is made to fall back to another era
+when it gets no answer, not to make one shot; used as a probe, its fallback collides with the rule that the
+probe is one request.
+
+**How to apply:**
+- Do not hand-write the probe's body. Send, without a credential, what an ordinary client sends first (what the
+  organization's shared part builds). A GET or a body-less POST does not get 401 from a server that routes on
+  the method or the body before authenticating.
+- When a one-shot `Conn` drives the opening part, `Send` returns the same single sentinel error for every
+  outcome (an answer, a transport failure) and keeps the outcome inside the `Conn` for the caller to read. A
+  later `Send` is refused without a request.
+- When the opening part returns nothing on failure, the caller closes the `Conn` with `defer`. `Recv` waits
+  until the close and then returns the end at once (also when the close came first).
+- Run the whole part under a context with the probe's bound too. Test with an HTTP timeout shorter than the
+  probe's, which takes the fallback path, and check that removing the sentinel and removing the refusal each
+  make a test fail.
+- An upstream that has not been measured (a server that authorizes per method, say) may answer instead of
+  returning 401. Discovery then goes on to the well-known locations, as for any answer without a challenge,
+  so check on the upstreams on record that RFC 9728's path-inserted location is the URL their challenge names.
+
 ### A synchronous write to a child's stdin is unbounded — outside the deadline, one wedged peer stalls everything
 
 **Symptom:** A stdio client wrote the request, then started a deadline and waited for the
