@@ -438,6 +438,29 @@ client share the same stream. The next line need not be the answer.
 - Give the tests a fake that sends one notification before its answer. A fake that only answers cannot show this
   defect.
 
+### A capped line reader: skip the over-long line when you keep talking, end at the cap when you are about to drop the peer
+
+**Symptom:** An MCP client moved from a hand-written reader (`bufio.Scanner`, a 10 MiB line; it stopped at the cap
+and killed the child) to the organization's shared line reader. The shared reader reads an over-long line through to
+its newline, discards it and goes on to the next line, so that a server or relay does not end its connection over one
+over-long line. The client, though, ends the connection on any over-long line. Against a server writing without a
+newline, the reader kept spending CPU discarding and did not see the end until a newline came; the call waited out its
+60-second deadline and was reported as a timeout, not as the cap (2026-11, the MCP shared module; found by the
+pre-release review of a client's migration).
+
+**Why:** "Read through to the newline" is right only where reading goes on after the failure. Where the failure ends
+the connection, reading the rest of the line gains nothing, and when the end is seen depends on a newline the peer
+may never write.
+
+**How to apply:**
+- Choose what happens past the cap by what the caller does after the failure. If it reads on, skip to the newline. If it
+  ends, return the failure at the cap without reading the rest of the line, and keep returning it.
+- Bound what the ending reader reads too: the cap, plus 2 bytes of line ending, plus one buffer fill.
+- Test with a reader that never ends and never writes a newline. A line far over the cap followed by a newline does not
+  catch this defect.
+- When replacing a reader, write down the old one's behaviour past the cap as a requirement first. "The cap is the
+  same" does not mean what happens past it is.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON
