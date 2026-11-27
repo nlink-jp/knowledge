@@ -1683,6 +1683,18 @@ successor, siblings, catalogs — live in other repositories, and nothing there 
   successor).
 - **Do not rewrite design records (RFP, ADR).** They record the decision as it stood; add a dated note at the top
   ("Positioning update (YYYY-MM-DD): … the references to coexistence below record the decision as it stood then").
+- **Taking a submodule out of its umbrella breaks the links that point into the umbrella.** A link written as
+  `github.com/<org>/<series>/tree/main/<tool>` returns 404 once the submodule is gone (measured, 2026-11, archiving
+  a Wails desktop app: four links in an MCP server's README, English and Japanese; the old URL was fetched after
+  the removal and returned 404). Besides searching for the name, point links of this form at the repository's own
+  URL.
+- **Setup guides (getting-started, installation steps) slip through a name search.** The same sweep found three
+  tools archived earlier (a local-LLM CLI, a transcription CLI, an MCP proxy) still listed in the guides as tools to
+  install; each of those archives had fixed only the READMEs and the catalogs. A guide tells readers what to install
+  now, so fix it like a catalog.
+- **"Used by" lists and reference projects in the conventions are part of the same surface.** Archiving the last
+  user of a framework can leave it with no active project. Do not just drop the example; say that no active project
+  uses it.
 - Related: "Archived state lives only on GitHub — a local scan will grab dead repos"; testing, "A withdrawn
   mechanism disappears from the code, not from the prose".
 

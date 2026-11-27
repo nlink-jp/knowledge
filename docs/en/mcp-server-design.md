@@ -419,6 +419,25 @@ relays, whose upstream changes on its own schedule.
 - The deadline branch has the same shape: a write that finished as the deadline came, reported as "not sent" without looking, misleads the caller about whether a retry is safe.
 - Reproduce with a fake that answers and exits at once, run hundreds of times.
 
+### A stdio client waits for its answer by id — reading one line and comparing ids fails the call on a single earlier notification
+
+**Symptom:** A desktop agent app's MCP client wrote a request, read one line from the server's stdout, and failed
+with "response id mismatch" when its id differed from the one sent. A notification (a JSON-RPC message without an
+id) decodes with id 0, so a single server notification arriving before the answer fails the call (2026-11, confirmed
+by reading the code; not reproduced against a server that sends notifications). The app was archived without the
+fix, and its README records the defect.
+
+**Why:** It was written on the assumption that the line after a request is that request's answer. In MCP a server may
+send notifications (progress, logging and others) while it handles a request, and the server's own requests to the
+client share the same stream. The next line need not be the answer.
+
+**How to apply:**
+- Read with one loop for the connection, not per request, and hand each answer to the waiting call by its id. Route
+  notifications (no id) and the server's requests elsewhere (log them, answer them).
+- Do not decode the id into a fixed integer: a missing id and id 0 become indistinguishable.
+- Give the tests a fake that sends one notification before its answer. A fake that only answers cannot show this
+  defect.
+
 ## Error & schema design
 
 ### Return tool errors as structured {code, message, details} JSON

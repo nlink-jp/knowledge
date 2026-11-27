@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-27 (a desktop agent archived instead of migrated)
+
+From archiving a Wails desktop agent whose MCP support could not follow the dual-era revision without a rewrite.
+
+- **development-process** (ja + en): archiving also breaks links into the umbrella (`<series>/tree/main/<tool>` returns 404 once the submodule leaves), setup guides slip through a name search (three earlier archives were still listed as tools to install), and a conventions "used by" list can lose its last active project.
+- **mcp-server-design** (ja + en): a stdio client waits for its answer by id in one read loop — reading one line and comparing ids fails the call on a single notification sent before the answer.
+
 ## 2026-11-27 (a dual-era MCP module, reviewed before its release)
 
 From writing the organization's MCP protocol module and the independent passes before its first release.
