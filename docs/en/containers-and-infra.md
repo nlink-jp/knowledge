@@ -165,6 +165,19 @@ no exit, it looks like a slow start.
 - A healthcheck that relies on a client bundled in the upstream image (MinIO's `mc`) does not survive the rebuild.
   Replace it with the service's own liveness URL.
 
+### Killing the local `podman exec` client leaves the command running inside the container
+
+**What happened:** a time limit or a cancelled call had `exec.CommandContext` kill `podman exec`, on the assumption that this ended `execute_code`'s Python. It did not. Measured with podman 5 on macOS: SIGKILL to the local `podman exec <c> sleep 62` left `sleep 62` running in the container.
+- A trap in measuring it: in `podman run … && podman exec … &` the `&` applies to the whole chain, so the PID is the wrapping shell's, and killing it leaves `podman exec` itself alive. Kill the `podman exec` process itself.
+
+**Why:** the command runs as a process on the container's side (under conmon); the local `podman exec` only carries its streams.
+
+**How to apply:**
+- When the ctx ends first, end the command inside the container too: a fresh ctx (`context.WithoutCancel` plus a bound) sends `podman exec <c> sh -c '…kill…'`.
+- An image with no `ps` or `pkill` still has `sh` and `tr`, enough to read `/proc/*/cmdline`. A name random per call in the command line (the script's) matches that call and no other. A child the code starts under another command line is not followed — say so.
+- Commands that create or remove state (`podman run`, `podman rm`) are not killed half-way by a cancellation: let them finish (`WithoutCancel` plus a bound) and record what they made. Killed half-way, a container is left that nothing recorded and no shutdown cleanup stops.
+- Run the integration test on the long-running runtime image. With one whose default command ends at once (alpine's `/bin/sh`) the container stops, the exec fails immediately and the test passes having checked nothing. Confirm it fails on the code before the fix.
+
 ## Virtual machines
 
 ### A real Linux guest with its own SPICE server runs under Podman on Apple silicon without nested virtualization

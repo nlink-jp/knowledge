@@ -945,6 +945,18 @@ Origin: restructuring the session assembly of an agent runtime (2026-11).
 
 Origin: restructuring the session assembly of an agent runtime (2026-11).
 
+### When a relay helper or a stand-in answers for the peer, a test of that answer proves nothing
+
+**What happened:** the tests of eleven MCP servers replayed hand-written JSON-RPC lines through the shared module's client with a relay helper. The helper skipped notifications, answered `ping` with `{}` itself, and built the `initialize` answer itself (always with an `instructions` key). So the tests of "a notification gets no answer", "ping is answered" and "the instructions are sent" passed whatever the server did. The signal tests had the same shape: the stand-in for `signal.NotifyContext` dropped the signals it was given, so removing SIGTERM from the registration still passed.
+
+**Why:** when the test's tool takes over the peer's part, what the test observes about that part is the tool itself.
+
+**How to apply:**
+- A relay helper fails the test on a line that is the peer's part (notifications, ping, handshake details); those are tested in the layer that owns them (the module).
+- Compare values delivered on opening (the instructions and the like) as the client actually received them.
+- Have a stand-in record and check the arguments it is given (the signals registered, the command sent).
+- Check it by breaking the line in the code under test and watching the test fail.
+
 ## Measurement, observation & evidence
 
 ### Before calling something "measured", ask whether the probe input represents the real thing

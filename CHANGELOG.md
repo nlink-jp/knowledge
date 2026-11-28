@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-28 (eleven lookup servers and a container server moved onto the MCP module)
+
+From migrating family A's lookup servers and data-toolbox-mcp onto nlink-jp/mcp and the two independent passes before their release.
+
+- **mcp-server-design** (ja + en): once cancellation reaches the server it is not a failure — stop at every stage and check again before writing; test a cancellation at every stage, with a stand-in that answers and cancels.
+- **containers-and-infra** (ja + en): killing the local `podman exec` client leaves the command running inside the container (measured); end it there too, let create and remove finish, and run the integration test on a long-running image.
+- **testing** (ja + en): a relay helper or a stand-in that answers for the peer makes a test of that answer prove nothing; fail on the peer's lines and record what a stand-in is given.
+
 ## 2026-11-27 (an OAuth discovery probe that stopped hand-writing `initialize`)
 
 From replacing a relay's hand-written discovery probe with the shared module's opening, measured on four real upstreams.

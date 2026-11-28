@@ -1302,3 +1302,16 @@ The `abs_path` and sha256 returned earlier now pointed at another document.
 - Keep the extension; a bare trailing `.` (Windows drops it), an overlong one, or one with non-ASCII is not an extension.
 - Test properties — pairs that must not collide, determinism, no path and no leading dot — rather than listing reduced
   names: an expected value written from the reduction pins the defect as correct.
+
+### Once cancellation reaches the server, a cancellation is not a failure — stop at every stage, and check again before writing
+
+**What happened:** moving hand-written MCP layers onto the shared module let `notifications/cancelled` and the server's own end reach the handler's ctx. The independent passes over eleven lookup servers found one defect class in four of them.
+- An update fetching several registries in turn stopped on a cancellation only at the first. A cancellation at a later one went down the path of a lost optional registry (warn and carry on) and rewrote the store without the rest — worse than before, when the previous copy filled the gap.
+- Three others checked for a cancellation only while fetching. One that landed once the answer had arrived — right after a 304, or a body read to its end — let them write all the same.
+
+**Why:** while no cancellation arrived, one failure path sufficed: fill in from the previous copy, or warn and go on. A cancellation sent down it runs the rest as a failure does and writes the update the caller abandoned. The tests cancelled at the first stage only, so the later stages were never exercised.
+
+**How to apply:**
+- Check `ctx.Err()` after every stage of a fetch and right before writing. Never route a cancellation into failure handling (filling in, warning and carrying on, a soft failure).
+- Cancel at every stage in the tests (a later fetch, part-way through a body, right after an answer arrives). A fetcher stand-in that only returns an error once cancelled never exercises the check before writing; one that answers and cancels is needed too.
+- Do not check between two files written as one (a list and its metadata): one of them would be left new.
