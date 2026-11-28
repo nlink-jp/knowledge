@@ -2177,6 +2177,32 @@ fixing tool share one test, both go blind at once.
 
 **Second instance (2026-10, a transcript aggregator):** A shell result was counted as a timeout whenever it contained the runtime's timeout line anywhere. The runtime appends that line as the **last** line of a result. One counted result was the runtime's own source, found by a grep inside the session, quoting the format string. An earlier throwaway measurement script counted the same way, so the two agreed and were both wrong (one of two counted timeouts was not one; found by an independent verifier). Look for a line-shaped marker only on the line where the writer puts it, and take that place from the writer's code.
 
+### A check that a string stays inside a shared part reads only where a misreading stays silent — read the tests too and it finds data
+
+**Symptom:** An organization health check got a new rule (2026-11): the MCP handshake (`initialize`, `server/discover`) is not written outside the shared protocol part. Test code that stands in for a peer was to be exempt by name. The issue asking for the list said the other tests run through the part's client and need no name. Counting the files outside the part that spell either name in quotes gave 89 `_test.go` files in 43 directories (measured), and most of them write no handshake:
+
+- The servers' tests write request lines and hand them to a helper. The helper opens the server with the part's client and answers an `initialize` line from what the client learnt when it opened the server.
+- The relays' and clients' tests use the names as inputs and expectations.
+
+The issue's premise was true of the behaviour, but a string check cannot see that.
+
+**Why:** A string only stands in for the implementation (as in "look for a marker only inside what it describes").
+
+- In tests, protocol names normally appear as inputs and expected values, so where a name appears is not where it is implemented.
+- Reading the tests makes the exemption list close to a hundred entries, and every new test file needs an amendment of the rule.
+- A test that writes the handshake by hand and misreads the specification runs against a part that implements it correctly, so the test fails and the misreading is noticed.
+- A misreading stays silent in the code that ships. The defect behind this rule, echoing the requested version back, was in server code.
+
+**How to apply:**
+- Decide what the check reads by where a misreading would stay silent. Here it reads the code that ships and the test programs outside `_test.go` (stand-in servers, e2e shell scripts), and not `_test.go` or documents. Write down in the rule (the ADR) what is not read and why.
+- Before listing exemptions, count the real hits and sort them: data, input to a helper, a stand-in, an implementation. An issue's premise can be right about the behaviour and still say nothing about whether a check can tell the cases apart.
+- Name an exception in code that ships by the text of its line, not by its file. Here it was one line in each relay that only picks the log wording when a legacy peer refuses the probe. Another spelling added to the same file fails the check.
+- When a named place no longer spells the names, report it as `[!!]`, not `[NG]`. Judge only the names inside repositories that were read: tried on a partial copy, every name in an unread repository came out as no longer spelled.
+- Take the broken-case controls without touching the real repositories. Make a copy with `git clone` in a scratch folder and put the part's checkout in as a symlink. For that, write the check as a function that takes the root path and the list of repositories to read. Here three cases came out as `[NG]`:
+  - requiring an old tag;
+  - a handshake written in an unnamed test program;
+  - another spelling added to a file named by line.
+
 ### Record a person's check per item and per method — and read the settings that decide the result before asking
 
 **Symptom (three times):**

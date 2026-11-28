@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-28 (a check that the MCP handshake stays inside the protocol module)
+
+From adding the organization check that every MCP server, client and relay is on the shared protocol module and spells the handshake nowhere else.
+
+- **testing** (ja + en): a check that a string stays inside a shared part reads only where a misreading stays silent. Read the tests too and 89 files hit, most of them data or lines handed to a helper on the part's client. Count and sort the hits before listing exemptions, name an exception in code that ships by its line, judge stale names only inside the repositories read, and take the broken-case controls on a scratch clone.
+
 ## 2026-11-28 (twelve mcpserver-family servers moved onto the MCP module)
 
 From migrating the family-C servers (async jobs, a resident engine, a browser, podman analyses) onto nlink-jp/mcp and the three independent passes before their release.
