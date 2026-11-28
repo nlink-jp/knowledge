@@ -178,6 +178,19 @@ no exit, it looks like a slow start.
 - Commands that create or remove state (`podman run`, `podman rm`) are not killed half-way by a cancellation: let them finish (`WithoutCancel` plus a bound) and record what they made. Killed half-way, a container is left that nothing recorded and no shutdown cleanup stops.
 - Run the integration test on the long-running runtime image. With one whose default command ends at once (alpine's `/bin/sh`) the container stops, the exec fails immediately and the test passes having checked nothing. Confirm it fails on the code before the fix.
 
+### Killing the local `podman run` client leaves the container running — name it, and remove it with `podman rm -f`
+
+**What happened:** a time limit, a query stopped at its row limit, and a cancelled call each had `exec.CommandContext` kill the local client of `podman run --rm`, on the assumption that this ended the analysis. It did not. Measured with podman 6.2.1 on macOS: a container whose client was killed was still running 10 seconds later, and `--rm` did not remove it when the client died. An analysis past its time limit keeps using CPU and can keep writing into a work directory that has already been removed.
+- Stopping it has a trap of its own. A client killed about 100 ms after the start leaves the container "Initialized", and `podman kill` refuses it ("can only kill running containers"). `podman rm -f` removed it at every point tried (20, 100, 300 and 800 ms; measured).
+
+**Why:** as with `podman exec`, the container runs on podman's side (under conmon); the local client only carries its streams.
+
+**How to apply:**
+- Give each run a random name (`--name <tool>-<random>`). After a run that was ended early, send `podman rm -f <name>` detached from the cancelled ctx (`context.WithoutCancel` plus a bound) — not `podman kill`.
+- The previous entry's "do not kill `podman run` half-way" is the rule for a `run` that only creates state. When `run --rm` is the work itself (the analysis), letting it finish disables the time limit and the row limit. Kill the client and remove the container by name: what the rule protects — no container left that nothing recorded — the name protects.
+- Confirm the removal for every way a run ends (normal, time limit, row limit, cancellation, cancellation right after the start) with an integration test against the real podman, and confirm it fails with the removal taken out.
+- In theory a gap remains: a `podman rm -f` sent right after the client died can arrive before a create podman's service is still processing (inferred; not observed). If it remains, write it down.
+
 ## Virtual machines
 
 ### A real Linux guest with its own SPICE server runs under Podman on Apple silicon without nested virtualization

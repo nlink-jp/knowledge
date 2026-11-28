@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-28 (twelve mcpserver-family servers moved onto the MCP module)
+
+From migrating the family-C servers (async jobs, a resident engine, a browser, podman analyses) onto nlink-jp/mcp and the three independent passes before their release.
+
+- **mcp-server-design** (ja + en): work that outlives a call is cancelled and waited for after `Serve` returns, before its resources are freed (a timed-out wait frees nothing; a worker checks the ctx after dequeuing). Do not tie what outlives a call to the call's ctx — a process it starts (`exec.Command`, ended by its owner) or the cleanup of a request already sent (`WithoutCancel`, state kept as "stopping").
+- **containers-and-infra** (ja + en): killing the local `podman run` client leaves the container running even with `--rm` (measured); name each run and remove it with `podman rm -f`, since `podman kill` refuses a container still "Initialized".
+
 ## 2026-11-28 (eleven lookup servers and a container server moved onto the MCP module)
 
 From migrating family A's lookup servers and data-toolbox-mcp onto nlink-jp/mcp and the two independent passes before their release.

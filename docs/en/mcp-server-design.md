@@ -1315,3 +1315,33 @@ The `abs_path` and sha256 returned earlier now pointed at another document.
 - Check `ctx.Err()` after every stage of a fetch and right before writing. Never route a cancellation into failure handling (filling in, warning and carrying on, a soft failure).
 - Cancel at every stage in the tests (a later fetch, part-way through a body, right after an answer arrives). A fetcher stand-in that only returns an error once cancelled never exercises the check before writing; one that answers and cancels is needed too.
 - Do not check between two files written as one (a list and its metadata): one of them would be left new.
+
+### Work that outlives a call is cancelled and waited for after `Serve` returns, before its resources are freed
+
+**What happened:** moving six MCP servers with asynchronous jobs (rendering, transcription, analysis, synthesis) onto the shared module made `Serve` return at once on end of input and on SIGINT or SIGTERM. Their deferred cleanup then freed the resources of jobs still running.
+- An image-generation server's `Serve` returned at EOF while a job was inside a render, and the deferred `Close` freed the native engine that render was using (read in the code: a use after free).
+- The worker waited for the queue and the cancelled ctx in one `select`. Go's `select` chooses uniformly among the ready cases (the language specification), so after a cancellation it could still take a queued job and start it (confirmed by a test run 50 times).
+- A job the server cancelled was recorded as a failure, "context canceled".
+
+**Why:** the old layer saw a signal only between lines, and `Serve` did not return until stdin closed. Jobs usually finished meanwhile, so the wrong order never showed.
+
+**How to apply:**
+- Run jobs under a ctx of their own, made beneath the server's. When `Serve` returns (at EOF or on a signal — a client that closed stdin can no longer receive a result), cancel that ctx, wait with a bound (`Wait(timeout)`), and only then free the resources.
+- If the wait times out, do not free them; leave it to the end of the process. Some stages cannot be stopped (loading a model). Freeing anyway leaves the use after free in exactly the timed-out case.
+- The worker checks the ctx right after taking a job from the queue and does not start it if cancelled.
+- A job ended by a cancellation is recorded as cancelled (the server shut down), not as failed.
+- Test both: closing input or sending a signal while a job runs waits before freeing, and a timed-out wait does not free.
+
+### Do not tie what outlives a call to the call's ctx — neither a process it starts nor the cleanup of a request already sent
+
+**What happened:** the shared module cancels a call's ctx each time its handler returns (and on `notifications/cancelled`). The old layer gave every handler the server's ctx, which is never cancelled, so two things never showed.
+- A browser-driving server launched Chrome with `exec.CommandContext` on the call's ctx. As written, the first call's return would kill Chrome and the second call would find none. A test with a fake Chrome that writes a mark only while it runs failed before the fix; after it, a real headless Chrome answered the second call (measured).
+- A CDP call writes its message before it waits for the answer, so a cancelled call still reaches Chrome; only the waiting is dropped (read in the code). A cancelled `screencast_start` therefore left the recording started and cleared only its state — leaving no tool to stop it and nothing to collect its frames.
+
+**Why:** a call's ctx lives as long as waiting for this answer. That is not the lifetime of what outlives the call (a process it started, an action it set going on the peer).
+
+**How to apply:**
+- Start a process that outlives the call with `exec.Command`, and let its owner (`Close`, `Shutdown`) end it. The call's ctx bounds only the wait for the start (a cancelled start kills what it started).
+- Do not start it on the server's lifetime ctx either: cancelling the server would SIGKILL it before `Shutdown` asks it to close gently.
+- Send the cleanup (stop, close) of a request already sent detached from the cancellation (`context.WithoutCancel` plus a bound) and wait for its answer. Keep the state as "stopping" until the cleanup is sent and refuse a new start meanwhile; cleared first, a start that slips in is stopped by that stop.
+- Check the ctx before writing a file too (the previous entry).
